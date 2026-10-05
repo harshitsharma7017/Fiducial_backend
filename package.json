@@ -1,0 +1,51 @@
+{
+  "name": "@property-erp/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express API for the Property Insurance Placement ERP",
+  "type": "module",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "seed:admin": "node --env-file-if-exists=.env src/scripts/seed-admin.ts",
+    "import:masters": "node --env-file-if-exists=.env src/scripts/import-masters.ts"
+  },
+  "dependencies": {
+    "@asteasolutions/zod-to-openapi": "9.1.0",
+    "@property-erp/shared": "0.1.0",
+    "argon2": "0.45.1",
+    "cors": "2.8.6",
+    "decimal.js": "10.6.0",
+    "exceljs": "4.4.0",
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0",
+    "jose": "6.2.12",
+    "mongoose": "9.10.4",
+    "pino": "10.4.0",
+    "pino-http": "11.0.0",
+    "swagger-ui-express": "5.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "24.19.1",
+    "@types/supertest": "7.2.1",
+    "@types/swagger-ui-express": "4.1.8",
+    "mongodb-memory-server": "11.3.0",
+    "supertest": "7.3.1",
+    "vitest": "5.0.3"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "7.0.43"
+    }
+  }
+}

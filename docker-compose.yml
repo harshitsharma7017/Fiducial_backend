@@ -1,0 +1,33 @@
+# Local development services.
+# MongoDB runs as a single-node replica set because the API uses multi-document transactions.
+# The API connects with mongodb://localhost:27017/property_erp?directConnection=true
+name: property-erp
+
+services:
+  mongo:
+    image: mongo:7.0.43
+    container_name: property-erp-mongo
+    command: ['mongod', '--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
+    ports:
+      # Bound to localhost only: this dev instance has no authentication.
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first run, then reports healthy once this node is PRIMARY.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { if (rs.status().myState !== 1) { quit(1) } }
+          catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }); quit(1) }
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mongo-data:

@@ -1,0 +1,35 @@
+import { z } from 'zod';
+
+/** Every API error response has this shape. */
+export const ApiErrorSchema = z.object({
+  message: z.string(),
+  code: z.string(),
+  details: z.unknown().optional(),
+});
+export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
+
+export const ERROR_CODES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  INVALID_JSON: 'INVALID_JSON',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  FORBIDDEN: 'FORBIDDEN',
+  NOT_FOUND: 'NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  SELF_UPDATE_NOT_ALLOWED: 'SELF_UPDATE_NOT_ALLOWED',
+  RATE_LIMITED: 'RATE_LIMITED',
+  MASTER_NOT_ACTIVE: 'MASTER_NOT_ACTIVE',
+  MASTER_VERSION_NOT_DRAFT: 'MASTER_VERSION_NOT_DRAFT',
+  OCCUPANCY_NOT_FOUND: 'OCCUPANCY_NOT_FOUND',
+  PINCODE_NOT_FOUND: 'PINCODE_NOT_FOUND',
+  MASTER_DATA_ERROR: 'MASTER_DATA_ERROR',
+  UPSTREAM_UNAVAILABLE: 'UPSTREAM_UNAVAILABLE',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const;
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
+
+/** Same message for unknown user, inactive user, locked account and wrong password. */
+export const INVALID_CREDENTIALS_MESSAGE = 'Email or password is incorrect.';
