@@ -22,7 +22,7 @@ const CorsOriginsSchema = z.string().transform((value, ctx) => {
     return z.NEVER;
   }
   for (const origin of origins) {
-    let parsed: URL | null = null;
+    let parsed: URL | null;
     try {
       parsed = new URL(origin);
     } catch {

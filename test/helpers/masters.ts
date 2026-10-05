@@ -1,4 +1,9 @@
-import type { MasterType, MasterVersionStatus, RiskGrade, RiskType } from '../../src/shared/index.ts';
+import type {
+  MasterType,
+  MasterVersionStatus,
+  RiskGrade,
+  RiskType,
+} from '../../src/shared/index.ts';
 import type { Types } from 'mongoose';
 import { toDecimal128 } from '../../src/lib/decimal.ts';
 import { MasterVersionModel } from '../../src/modules/masters/master-version.model.ts';
