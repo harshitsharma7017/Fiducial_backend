@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildIibWorkbook } from '../../../../test/helpers/workbook.ts';
 import { formatImportReport } from './format-report.ts';
@@ -119,42 +118,45 @@ describe('parseIibWorkbook (synthetic workbook)', () => {
   });
 });
 
-const REAL_WORKBOOK = fileURLToPath(
-  new URL('../../../../data/IIB_Code_Master.xlsx', import.meta.url),
+// The client's workbook is not kept in the repository (masters are uploaded in the app). To check
+// the parser against it, run: IIB_WORKBOOK=/path/to/IIB_Code_Master.xlsx npm test
+const REAL_WORKBOOK = process.env.IIB_WORKBOOK ?? '';
+
+describe.skipIf(!REAL_WORKBOOK || !existsSync(REAL_WORKBOOK))(
+  'parseIibWorkbook (client workbook)',
+  () => {
+    it('reconciles with the known contents and data issues of the client workbook', async () => {
+      const { occupancies, pincodes, report } = await parseIibWorkbook(
+        readFileSync(REAL_WORKBOOK),
+        META,
+      );
+
+      expect(occupancies).toHaveLength(299);
+      expect(report.occupancy.rateYearLabel).toBe('2019');
+      expect(report.occupancy.blankRiskTypes).toEqual([
+        expect.objectContaining({ tacCode: '2075', field: 'Terrorism' }),
+      ]);
+      expect(new Set(report.occupancy.nonNumericRates.map((cell) => cell.tacCode))).toEqual(
+        new Set(['2191', '2215']),
+      );
+      expect(report.occupancy.highlightedRows.map((row) => row.tacCode)).toContain('2229');
+
+      expect(report.pincode.rowsRead).toBe(20_611);
+      expect(pincodes).toHaveLength(20_606);
+      expect(report.pincode.duplicates.map((d) => d.pincode)).toEqual([
+        '207001',
+        '302013',
+        '400062',
+        '686654',
+        '742184',
+      ]);
+      expect(report.pincode.skippedRows).toEqual([]);
+      expect(report.pincode.unrecognisedStates.map((s) => s.value)).toContain('Mumbai');
+      expect(report.pincode.regionMismatches.map((m) => m.pincode)).toContain('100000');
+
+      const mumbai = pincodes.find((p) => p.pincode === '400001');
+      expect(mumbai).toMatchObject({ state: 'Mumbai', eqZone: 3, eqRates: { industrial: '0.1' } });
+      expect(report.crossCheck.pincodesWithMismatch).toBe(361);
+    });
+  },
 );
-
-describe.skipIf(!existsSync(REAL_WORKBOOK))('parseIibWorkbook (data/IIB_Code_Master.xlsx)', () => {
-  it('reconciles with the known contents and data issues of the client workbook', async () => {
-    const { occupancies, pincodes, report } = await parseIibWorkbook(
-      readFileSync(REAL_WORKBOOK),
-      META,
-    );
-
-    expect(occupancies).toHaveLength(299);
-    expect(report.occupancy.rateYearLabel).toBe('2019');
-    expect(report.occupancy.blankRiskTypes).toEqual([
-      expect.objectContaining({ tacCode: '2075', field: 'Terrorism' }),
-    ]);
-    expect(new Set(report.occupancy.nonNumericRates.map((cell) => cell.tacCode))).toEqual(
-      new Set(['2191', '2215']),
-    );
-    expect(report.occupancy.highlightedRows.map((row) => row.tacCode)).toContain('2229');
-
-    expect(report.pincode.rowsRead).toBe(20_611);
-    expect(pincodes).toHaveLength(20_606);
-    expect(report.pincode.duplicates.map((d) => d.pincode)).toEqual([
-      '207001',
-      '302013',
-      '400062',
-      '686654',
-      '742184',
-    ]);
-    expect(report.pincode.skippedRows).toEqual([]);
-    expect(report.pincode.unrecognisedStates.map((s) => s.value)).toContain('Mumbai');
-    expect(report.pincode.regionMismatches.map((m) => m.pincode)).toContain('100000');
-
-    const mumbai = pincodes.find((p) => p.pincode === '400001');
-    expect(mumbai).toMatchObject({ state: 'Mumbai', eqZone: 3, eqRates: { industrial: '0.1' } });
-    expect(report.crossCheck.pincodesWithMismatch).toBe(361);
-  });
-});

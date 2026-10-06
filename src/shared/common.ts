@@ -32,3 +32,16 @@ export interface Paginated<T> {
   items: T[];
   nextCursor: string | null;
 }
+
+/**
+ * An optional text field. Forms send "" for an empty field and API clients may send null; both
+ * are stored as null. The key itself is required, so a partial update that leaves it out keeps
+ * the stored value.
+ */
+export function blankAsNull<T extends z.ZodType<unknown, string>>(schema: T) {
+  return z
+    .string()
+    .nullable()
+    .transform((value) => (value === null || value.trim() === '' ? null : value))
+    .pipe(schema.nullable());
+}

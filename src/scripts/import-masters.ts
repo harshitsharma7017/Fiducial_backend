@@ -2,10 +2,14 @@
  * Imports the IIB workbook (sheets "IIB Code" and "Pincode") as DRAFT master versions and
  * prints a validation report. Activates only with --activate.
  *
- *   npm run import:masters -- data/IIB_Code_Master.xlsx [--activate] [--effective-from 2026-10-05]
+ * For operators: the usual way is the web app's Import data page (Admin). The workbook is not
+ * kept in the repository; pass the path of the client's file.
+ *
+ *   npm run import:masters -- /path/to/IIB_Code_Master.xlsx [--activate] [--effective-from 2026-10-05]
  */
 import { existsSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ConfigError, loadScriptEnv } from '../config/env.ts';
 import { connectDatabase, disconnectDatabase } from '../lib/db.ts';
@@ -75,7 +79,8 @@ async function main(): Promise<number> {
     }
 
     const result = await importMasters({
-      filePath,
+      data: await readFile(filePath),
+      sourceFileName: basename(filePath),
       activate: values.activate,
       effectiveFrom,
       importedBy,

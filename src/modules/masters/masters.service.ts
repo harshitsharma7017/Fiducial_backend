@@ -15,6 +15,7 @@ import {
 import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
+import { escapeRegExp } from '../../lib/text.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { MasterVersionModel, type MasterVersionDoc } from './master-version.model.ts';
 import { toMasterVersionDto, toOccupancyDto, toPincodeDto } from './masters.mapper.ts';
@@ -26,10 +27,6 @@ const MASTER_LABELS: Record<MasterType, string> = { OCCUPANCY: 'occupancy', PINC
 /** Allowed clock difference when an effective date-time is checked against "now". */
 const CLOCK_SKEW_MS = 60_000;
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /** The ACTIVE version of a master type. Every lookup reads from it. */
 export async function getActiveVersion(type: MasterType): Promise<MasterVersionDoc> {
   const version = await MasterVersionModel.findOne(
@@ -39,7 +36,7 @@ export async function getActiveVersion(type: MasterType): Promise<MasterVersionD
   if (!version) {
     throw conflict(
       ERROR_CODES.MASTER_NOT_ACTIVE,
-      `No ${MASTER_LABELS[type]} master is active. Import the IIB workbook and activate it.`,
+      `No ${MASTER_LABELS[type]} master is active. An admin uploads the IIB workbook on the Import data page and activates it.`,
       { type },
     );
   }

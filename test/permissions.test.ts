@@ -44,6 +44,21 @@ const ENDPOINTS: Endpoint[] = [
     call: (token) => request(app).get('/api/v1/masters/pincodes/400001').set(bearer(token)),
   },
   {
+    name: 'GET /masters/workbook',
+    permission: 'masters.view',
+    call: (token) => request(app).get('/api/v1/masters/workbook?template=true').set(bearer(token)),
+  },
+  {
+    name: 'POST /masters/import',
+    permission: 'masters.manage',
+    call: (token) =>
+      request(app)
+        .post('/api/v1/masters/import')
+        .set(bearer(token))
+        .set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(Buffer.from('not a workbook')),
+  },
+  {
     name: 'POST /masters/versions/{id}/activate',
     permission: 'masters.manage',
     call: (token) =>
@@ -59,6 +74,41 @@ const ENDPOINTS: Endpoint[] = [
         .post('/api/v1/rating/fire')
         .set(bearer(token))
         .send({ occupancyCode: '2001', pincode: '400001', sumInsured: '100000000' }),
+  },
+  {
+    name: 'GET /clients',
+    permission: 'clients.view',
+    call: (token) => request(app).get('/api/v1/clients').set(bearer(token)),
+  },
+  {
+    name: 'POST /clients',
+    permission: 'clients.manage',
+    call: (token) => request(app).post('/api/v1/clients').set(bearer(token)).send({}),
+  },
+  {
+    name: 'GET /clients/{id}/locations',
+    permission: 'clients.view',
+    call: (token) =>
+      request(app).get('/api/v1/clients/0123456789abcdef01234567/locations').set(bearer(token)),
+  },
+  {
+    name: 'PATCH /clients/{id}/locations/{locationId}',
+    permission: 'clients.manage',
+    call: (token) =>
+      request(app)
+        .patch('/api/v1/clients/0123456789abcdef01234567/locations/0123456789abcdef01234567')
+        .set(bearer(token))
+        .send({ name: 'Plant 2' }),
+  },
+  {
+    name: 'GET /insurers',
+    permission: 'masters.view',
+    call: (token) => request(app).get('/api/v1/insurers').set(bearer(token)),
+  },
+  {
+    name: 'POST /insurers',
+    permission: 'masters.manage',
+    call: (token) => request(app).post('/api/v1/insurers').set(bearer(token)).send({}),
   },
   {
     name: 'GET /audit',

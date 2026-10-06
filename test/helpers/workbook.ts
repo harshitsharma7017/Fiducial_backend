@@ -158,7 +158,7 @@ export async function writeWorkbookFile(
   options: WorkbookOptions = {},
   name = 'IIB_Test.xlsx',
 ): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'property-erp-import-'));
+  const directory = await mkdtemp(join(tmpdir(), 'fiducial-import-'));
   const path = join(directory, name);
   await writeFile(path, await buildIibWorkbook(options));
   return path;

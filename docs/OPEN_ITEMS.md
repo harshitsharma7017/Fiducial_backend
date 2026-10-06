@@ -1,6 +1,7 @@
 # Open items
 
-Items waiting on the client, and data issues found in `data/IIB_Code_Master.xlsx`. Nothing here is implemented
+Items waiting on the client, and data issues found in the client's IIB workbook (`IIB_Code_Master.xlsx`, uploaded
+in the app). Nothing here is implemented
 from assumptions; where code needs the answer, it has a named extension point
 (`src/modules/rating/extension-points.ts`). Question IDs refer to document 06 (Assumptions, Risks
 and Open Questions).
@@ -35,6 +36,28 @@ and Open Questions).
 - The audit log (`GET /api/v1/audit`) is for Admins only, because it holds every user's sign-in email and IP address.
 - Activating a master version writes two audit entries, each with old and new values: the new version's activation
   and the previous version's supersession.
+- Clients (M-1): the GSTIN is optional, for an insured without GST registration, but unique when given. Only regular
+  taxpayer GSTINs are accepted (14th character "Z", checked by state code and check character); UIN, TDS and
+  non-resident registrations are rejected. Each client has one occupancy, stored as the code and description chosen
+  from the active master. Group and PAN (DS-01, document 05) are not captured yet.
+- Who maintains clients: Admins and Relationship Managers (`clients.manage`, "owns the client" in the PRD); every
+  role can view them. Underwriting / Placement staff cannot edit clients (Q12).
+- Risk locations (M-2): a pincode that is not in the active pincode master cannot be used, because the location's
+  state, district and EQ zone come from it. The state shown is the master's, including its spelling issues listed
+  below. Construction, floors, fire protection and other per-location details (DS-03) belong to the Data Sheet and
+  are not captured here.
+- Insurers (M-3): one record per company branch; at least one RFQ email is required. Every role can read the insurer
+  master; only Admins change it (`masters.manage`). "Supported schemes" and notes (MST-07) are not captured yet.
+- Excel import: the preview checks every row; the user then imports the valid rows they tick, and rows with
+  problems are left out (they can be fixed and imported from a later file). Besides the screens' checks it blocks
+  a client without a GSTIN whose name already exists, and a location name the client already has, so rows already
+  imported show as invalid the second time. Each import holds at most 1,000 rows; a template carries two contacts per row.
+- Master corrections: an Admin can add or correct an occupancy or pincode in the active master on screen. The row
+  changes in place and its audit entry keeps each field's old and new value; lookups and the Fire rate check use the
+  change at once. Larger changes are made in Excel and uploaded as a new version. Risk locations keep the state,
+  district and zone they were given when saved. Rows are not deleted on screen.
+- Clients, risk locations and insurers are never deleted. Insurers can be deactivated; clients and locations cannot
+  until the client confirms how records referenced by proposals should be retired.
 
 ## Data issues found during import
 

@@ -12,6 +12,8 @@ export const PERMISSIONS = [
   'proposals.approve',
   'proposals.send',
   'proposals.export',
+  'clients.view',
+  'clients.manage',
   'masters.view',
   'masters.manage',
   'rating.use',
@@ -24,9 +26,11 @@ export type Permission = (typeof PERMISSIONS)[number];
 /**
  * The permissions of each role, taken from the personas in document 01 (PRD, section 4):
  * Relationship Managers create risks and send RFQs, Underwriting / Placement staff prepare RFQs
- * and quotes, Approvers sign off, Admins run users and masters, Read-only users only view. Who
- * approves RFQs and placements is still to be confirmed by the client (document 06, Q12; see
- * docs/OPEN_ITEMS.md). ADMIN holds every permission; a user with several roles holds the union.
+ * and quotes, Approvers sign off, Admins run users and masters, Read-only users only view. The
+ * Relationship Manager owns the client, so clients.manage goes to them; the insurer master is
+ * master data (masters.manage). Who approves RFQs and placements, and who else may edit clients,
+ * is still to be confirmed by the client (document 06, Q12; see docs/OPEN_ITEMS.md). ADMIN holds
+ * every permission; a user with several roles holds the union.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ADMIN: PERMISSIONS,
@@ -34,6 +38,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.view',
     'proposals.approve',
     'proposals.export',
+    'clients.view',
     'masters.view',
     'rating.use',
   ],
@@ -43,6 +48,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.edit',
     'proposals.send',
     'proposals.export',
+    'clients.view',
+    'clients.manage',
     'masters.view',
     'rating.use',
   ],
@@ -51,10 +58,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.edit',
     'proposals.send',
     'proposals.export',
+    'clients.view',
     'masters.view',
     'rating.use',
   ],
-  READ_ONLY: ['proposals.view', 'masters.view'],
+  READ_ONLY: ['proposals.view', 'clients.view', 'masters.view'],
 };
 
 /** True when any of the roles holds the permission. */

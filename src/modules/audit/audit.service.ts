@@ -11,7 +11,12 @@ import {
 } from '../../shared/index.ts';
 import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { validationError } from '../../lib/errors.ts';
+import { ClientLocationModel } from '../clients/client-location.model.ts';
+import { ClientModel } from '../clients/client.model.ts';
+import { InsurerModel } from '../insurers/insurer.model.ts';
 import { MasterVersionModel } from '../masters/master-version.model.ts';
+import { OccupancyModel } from '../masters/occupancy.model.ts';
+import { PincodeModel } from '../masters/pincode.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import { recordKey, toAuditLogEntry, type AuditLookups } from './audit.mapper.ts';
 import { AuditLogModel, type AuditLogDoc } from './audit.model.ts';
@@ -26,24 +31,36 @@ export interface AuditEntry {
   requestId?: string | null;
 }
 
+function toAuditDoc(entry: AuditEntry, at: Date) {
+  return {
+    at,
+    userId: entry.userId ? new Types.ObjectId(entry.userId) : null,
+    action: entry.action,
+    entity: entry.entity,
+    entityId: entry.entityId ?? null,
+    before: entry.before ?? null,
+    after: entry.after ?? null,
+    requestId: entry.requestId ?? null,
+  };
+}
+
 /**
  * Appends one audit entry. Pass the session when the audited change runs in a transaction,
  * so the change and its audit entry commit or roll back together.
  */
 export async function writeAudit(entry: AuditEntry, session?: mongo.ClientSession): Promise<void> {
-  await AuditLogModel.create(
-    [
-      {
-        at: new Date(),
-        userId: entry.userId ? new Types.ObjectId(entry.userId) : null,
-        action: entry.action,
-        entity: entry.entity,
-        entityId: entry.entityId ?? null,
-        before: entry.before ?? null,
-        after: entry.after ?? null,
-        requestId: entry.requestId ?? null,
-      },
-    ],
+  await AuditLogModel.create([toAuditDoc(entry, new Date())], { session });
+}
+
+/** Appends many entries in one write (an import), in the transaction that made the changes. */
+export async function writeAudits(
+  entries: readonly AuditEntry[],
+  session: mongo.ClientSession,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const at = new Date();
+  await AuditLogModel.insertMany(
+    entries.map((entry) => toAuditDoc(entry, at)),
     { session },
   );
 }
@@ -54,24 +71,42 @@ const MASTER_TYPE_NAMES: Record<MasterType, string> = {
   PINCODE: 'Pincode',
 };
 
-/** Looks up who acted and a readable name for each record on one page, in two queries. */
+/** Looks up who acted and a readable name for each record on one page, a query per record type. */
 async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> {
   const userIds = new Set<string>();
   const versionIds = new Set<string>();
+  const clientIds = new Set<string>();
+  const locationIds = new Set<string>();
+  const insurerIds = new Set<string>();
+  const occupancyIds = new Set<string>();
+  const pincodeIds = new Set<string>();
   for (const doc of docs) {
     if (doc.userId) userIds.add(doc.userId.toHexString());
     if (!doc.entityId || !OBJECT_ID.test(doc.entityId)) continue;
     if (doc.entity === AUDIT_ENTITIES.USER) userIds.add(doc.entityId);
     if (doc.entity === AUDIT_ENTITIES.MASTER_VERSION) versionIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.CLIENT) clientIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.CLIENT_LOCATION) locationIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.INSURER) insurerIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.OCCUPANCY) occupancyIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.PINCODE) pincodeIds.add(doc.entityId);
   }
 
-  const [users, versions] = await Promise.all([
+  const [users, versions, locations, insurers, occupancies, pincodes] = await Promise.all([
     UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1 }).lean(),
     MasterVersionModel.find(
       { _id: { $in: [...versionIds] } },
       { type: 1, sourceFileName: 1 },
     ).lean(),
+    ClientLocationModel.find({ _id: { $in: [...locationIds] } }, { clientId: 1, name: 1 }).lean(),
+    InsurerModel.find({ _id: { $in: [...insurerIds] } }, { company: 1, branch: 1 }).lean(),
+    OccupancyModel.find({ _id: { $in: [...occupancyIds] } }, { tacCode: 1, description: 1 }).lean(),
+    PincodeModel.find({ _id: { $in: [...pincodeIds] } }, { pincode: 1, district: 1 }).lean(),
   ]);
+  // A location is labelled with its client's name, so those clients are read too.
+  for (const location of locations) clientIds.add(location.clientId.toHexString());
+  const clients = await ClientModel.find({ _id: { $in: [...clientIds] } }, { name: 1 }).lean();
+  const clientNames = new Map(clients.map((client) => [client._id.toHexString(), client.name]));
 
   const actors = new Map<string, AuditActor>();
   const labels = new Map<string, string>();
@@ -84,6 +119,32 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
     labels.set(
       recordKey(AUDIT_ENTITIES.MASTER_VERSION, version._id.toHexString()),
       `${MASTER_TYPE_NAMES[version.type]} master · ${version.sourceFileName}`,
+    );
+  }
+  for (const [id, name] of clientNames) labels.set(recordKey(AUDIT_ENTITIES.CLIENT, id), name);
+  for (const location of locations) {
+    const clientName = clientNames.get(location.clientId.toHexString());
+    labels.set(
+      recordKey(AUDIT_ENTITIES.CLIENT_LOCATION, location._id.toHexString()),
+      clientName ? `${clientName} · ${location.name}` : location.name,
+    );
+  }
+  for (const insurer of insurers) {
+    labels.set(
+      recordKey(AUDIT_ENTITIES.INSURER, insurer._id.toHexString()),
+      `${insurer.company} · ${insurer.branch}`,
+    );
+  }
+  for (const occupancy of occupancies) {
+    labels.set(
+      recordKey(AUDIT_ENTITIES.OCCUPANCY, occupancy._id.toHexString()),
+      `${occupancy.tacCode} · ${occupancy.description}`,
+    );
+  }
+  for (const pincode of pincodes) {
+    labels.set(
+      recordKey(AUDIT_ENTITIES.PINCODE, pincode._id.toHexString()),
+      `${pincode.pincode} · ${pincode.district}`,
     );
   }
   return { actors, labels };

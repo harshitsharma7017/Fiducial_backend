@@ -18,7 +18,17 @@ export const AUDIT_ACTIONS = {
   LOGOUT: 'AUTH_LOGOUT',
   USER_CREATED: 'USER_CREATED',
   USER_UPDATED: 'USER_UPDATED',
+  CLIENT_CREATED: 'CLIENT_CREATED',
+  CLIENT_UPDATED: 'CLIENT_UPDATED',
+  CLIENT_LOCATION_CREATED: 'CLIENT_LOCATION_CREATED',
+  CLIENT_LOCATION_UPDATED: 'CLIENT_LOCATION_UPDATED',
+  INSURER_CREATED: 'INSURER_CREATED',
+  INSURER_UPDATED: 'INSURER_UPDATED',
   MASTER_IMPORTED: 'MASTER_IMPORTED',
+  OCCUPANCY_CREATED: 'OCCUPANCY_CREATED',
+  OCCUPANCY_UPDATED: 'OCCUPANCY_UPDATED',
+  PINCODE_CREATED: 'PINCODE_CREATED',
+  PINCODE_UPDATED: 'PINCODE_UPDATED',
   MASTER_ACTIVATED: 'MASTER_ACTIVATED',
   MASTER_SUPERSEDED: 'MASTER_SUPERSEDED',
 } as const;
@@ -28,7 +38,12 @@ export type AuditAction = z.infer<typeof AuditActionSchema>;
 /** The type of record an entry is about (audit_logs.entity). */
 export const AUDIT_ENTITIES = {
   USER: 'user',
+  CLIENT: 'client',
+  CLIENT_LOCATION: 'client_location',
+  INSURER: 'insurer',
   MASTER_VERSION: 'master_version',
+  OCCUPANCY: 'occupancy',
+  PINCODE: 'pincode',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -47,7 +62,17 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   AUTH_LOGOUT: 'SESSION',
   USER_CREATED: 'CREATE',
   USER_UPDATED: 'EDIT',
+  CLIENT_CREATED: 'CREATE',
+  CLIENT_UPDATED: 'EDIT',
+  CLIENT_LOCATION_CREATED: 'CREATE',
+  CLIENT_LOCATION_UPDATED: 'EDIT',
+  INSURER_CREATED: 'CREATE',
+  INSURER_UPDATED: 'EDIT',
   MASTER_IMPORTED: 'CREATE',
+  OCCUPANCY_CREATED: 'CREATE',
+  OCCUPANCY_UPDATED: 'EDIT',
+  PINCODE_CREATED: 'CREATE',
+  PINCODE_UPDATED: 'EDIT',
   MASTER_ACTIVATED: 'APPROVE',
   MASTER_SUPERSEDED: 'EDIT',
 };
@@ -58,7 +83,17 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   AUTH_LOGOUT: 'Signed out',
   USER_CREATED: 'User created',
   USER_UPDATED: 'User edited',
+  CLIENT_CREATED: 'Client created',
+  CLIENT_UPDATED: 'Client edited',
+  CLIENT_LOCATION_CREATED: 'Risk location added',
+  CLIENT_LOCATION_UPDATED: 'Risk location edited',
+  INSURER_CREATED: 'Insurer created',
+  INSURER_UPDATED: 'Insurer edited',
   MASTER_IMPORTED: 'Master imported',
+  OCCUPANCY_CREATED: 'Occupancy added',
+  OCCUPANCY_UPDATED: 'Occupancy edited',
+  PINCODE_CREATED: 'Pincode added',
+  PINCODE_UPDATED: 'Pincode edited',
   MASTER_ACTIVATED: 'Master activated',
   MASTER_SUPERSEDED: 'Master superseded',
 };
@@ -74,7 +109,12 @@ export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
 
 export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   user: 'User',
+  client: 'Client',
+  client_location: 'Risk location',
+  insurer: 'Insurer',
   master_version: 'Master version',
+  occupancy: 'Occupancy',
+  pincode: 'Pincode',
 };
 
 /** The actions of one kind, for filtering the log. */
@@ -140,7 +180,10 @@ export const AuditLogEntrySchema = z.object({
   kind: AuditKindSchema,
   entity: AuditEntitySchema,
   entityId: z.string().nullable(),
-  /** A readable name for the record: the user's email, or the master type and file name. */
+  /**
+   * A readable name for the record: the user's email, the client's name, the client and location
+   * names, the insurer and branch, or the master type and file name.
+   */
   entityLabel: z.string().nullable(),
   /** Who acted. Null for a failed sign-in and for an import run without --by. */
   actor: AuditActorSchema.nullable(),

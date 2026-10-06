@@ -19,3 +19,7 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .idea/
+
+# Master data is uploaded in the app (Import data page), never kept in the repository.
+/data/*.xlsx
+/samples/

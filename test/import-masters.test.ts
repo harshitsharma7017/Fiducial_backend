@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import { ImportStructureError } from '../src/modules/masters/import/iib-workbook.ts';
@@ -11,11 +13,16 @@ import { STANDARD_OCCUPANCIES, writeWorkbookFile } from './helpers/workbook.ts';
 
 useTestDatabase();
 
+/** The import options for a workbook file on disk. */
+async function source(path: string) {
+  return { data: await readFile(path), sourceFileName: basename(path) };
+}
+
 describe('importMasters', () => {
   it('rejects a workbook with the wrong layout and writes nothing', async () => {
     const before = await MasterVersionModel.countDocuments();
     const path = await writeWorkbookFile({ omitSheet: 'IIB Code' });
-    await expect(importMasters({ filePath: path })).rejects.toThrow(ImportStructureError);
+    await expect(importMasters({ ...(await source(path)) })).rejects.toThrow(ImportStructureError);
     expect(await MasterVersionModel.countDocuments()).toBe(before);
   });
 
@@ -23,7 +30,7 @@ describe('importMasters', () => {
     const admin = await createTestUser({ roles: ['ADMIN'] });
     const path = await writeWorkbookFile();
 
-    const draft = await importMasters({ filePath: path, importedBy: admin.id });
+    const draft = await importMasters({ ...(await source(path)), importedBy: admin.id });
     expect(draft.alreadyImported).toBe(false);
     expect(draft.activated).toBe(false);
     expect(draft.occupancyVersion).toMatchObject({
@@ -50,7 +57,7 @@ describe('importMasters', () => {
 
     // Running the same file again with --activate reuses the drafts and activates them.
     const activated = await importMasters({
-      filePath: path,
+      ...(await source(path)),
       activate: true,
       effectiveFrom: '2026-10-05',
     });
@@ -87,17 +94,17 @@ describe('importMasters', () => {
 
   it('is idempotent for the same file and never overwrites an existing version', async () => {
     const path = await writeWorkbookFile({}, 'Same.xlsx');
-    const first = await importMasters({ filePath: path });
+    const first = await importMasters({ ...(await source(path)) });
     const versionsAfterFirst = await MasterVersionModel.countDocuments();
 
-    const again = await importMasters({ filePath: path });
+    const again = await importMasters({ ...(await source(path)) });
     expect(again.alreadyImported).toBe(true);
     expect(again.occupancyVersion.id).toBe(first.occupancyVersion.id);
     expect(await MasterVersionModel.countDocuments()).toBe(versionsAfterFirst);
     expect(await OccupancyModel.countDocuments({ versionId: first.occupancyVersion.id })).toBe(5);
 
     // --force imports the same file again as new versions, leaving the earlier ones alone.
-    const forced = await importMasters({ filePath: path, force: true });
+    const forced = await importMasters({ ...(await source(path)), force: true });
     expect(forced.occupancyVersion.id).not.toBe(first.occupancyVersion.id);
     expect(await MasterVersionModel.countDocuments()).toBe(versionsAfterFirst + 2);
     expect(await OccupancyModel.countDocuments({ versionId: first.occupancyVersion.id })).toBe(5);
@@ -112,7 +119,7 @@ describe('importMasters', () => {
       status: 'ACTIVE',
     }).lean();
 
-    const result = await importMasters({ filePath: path, activate: true });
+    const result = await importMasters({ ...(await source(path)), activate: true });
     expect(result.occupancyVersion.status).toBe('ACTIVE');
 
     const superseded = await MasterVersionModel.findById(previousActive?._id).lean();
@@ -127,7 +134,7 @@ describe('importMasters', () => {
 
   it('stores the validation report on the version for review', async () => {
     const path = await writeWorkbookFile({}, 'Report.xlsx');
-    const result = await importMasters({ filePath: path, force: true });
+    const result = await importMasters({ ...(await source(path)), force: true });
     const version = await MasterVersionModel.findById(result.pincodeVersion.id).lean();
     expect(version?.report).toMatchObject({
       duplicates: [expect.objectContaining({ pincode: '207001' })],

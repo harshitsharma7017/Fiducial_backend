@@ -2,7 +2,7 @@
   "name": "fiducial-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Express API for the Fiducial Property Insurance Placement ERP",
+  "description": "Express API for Fiducial, the property insurance placement platform",
   "type": "module",
   "packageManager": "npm@11.6.2",
   "engines": {
@@ -40,6 +40,7 @@
     "express-rate-limit": "8.7.0",
     "helmet": "8.3.0",
     "jose": "6.2.12",
+    "jszip": "3.10.2",
     "mongoose": "9.10.4",
     "pino": "10.4.0",
     "pino-http": "11.0.0",

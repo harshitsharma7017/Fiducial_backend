@@ -29,6 +29,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   403: "Signed in, but the user's roles do not hold the permission this needs.",
   404: 'Not found.',
   409: 'Conflicts with the current state.',
+  413: 'The uploaded file is too large.',
   422: 'The master data cannot support this request.',
   429: 'Too many requests.',
   503: 'A dependency is unavailable.',
@@ -64,11 +65,11 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
   return generator.generateDocument({
     openapi: '3.1.0',
     info: {
-      title: 'Property Insurance Placement ERP API',
+      title: 'Fiducial API',
       version: API_VERSION,
       description:
-        'Foundation API: authentication, users, IIB occupancy and pincode masters, the Fire ' +
-        'rating check and the audit log. Money and rates are decimal strings; rates are per ' +
+        'Foundation API: authentication, users, IIB occupancy and pincode masters, clients ' +
+        'with their risk locations, the insurer master, the Fire rating check and the audit log. Money and rates are decimal strings; rates are per ' +
         'mille. Each route needs one permission; src/shared/permissions.ts maps roles to ' +
         'permissions.',
     },
@@ -78,6 +79,12 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       { name: 'Auth' },
       { name: 'Users', description: 'Admin only.' },
       { name: 'Masters', description: 'Reads always use the ACTIVE master version.' },
+      { name: 'Clients', description: 'The insured and their risk locations.' },
+      { name: 'Insurers', description: 'Insurer branches and the email addresses RFQs go to.' },
+      {
+        name: 'Imports',
+        description: 'Excel templates and bulk import of clients, locations and insurers.',
+      },
       { name: 'Rating' },
       { name: 'Audit', description: 'Admin only. Append-only: entries are never changed.' },
     ],

@@ -1,12 +1,14 @@
 # Product
 
-Property Insurance Placement ERP for **Fiducial**, an insurance broker, built by Spirezen Enterprises. It replaces an
+**Fiducial**: the property insurance placement platform for Fiducial Insurance Brokers, built by Spirezen
+Enterprises. The product is called Fiducial everywhere it is shown (not "Property ERP"). It replaces an
 Excel chain: Data Sheet → RFQ → insurer quotes → QCR (quote comparison report) → Placement Slip. A risk is entered
 once, rated from versioned master data, sent to insurers, compared and placed, with an audit trail.
 
 Two repositories: **Fiducial_backend** (this one: Express API, MongoDB, master data, rating) and
 **Fiducial_frontend** (Next.js web app). Source documents are in `docs/` (01 PRD to 07 format analysis); client
-workbooks are in `data/` (read-only inputs).
+formats are in `data/client-formats/` (reference only). No master or record data is kept in the repository: it is
+uploaded in the app (Import data page) and versioned or audited there.
 
 ## Users and roles
 
@@ -31,16 +33,20 @@ never a role. The table follows the PRD personas and waits for the client's conf
 - **Per mille (‰)**: all rates are per thousand of sum insured. Premium = sum insured × rate / 1000.
 - **STFI**: storm, tempest, flood, inundation. **EQ**: earthquake. **SI**: sum insured.
 - **Products**: BSUS / BLUS (Bharat Sookshma / Laghu Udyam Suraksha), SFSP, PAR. Thresholds are TBC.
+- **GSTIN**: 15-character GST registration number: state code, the holder's PAN, a registration number, "Z" and a
+  check character. Validated in `src/shared/gst.ts`; unique per client.
+- **Risk location**: an insured site of a client; its pincode (from the master) gives the state, district and EQ zone.
 - **Master version**: each import is a `DRAFT`; an admin activates it (`ACTIVE`); the previous one becomes
   `SUPERSEDED`. Lookups and ratings always read the ACTIVE version; old versions are kept.
 
 ## Current phase: foundation
 
 Built: auth with lockout, roles and permissions, user admin, append-only audit with a read API (who, when, old and
-new values), master import with a validation report, occupancy and pincode lookups, the Fire rating check, and the
-web app shell.
+new values), master import with a validation report, occupancy and pincode lookups, the Fire rating check, the client
+master with GSTIN validation and any number of risk locations per client (M-1, M-2), the insurer master with RFQ
+email addresses (M-3), and the web app shell.
 
-Not built yet: clients, risks, Data Sheet, RFQ, quotes, QCR, placement slips, document generation, email.
+Not built yet: risks, Data Sheet, RFQ, quotes, QCR, placement slips, document generation, email.
 
 ## Rules
 

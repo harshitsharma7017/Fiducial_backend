@@ -5,7 +5,7 @@ export async function connectDatabase(uri: string): Promise<typeof mongoose> {
   // Unknown fields in filters are dropped rather than passed to MongoDB.
   mongoose.set('strictQuery', true);
   return mongoose.connect(uri, {
-    appName: 'property-erp-api',
+    appName: 'fiducial-api',
     autoIndex: false,
     serverSelectionTimeoutMS: 10_000,
   });

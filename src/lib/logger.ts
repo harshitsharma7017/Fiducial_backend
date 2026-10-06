@@ -20,7 +20,7 @@ const REDACT_PATHS = [
 export function createLogger(options: { level: LevelWithSilent; name?: string }): Logger {
   return pino({
     level: options.level,
-    base: { service: options.name ?? 'property-erp-api' },
+    base: { service: options.name ?? 'fiducial-api' },
     timestamp: pino.stdTimeFunctions.isoTime,
     formatters: { level: (label) => ({ level: label }) },
     redact: { paths: REDACT_PATHS, censor: '[REDACTED]' },
