@@ -3,7 +3,7 @@
 Express API for the Property Insurance Placement ERP that Spirezen Enterprises is building for Fiducial. The ERP will
 replace the Excel chain of Data Sheet → RFQ → insurer quotes → QCR → Placement Slip.
 
-This repository holds the **foundation**: authentication and roles, user admin, an append-only audit log, IIB
+This repository holds the **foundation**: authentication, role-based permissions, user admin, an append-only audit log with a read API, IIB
 occupancy and pincode masters with a validated import, and the Fire rating check. The web app lives in the separate
 **Fiducial_frontend** repository and calls this API through its own server-side routes.
 
@@ -66,7 +66,7 @@ src/
   server.ts, app.ts     HTTP server and the Express app
   config/               Zod-validated environment
   lib/                  logger, errors, decimal helpers, db, OpenAPI registry
-  middleware/           request id, auth, roles, validation, error handling
+  middleware/           request id, auth, permissions, validation, error handling
   modules/              auth, users, audit, masters (with import/), rating, health
   scripts/              seed-admin.ts, import-masters.ts
   shared/               API contracts (Zod schemas, enums, formatters), copied to the frontend
@@ -92,9 +92,29 @@ it fails there until the frontend is synced.
 - **Errors** always have the shape `{ message, code, details? }`; every response has an `X-Request-Id`.
 - **Master data is versioned.** Imports create DRAFT versions; activation supersedes the previous version in one
   transaction. Lookups and ratings read only the ACTIVE version, and each rating returns the versions and values used.
-- **Audit**: sign-ins (success and failure), sign-outs, user changes, master imports and activations are written to
-  the append-only `audit_logs` collection, in the same transaction as the change.
-- **Roles**: `ADMIN`, `MANAGER`, `ACCOUNT_MANAGER`, `PLACEMENT_EXEC`, `READ_ONLY`. ADMIN passes every role check.
+- **Audit**: sign-ins (success and failure), sign-outs, user creates and edits, master imports, activations and the
+  versions they supersede are written to the append-only `audit_logs` collection, in the same transaction as the
+  change. Each entry keeps the record's fields before and after, so `GET /api/v1/audit` (Admin) can show who changed
+  what, when, and each field's old and new value. It filters by kind (sign-in, create, edit, approve, send, export),
+  by record and by who acted. Nothing is sent or exported yet; those entries arrive with RFQ email and document
+  export.
+- **Roles and permissions**: each route needs one permission (`requirePermission()`), and
+  `src/shared/permissions.ts` maps roles to permissions for both repos:
+
+  | Permission                                                      | Admin | Approver | Relationship Manager | Underwriting / Placement | Read-only |
+  | --------------------------------------------------------------- | ----- | -------- | -------------------- | ------------------------ | --------- |
+  | `proposals.view`, `masters.view`                                | yes   | yes      | yes                  | yes                      | yes       |
+  | `rating.use`, `proposals.export`                                | yes   | yes      | yes                  | yes                      |           |
+  | `proposals.edit`, `proposals.send`                              | yes   |          | yes                  | yes                      |           |
+  | `proposals.create`                                              | yes   |          | yes                  |                          |           |
+  | `proposals.approve`                                             | yes   | yes      |                      |                          |           |
+  | `masters.manage`, `users.manage`, `settings.view`, `audit.view` | yes   |          |                      |                          |           |
+
+  The role codes are `ADMIN`, `MANAGER` (Approver), `ACCOUNT_MANAGER` (Relationship Manager), `PLACEMENT_EXEC`
+  (Underwriting / Placement) and `READ_ONLY`. A user with several roles holds the union. The proposal permissions
+  guard the web app's screens until the proposals API exists. The client still has to confirm the table (see
+  `docs/OPEN_ITEMS.md`).
+
 - Every endpoint is documented with `documentRoute()` next to its route.
 
 ## Security notes

@@ -1,10 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import type { MasterVersion, MasterVersionStats } from '../../../shared/index.ts';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
+  type MasterVersion,
+  type MasterVersionStats,
+} from '../../../shared/index.ts';
 import { Types } from 'mongoose';
 import { toDecimal128 } from '../../../lib/decimal.ts';
-import { AUDIT_ACTIONS, AUDIT_ENTITIES } from '../../audit/audit.model.ts';
 import { writeAudit } from '../../audit/audit.service.ts';
 import { MasterVersionModel, type MasterVersionDoc } from '../master-version.model.ts';
 import { toMasterVersionDto } from '../masters.mapper.ts';

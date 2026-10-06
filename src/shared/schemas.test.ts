@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { LoginRequestSchema } from './auth.ts';
 import { OccupancySearchQuerySchema } from './masters.ts';
 import { FireRatingRequestSchema, SumInsuredSchema } from './rating.ts';
-import { hasRole } from './roles.ts';
 import { CreateUserRequestSchema, UpdateUserRequestSchema } from './users.ts';
 
 describe('LoginRequestSchema', () => {
@@ -90,13 +89,5 @@ describe('OccupancySearchQuerySchema', () => {
     expect(OccupancySearchQuerySchema.parse({}).limit).toBe(20);
     expect(OccupancySearchQuerySchema.parse({ limit: '50' }).limit).toBe(50);
     expect(OccupancySearchQuerySchema.safeParse({ limit: '500' }).success).toBe(false);
-  });
-});
-
-describe('hasRole', () => {
-  it('lets ADMIN pass every check', () => {
-    expect(hasRole(['ADMIN'], 'MANAGER')).toBe(true);
-    expect(hasRole(['MANAGER'], 'MANAGER')).toBe(true);
-    expect(hasRole(['READ_ONLY'], 'MANAGER', 'ACCOUNT_MANAGER')).toBe(false);
   });
 });

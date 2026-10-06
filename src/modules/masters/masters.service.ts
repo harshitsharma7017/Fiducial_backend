@@ -1,4 +1,6 @@
 import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
   ERROR_CODES,
   formatDate,
   type MasterType,
@@ -13,7 +15,6 @@ import {
 import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
-import { AUDIT_ACTIONS, AUDIT_ENTITIES } from '../audit/audit.model.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { MasterVersionModel, type MasterVersionDoc } from './master-version.model.ts';
 import { toMasterVersionDto, toOccupancyDto, toPincodeDto } from './masters.mapper.ts';
@@ -210,6 +211,29 @@ async function activateInSession(
       { $set: { status: 'SUPERSEDED', effectiveTo: effectiveFrom } },
       { session },
     );
+    // The superseded version changes too, so it gets its own entry with old and new values.
+    await writeAudit(
+      {
+        userId: options.actorId,
+        action: AUDIT_ACTIONS.MASTER_SUPERSEDED,
+        entity: AUDIT_ENTITIES.MASTER_VERSION,
+        entityId: current._id.toHexString(),
+        before: {
+          type: current.type,
+          status: current.status,
+          effectiveTo: current.effectiveTo?.toISOString() ?? null,
+          supersededBy: null,
+        },
+        after: {
+          type: current.type,
+          status: 'SUPERSEDED',
+          effectiveTo: effectiveFrom.toISOString(),
+          supersededBy: target._id.toHexString(),
+        },
+        requestId: options.requestId,
+      },
+      session,
+    );
   }
 
   const activated = await MasterVersionModel.findOneAndUpdate(
@@ -234,10 +258,16 @@ async function activateInSession(
       action: AUDIT_ACTIONS.MASTER_ACTIVATED,
       entity: AUDIT_ENTITIES.MASTER_VERSION,
       entityId: activated._id.toHexString(),
-      before: { status: 'DRAFT', activeVersionId: current?._id.toHexString() ?? null },
+      // The same fields on both sides, so the log shows each one's old and new value.
+      before: {
+        type: target.type,
+        status: target.status,
+        effectiveFrom: target.effectiveFrom?.toISOString() ?? null,
+        supersededVersionId: null,
+      },
       after: {
-        status: 'ACTIVE',
         type: activated.type,
+        status: activated.status,
         effectiveFrom: effectiveFrom.toISOString(),
         supersededVersionId: current?._id.toHexString() ?? null,
       },

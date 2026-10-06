@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { errorHandler } from '../src/middleware/error-handler.ts';
-import { requireRole } from '../src/middleware/require-role.ts';
+import { requirePermission } from '../src/middleware/require-permission.ts';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import {
   DEFAULT_PASSWORD,
@@ -49,27 +49,31 @@ describe('role enforcement on /api/v1/users', () => {
   });
 });
 
-describe('requireRole', () => {
-  const probe = (roles: Role[]) => {
+describe('requirePermission', () => {
+  const probe = (roles: Role[] | null) => {
     const probeApp = express();
     probeApp.use((req, _res, next) => {
-      req.user = { id: 'x', email: 'x@example.com', name: 'X', roles };
+      if (roles) req.user = { id: 'x', email: 'x@example.com', name: 'X', roles };
       next();
     });
-    probeApp.get('/managers', requireRole('MANAGER'), (_req, res) => {
+    probeApp.get('/approve', requirePermission('proposals.approve'), (_req, res) => {
       res.json({ ok: true });
     });
     probeApp.use(errorHandler());
-    return request(probeApp).get('/managers');
+    return request(probeApp).get('/approve');
   };
 
-  it('lets ADMIN pass every role check', async () => {
+  it('lets Admin pass every permission check', async () => {
     await probe(['ADMIN']).expect(200);
   });
 
-  it('allows the named role and forbids others', async () => {
+  it('allows roles that hold the permission and forbids the others', async () => {
     await probe(['MANAGER']).expect(200);
     await probe(['READ_ONLY', 'ACCOUNT_MANAGER']).expect(403);
+  });
+
+  it('needs a signed-in user', async () => {
+    await probe(null).expect(401);
   });
 });
 

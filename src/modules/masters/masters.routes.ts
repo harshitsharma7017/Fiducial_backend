@@ -14,7 +14,7 @@ import {
 import { Router } from 'express';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser, requireRole } from '../../middleware/require-role.ts';
+import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import {
   activateMasterVersion,
@@ -26,7 +26,7 @@ import {
 
 export function createMastersRouter(options: { jwtSecret: string }): Router {
   const router = Router();
-  router.use(authenticate(options));
+  router.use(authenticate(options), requirePermission('masters.view'));
 
   router.get(
     '/occupancies',
@@ -58,7 +58,7 @@ export function createMastersRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/versions/:id/activate',
-    requireRole('ADMIN'),
+    requirePermission('masters.manage'),
     route(
       { params: MasterVersionIdParamsSchema, body: ActivateMasterVersionRequestSchema },
       async ({ params, body }, req, res) => {
@@ -89,7 +89,7 @@ documentRoute({
       description: 'A page of occupancies',
       content: { 'application/json': { schema: OccupancyListResponseSchema } },
     },
-    ...errorResponses(400, 401, 409),
+    ...errorResponses(400, 401, 403, 409),
   },
 });
 
@@ -104,7 +104,7 @@ documentRoute({
       description: 'The occupancy',
       content: { 'application/json': { schema: OccupancySchema } },
     },
-    ...errorResponses(400, 401, 404, 409),
+    ...errorResponses(400, 401, 403, 404, 409),
   },
 });
 
@@ -120,7 +120,7 @@ documentRoute({
       description: 'The pincode',
       content: { 'application/json': { schema: PincodeRecordSchema } },
     },
-    ...errorResponses(400, 401, 404, 409),
+    ...errorResponses(400, 401, 403, 404, 409),
   },
 });
 
@@ -136,7 +136,7 @@ documentRoute({
       description: 'A page of master versions',
       content: { 'application/json': { schema: MasterVersionListResponseSchema } },
     },
-    ...errorResponses(400, 401),
+    ...errorResponses(400, 401, 403),
   },
 });
 
@@ -146,8 +146,9 @@ documentRoute({
   tags: ['Masters'],
   summary: 'Activate a DRAFT master version',
   description:
-    'Admin only. The current ACTIVE version of the same type becomes SUPERSEDED. effectiveFrom ' +
-    'defaults to now and cannot be in the future. Audited.',
+    'Needs masters.manage (Admin). The current ACTIVE version of the same type becomes ' +
+    'SUPERSEDED. effectiveFrom defaults to now and cannot be in the future. Both versions are ' +
+    'audited with their old and new values.',
   request: {
     params: MasterVersionIdParamsSchema,
     body: {

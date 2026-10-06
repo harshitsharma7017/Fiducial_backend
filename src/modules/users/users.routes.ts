@@ -9,13 +9,13 @@ import {
 import { Router } from 'express';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser, requireRole } from '../../middleware/require-role.ts';
+import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { createUser, listUsers, updateUser } from './users.service.ts';
 
 export function createUsersRouter(options: { jwtSecret: string }): Router {
   const router = Router();
-  router.use(authenticate(options), requireRole('ADMIN'));
+  router.use(authenticate(options), requirePermission('users.manage'));
 
   router.get(
     '/',
@@ -50,7 +50,7 @@ documentRoute({
   path: '/api/v1/users',
   tags: ['Users'],
   summary: 'List users',
-  description: 'Admin only. Cursor pagination: pass nextCursor back as cursor.',
+  description: 'Needs users.manage (Admin). Cursor pagination: pass nextCursor back as cursor.',
   request: { query: UserListQuerySchema },
   responses: {
     200: {
@@ -66,7 +66,8 @@ documentRoute({
   path: '/api/v1/users',
   tags: ['Users'],
   summary: 'Create a user',
-  description: 'Admin only. Passwords need at least 12 characters. Audited.',
+  description:
+    'Needs users.manage (Admin). Passwords need at least 12 characters. Audited with every new value.',
   request: { body: { content: { 'application/json': { schema: CreateUserRequestSchema } } } },
   responses: {
     201: {
@@ -83,8 +84,9 @@ documentRoute({
   tags: ['Users'],
   summary: "Change a user's name or roles, or deactivate them",
   description:
-    'Admin only. You cannot deactivate yourself or remove your own Admin role. Deactivation ' +
-    "takes effect on the user's next request. Audited with before and after values.",
+    'Needs users.manage (Admin). You cannot deactivate yourself or remove your own Admin role. ' +
+    "Deactivation and role changes take effect on the user's next request. Audited with before " +
+    'and after values.',
   request: {
     params: UserIdParamsSchema,
     body: { content: { 'application/json': { schema: UpdateUserRequestSchema } } },

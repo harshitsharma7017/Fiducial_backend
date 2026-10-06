@@ -1,4 +1,6 @@
 import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
   ERROR_CODES,
   type CreateUserRequest,
   type Paginated,
@@ -10,7 +12,6 @@ import { Types, mongo, type QueryFilter } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { conflict, notFound, type AppError } from '../../lib/errors.ts';
 import type { AuthenticatedUser } from '../../middleware/auth.ts';
-import { AUDIT_ACTIONS, AUDIT_ENTITIES } from '../audit/audit.model.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { hashPassword } from '../auth/password.ts';
 import { toUserAuditView, toUserDto } from './user.mapper.ts';

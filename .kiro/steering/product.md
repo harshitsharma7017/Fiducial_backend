@@ -10,13 +10,16 @@ workbooks are in `data/` (read-only inputs).
 
 ## Users and roles
 
-| Role              | Who                                                              |
-| ----------------- | ---------------------------------------------------------------- |
-| `ADMIN`           | Operations / admin: users, master data. Passes every role check. |
-| `MANAGER`         | Reviews and approves RFQs and placements                         |
-| `ACCOUNT_MANAGER` | Owns the client; creates risks, reviews the QCR                  |
-| `PLACEMENT_EXEC`  | Prepares RFQs, chases and enters insurer quotes                  |
-| `READ_ONLY`       | Views only                                                       |
+| Role code         | Label                    | Who                                                             |
+| ----------------- | ------------------------ | --------------------------------------------------------------- |
+| `ADMIN`           | Admin                    | Operations / admin: users, master data. Holds every permission. |
+| `MANAGER`         | Approver                 | Reviews and approves RFQs and placements                        |
+| `ACCOUNT_MANAGER` | Relationship Manager     | Owns the client; creates risks, sends RFQs, reviews the QCR     |
+| `PLACEMENT_EXEC`  | Underwriting / Placement | Prepares RFQs, chases and enters insurer quotes                 |
+| `READ_ONLY`       | Read-only                | Views only                                                      |
+
+What each role may do is one table, `src/shared/permissions.ts` (also in the README). Routes check a permission,
+never a role. The table follows the PRD personas and waits for the client's confirmation (`docs/OPEN_ITEMS.md`, Q12).
 
 ## Domain terms
 
@@ -33,8 +36,9 @@ workbooks are in `data/` (read-only inputs).
 
 ## Current phase: foundation
 
-Built: auth with lockout, roles, user admin, append-only audit, master import with a validation report, occupancy
-and pincode lookups, the Fire rating check, and the web app shell.
+Built: auth with lockout, roles and permissions, user admin, append-only audit with a read API (who, when, old and
+new values), master import with a validation report, occupancy and pincode lookups, the Fire rating check, and the
+web app shell.
 
 Not built yet: clients, risks, Data Sheet, RFQ, quotes, QCR, placement slips, document generation, email.
 

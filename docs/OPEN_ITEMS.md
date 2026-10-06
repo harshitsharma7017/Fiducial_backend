@@ -7,15 +7,16 @@ and Open Questions).
 
 ## To be confirmed (TBC)
 
-| ID    | Item                                                                                                                                                      | Question    | Effect until answered                                                                                        |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
-| OI-01 | Add-on premium formulas for the 15 Bharat Sookshma / Laghu covers, and the four "some % on total sum insured" placeholders                                | Q02, Q28    | No add-on is priced. `calculateAddOnPremiums()` returns nothing; total before tax equals the base premium.   |
-| OI-02 | What "policy rate" means: Fire only, Fire + STFI, or Fire + STFI + EQ (+ Terrorism)                                                                       | Q03         | The rating returns the sum of the component rates it priced (Fire + STFI + EQ, plus Terrorism when entered). |
-| OI-03 | Pricing for the 13 non-fire sections (Burglary, FLOP, Money and so on)                                                                                    | Q23         | Not priced by the engine; expected to come from insurer quotes.                                              |
-| OI-04 | Terrorism rate source (the master has risk types but no rates)                                                                                            | Q05         | Terrorism is priced only when the user enters a rate.                                                        |
-| OI-05 | Product thresholds (BSUS up to 5 Cr, BLUS above 5 Cr to 50 Cr, SFSP above 50 Cr, PAR above 5 Cr): total or per-location SI? When is PAR chosen over BLUS? | Q04         | No product recommendation is made.                                                                           |
-| OI-06 | Meaning of Preferred / Referred / Declined, and which occupancies fall in each (only a legend in column V, no colours)                                    | Q06, MST-08 | No occupancy status is stored or enforced.                                                                   |
-| OI-07 | Is the IIB rate a fixed rate or a benchmark insurers discount or load? The master is labelled 2019 rates; is it current?                                  | Q07, Q08    | Rates are shown as in the master.                                                                            |
+| ID    | Item                                                                                                                                                      | Question    | Effect until answered                                                                                                                                                                                                               |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OI-01 | Add-on premium formulas for the 15 Bharat Sookshma / Laghu covers, and the four "some % on total sum insured" placeholders                                | Q02, Q28    | No add-on is priced. `calculateAddOnPremiums()` returns nothing; total before tax equals the base premium.                                                                                                                          |
+| OI-02 | What "policy rate" means: Fire only, Fire + STFI, or Fire + STFI + EQ (+ Terrorism)                                                                       | Q03         | The rating returns the sum of the component rates it priced (Fire + STFI + EQ, plus Terrorism when entered).                                                                                                                        |
+| OI-03 | Pricing for the 13 non-fire sections (Burglary, FLOP, Money and so on)                                                                                    | Q23         | Not priced by the engine; expected to come from insurer quotes.                                                                                                                                                                     |
+| OI-04 | Terrorism rate source (the master has risk types but no rates)                                                                                            | Q05         | Terrorism is priced only when the user enters a rate.                                                                                                                                                                               |
+| OI-05 | Product thresholds (BSUS up to 5 Cr, BLUS above 5 Cr to 50 Cr, SFSP above 50 Cr, PAR above 5 Cr): total or per-location SI? When is PAR chosen over BLUS? | Q04         | No product recommendation is made.                                                                                                                                                                                                  |
+| OI-06 | Meaning of Preferred / Referred / Declined, and which occupancies fall in each (only a legend in column V, no colours)                                    | Q06, MST-08 | No occupancy status is stored or enforced.                                                                                                                                                                                          |
+| OI-07 | Is the IIB rate a fixed rate or a benchmark insurers discount or load? The master is labelled 2019 rates; is it current?                                  | Q07, Q08    | Rates are shown as in the master.                                                                                                                                                                                                   |
+| OI-08 | Who may do what in each role, and who approves RFQs and placements                                                                                        | Q12         | `src/shared/permissions.ts` follows the PRD personas: Approvers approve; Relationship Managers create proposals and send RFQs; Underwriting / Placement staff edit and send; Read-only users only view. The table is in the README. |
 
 ## Decisions taken in this phase (please confirm)
 
@@ -25,6 +26,15 @@ and Open Questions).
 - Rates are displayed with at least 2 decimals but never rounded for display: 0.075 and 0.225 appear in the master and
   are shown in full.
 - GST is 18% by default (`GST_RATE_PERCENT`).
+- The role names in the plan (F-2) are labels on the existing role codes, so stored users keep their roles: `MANAGER`
+  shows as Approver, `ACCOUNT_MANAGER` as Relationship Manager and `PLACEMENT_EXEC` as Underwriting / Placement.
+- Read-only users cannot run the Fire rate check (`rating.use`): it is a working tool, not a view. Every other role
+  can.
+- Admins hold every permission, including approve, as `ADMIN` passed every role check before. If approvals must come
+  from someone other than the person who prepared the work, Admin has to lose `proposals.approve`.
+- The audit log (`GET /api/v1/audit`) is for Admins only, because it holds every user's sign-in email and IP address.
+- Activating a master version writes two audit entries, each with old and new values: the new version's activation
+  and the previous version's supersession.
 
 ## Data issues found during import
 

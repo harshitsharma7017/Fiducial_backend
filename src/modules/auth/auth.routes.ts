@@ -9,7 +9,7 @@ import { rateLimit } from 'express-rate-limit';
 import type { Env } from '../../config/env.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser } from '../../middleware/require-role.ts';
+import { currentUser } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { getUser } from '../users/users.service.ts';
 import { login, recordLogout } from './auth.service.ts';

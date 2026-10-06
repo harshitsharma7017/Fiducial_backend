@@ -23,8 +23,12 @@
   schemas there, not inline. After changing them, run `npm run shared:sync` in Fiducial_frontend.
 - **Errors** are `{ message, code, details? }`; throw the `AppError` helpers from `src/lib/errors.ts`.
 - **Document every endpoint** with `documentRoute()` next to the route (OpenAPI at `/api/docs`).
-- **Audit** with `writeAudit()`; pass the transaction session so the change and its audit entry commit together.
-  `audit_logs` is append-only.
+- **Permissions**: guard every non-public route with `requirePermission('<area>.<action>')` after `authenticate()`.
+  Roles map to permissions only in `src/shared/permissions.ts`; never check a role code in a route.
+- **Audit** every create, edit, approve, send and export with `writeAudit()`; pass the transaction session so the
+  change and its audit entry commit together. Add the action to `src/shared/audit.ts` with a kind and a label, and
+  snapshot the same fields in `before` and `after` (null `before` for a create) so the log shows each field's old and
+  new value. Never put secrets (password hashes, tokens) in a snapshot. `audit_logs` is append-only.
 - **Masters**: read through `getActiveVersion()`; never modify an imported version's rows.
 - **Runtime**: Node runs the TypeScript directly (type stripping), so use erasable syntax only (no enums or
   namespaces), `import type` for types and `.ts` extensions in relative imports.

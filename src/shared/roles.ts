@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/**
+ * Role codes as stored on users. The codes stay stable; the labels follow the names in the plan
+ * (feature F-2). What each role may do is defined once, in permissions.ts.
+ */
 export const ROLES = [
   'ADMIN',
   'MANAGER',
@@ -13,14 +17,8 @@ export type Role = z.infer<typeof RoleSchema>;
 
 export const ROLE_LABELS: Record<Role, string> = {
   ADMIN: 'Admin',
-  MANAGER: 'Manager',
-  ACCOUNT_MANAGER: 'Account Manager',
-  PLACEMENT_EXEC: 'Placement Executive',
+  MANAGER: 'Approver',
+  ACCOUNT_MANAGER: 'Relationship Manager',
+  PLACEMENT_EXEC: 'Underwriting / Placement',
   READ_ONLY: 'Read-only',
 };
-
-/** True when the user holds any of the allowed roles. ADMIN passes every check. */
-export function hasRole(userRoles: readonly Role[], ...allowed: readonly Role[]): boolean {
-  if (userRoles.includes('ADMIN')) return true;
-  return allowed.some((role) => userRoles.includes(role));
-}

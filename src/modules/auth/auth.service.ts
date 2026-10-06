@@ -1,4 +1,6 @@
 import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
   LOGIN_LOCKOUT_MINUTES,
   LOGIN_MAX_FAILED_ATTEMPTS,
   type LoginRequest,
@@ -7,7 +9,6 @@ import {
 import { withTransaction } from '../../lib/db.ts';
 import { invalidCredentials } from '../../lib/errors.ts';
 import type { AuthenticatedUser } from '../../middleware/auth.ts';
-import { AUDIT_ACTIONS, AUDIT_ENTITIES } from '../audit/audit.model.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { toUserDto } from '../users/user.mapper.ts';
 import { UserModel, type UserDoc } from '../users/user.model.ts';

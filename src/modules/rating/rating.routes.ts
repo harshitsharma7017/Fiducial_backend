@@ -2,12 +2,13 @@ import { FireRatingRequestSchema, FireRatingResponseSchema } from '../../shared/
 import { Router } from 'express';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
+import { requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { rateFire } from './rating.service.ts';
 
 export function createRatingRouter(options: { jwtSecret: string; gstRatePercent: string }): Router {
   const router = Router();
-  router.use(authenticate(options));
+  router.use(authenticate(options), requirePermission('rating.use'));
 
   router.post(
     '/fire',
@@ -25,6 +26,7 @@ documentRoute({
   tags: ['Rating'],
   summary: 'Indicative Fire premium',
   description:
+    'Needs rating.use (every role except Read-only). ' +
     'Prices fire (IIB rate), STFI (occupancy minimum), earthquake (pincode rate for the ' +
     "occupancy's Fire risk type) and, when a rate is supplied, terrorism. Amounts are rupees " +
     'to 2 decimals (ROUND_HALF_UP); rates are per mille. Add-on premiums are not priced yet. ' +
@@ -36,6 +38,6 @@ documentRoute({
       description: 'Premium breakdown, warnings and the master snapshot used',
       content: { 'application/json': { schema: FireRatingResponseSchema } },
     },
-    ...errorResponses(400, 401, 409, 422),
+    ...errorResponses(400, 401, 403, 409, 422),
   },
 });

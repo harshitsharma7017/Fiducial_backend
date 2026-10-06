@@ -86,6 +86,21 @@ describe('API documentation', () => {
         'GET /api/v1/masters/versions',
         'POST /api/v1/masters/versions/{id}/activate',
         'POST /api/v1/rating/fire',
+        'GET /api/v1/audit',
+      ].sort(),
+    );
+    // The audit query's filters are documented as query parameters.
+    const auditParameters = (
+      response.body.paths['/api/v1/audit'].get.parameters as Array<{ name: string; in: string }>
+    ).map((parameter) => `${parameter.in}:${parameter.name}`);
+    expect(auditParameters.sort()).toEqual(
+      [
+        'query:kind',
+        'query:entity',
+        'query:entityId',
+        'query:actorId',
+        'query:limit',
+        'query:cursor',
       ].sort(),
     );
     expect(response.body.components.securitySchemes.bearerAuth).toMatchObject({ scheme: 'bearer' });

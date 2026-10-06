@@ -11,7 +11,8 @@ let seeded: Awaited<ReturnType<typeof seedMasters>>;
 
 beforeAll(async () => {
   seeded = await seedMasters();
-  token = (await tokenFor(app, ['READ_ONLY'])).token;
+  // Rating needs rating.use, which every role except Read-only holds.
+  token = (await tokenFor(app, ['PLACEMENT_EXEC'])).token;
 });
 
 const rate = (body: Record<string, unknown>) =>

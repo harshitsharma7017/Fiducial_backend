@@ -1,14 +1,17 @@
-import { hasRole, type Role } from '../shared/index.ts';
+import { can, type Permission } from '../shared/index.ts';
 import type { Request, RequestHandler } from 'express';
 import { forbidden, unauthenticated } from '../lib/errors.ts';
 import type { AuthenticatedUser } from './auth.ts';
 
-/** Allows the request when the user holds any of the roles. ADMIN passes every check. */
-export function requireRole(...roles: Role[]): RequestHandler {
+/**
+ * Allows the request when the user's roles hold the permission (src/shared/permissions.ts).
+ * Mount it after authenticate(); the roles are the ones re-read from the database.
+ */
+export function requirePermission(permission: Permission): RequestHandler {
   return (req, _res, next) => {
     const user = req.user;
     if (!user) throw unauthenticated();
-    if (!hasRole(user.roles, ...roles)) throw forbidden();
+    if (!can(user.roles, permission)) throw forbidden();
     next();
   };
 }

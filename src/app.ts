@@ -9,6 +9,7 @@ import { buildOpenApiDocument } from './lib/openapi.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import { notFound } from './middleware/not-found.ts';
 import { requestId } from './middleware/request-id.ts';
+import { createAuditRouter } from './modules/audit/audit.routes.ts';
 import { createAuthRouter } from './modules/auth/auth.routes.ts';
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
@@ -69,6 +70,7 @@ export function createApp({ config, logger }: AppDependencies): Express {
   api.use('/users', createUsersRouter(jwt));
   api.use('/masters', createMastersRouter(jwt));
   api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);
 
   const openApiDocument = buildOpenApiDocument();
