@@ -10,7 +10,8 @@ import { Schema, model, type Types } from 'mongoose';
 export interface MailLogDoc {
   _id: Types.ObjectId;
   proposalId: Types.ObjectId;
-  insurerId: Types.ObjectId;
+  /** Null for a mail to the insured (the QCR). */
+  insurerId: Types.ObjectId | null;
   kind: EmailTemplateKind;
   /** The send it belongs to (made by the web app); a repeated send is answered from the log. */
   sendId: string;
@@ -35,7 +36,7 @@ export interface MailLogDoc {
 const mailLogSchema = new Schema<MailLogDoc>(
   {
     proposalId: { type: Schema.Types.ObjectId, ref: 'Proposal', required: true },
-    insurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', required: true },
+    insurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', default: null },
     kind: { type: String, enum: EMAIL_TEMPLATE_KINDS, required: true },
     sendId: { type: String, required: true },
     from: { type: String, required: true },

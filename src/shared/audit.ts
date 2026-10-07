@@ -46,6 +46,18 @@ export const AUDIT_ACTIONS = {
   CATALOG_ITEM_UPDATED: 'CATALOG_ITEM_UPDATED',
   TEMPLATE_UPLOADED: 'TEMPLATE_UPLOADED',
   ADDON_FAVOURITES_UPDATED: 'ADDON_FAVOURITES_UPDATED',
+  QUOTE_RECORDED: 'QUOTE_RECORDED',
+  QUOTE_ATTACHMENT_UPLOADED: 'QUOTE_ATTACHMENT_UPLOADED',
+  QCR_SAVED: 'QCR_SAVED',
+  QCR_APPROVED: 'QCR_APPROVED',
+  QCR_DOWNLOADED: 'QCR_DOWNLOADED',
+  QCR_EMAILED: 'QCR_EMAILED',
+  QCR_EMAIL_FAILED: 'QCR_EMAIL_FAILED',
+  RFQ_EDITED: 'RFQ_EDITED',
+  RFQ_GENERATED: 'RFQ_GENERATED',
+  RFQ_SUBMITTED: 'RFQ_SUBMITTED',
+  RFQ_APPROVED: 'RFQ_APPROVED',
+  RFQ_RETURNED: 'RFQ_RETURNED',
 } as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -113,6 +125,18 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   CATALOG_ITEM_UPDATED: 'EDIT',
   TEMPLATE_UPLOADED: 'EDIT',
   ADDON_FAVOURITES_UPDATED: 'EDIT',
+  QUOTE_RECORDED: 'CREATE',
+  QUOTE_ATTACHMENT_UPLOADED: 'CREATE',
+  QCR_SAVED: 'EDIT',
+  QCR_APPROVED: 'APPROVE',
+  QCR_DOWNLOADED: 'EXPORT',
+  QCR_EMAILED: 'SEND',
+  QCR_EMAIL_FAILED: 'SEND',
+  RFQ_EDITED: 'EDIT',
+  RFQ_GENERATED: 'CREATE',
+  RFQ_SUBMITTED: 'EDIT',
+  RFQ_APPROVED: 'APPROVE',
+  RFQ_RETURNED: 'APPROVE',
 };
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -149,6 +173,18 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CATALOG_ITEM_UPDATED: 'Master row edited',
   TEMPLATE_UPLOADED: 'Document template uploaded',
   ADDON_FAVOURITES_UPDATED: 'Add-on favourites changed',
+  QUOTE_RECORDED: 'Quote recorded',
+  QUOTE_ATTACHMENT_UPLOADED: 'Quote attachment uploaded',
+  QCR_SAVED: 'QCR edited',
+  QCR_APPROVED: 'QCR approved',
+  QCR_DOWNLOADED: 'QCR downloaded',
+  QCR_EMAILED: 'QCR emailed to the insured',
+  QCR_EMAIL_FAILED: 'QCR email failed',
+  RFQ_EDITED: 'RFQ edited',
+  RFQ_GENERATED: 'RFQ version generated',
+  RFQ_SUBMITTED: 'RFQ submitted for approval',
+  RFQ_APPROVED: 'RFQ approved',
+  RFQ_RETURNED: 'RFQ returned',
 };
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {

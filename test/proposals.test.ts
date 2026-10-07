@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';
 import { seedMasters } from './helpers/masters.ts';
+import { approveRfq } from './helpers/rfq.ts';
 
 useTestDatabase();
 const app = createTestApp();
@@ -643,6 +644,14 @@ describe('new-business proposals', () => {
       .set(bearer(manager))
       .send(dataSheet({ sections: [] }))
       .expect(200);
+    // R-5: not before the RFQ is approved.
+    const unapproved = await request(app)
+      .post(`/api/v1/proposals/${proposal.id}/rfq/sent`)
+      .set(bearer(placement))
+      .send({ insurerIds: [insurers[0]] })
+      .expect(409);
+    expect(unapproved.body.code).toBe('RFQ_NOT_APPROVED');
+    await approveRfq(app, proposal.id as string, manager, approver);
     const sent = await request(app)
       .post(`/api/v1/proposals/${proposal.id}/rfq/sent`)
       .set(bearer(placement))

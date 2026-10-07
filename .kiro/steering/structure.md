@@ -19,6 +19,12 @@ src/
                          RFQ workbook (rfq-workbook.ts built-in, rfq-template.ts fills the client's template,
                          rfq-document.ts picks one and the format), marking it sent; per-year reference counter;
                          rfq-mail.service.ts (preview, send, remind), insurer-status.ts (responses)
+    rfq/                 the RFQ's edits, versions (files and case kept per version) and approval;
+                         rfq-approval.ts decides whether it may be sent
+    qcr/                 the QCR (QC-1 to QC-6): qcr-build.ts (comparison, pure), qcr-template.ts (fills the
+                         client's QCR), qcr-workbook.ts (built-in), approval by fingerprint, mail to the insured
+    quotes/              insurers' quotes (Q-1 to Q-5): versions per insurer and option, attachments (mail or PDF
+                         as proof), totals and deviations from shared/quotes.ts, what the QCR takes
     documents/           document engine: uploaded templates (one per kind), excel-template.ts (find by label,
                          insert rows keeping merges and print areas), sheet-pdf.ts (sheet to A4 PDF, letterhead)
     email-templates/     RFQ and Reminder email templates: model, default wording (seeded at startup), routes

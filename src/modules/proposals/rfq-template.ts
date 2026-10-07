@@ -1,7 +1,9 @@
 import {
   ANNEXURE_SECTIONS,
   BURGLARY_BASIS_LABELS,
+  BURGLARY_BASIS_PERCENT,
   hasBasis,
+  wholeRupees,
   FIRE_GROUP_LABELS,
   FIRE_GROUPS,
   RISK_DETAIL_FIELDS,
@@ -31,6 +33,7 @@ import {
   labelKey,
   printColumns,
   printRows,
+  restyle,
   setValue,
   sheetNamed,
 } from '../documents/excel-template.ts';
@@ -44,7 +47,7 @@ import type { RfqMasters } from './rfq-workbook.ts';
 // so rows moved in the template are still found. Rows are added only where the case needs more
 // (a seventh Fire line, extra annexure items, notes); the template's sample answers are cleared.
 
-const SHEETS = {
+export const SHEETS = {
   premium: 'premium details',
   schedule: 'schedule',
   risk: 'risk details',
@@ -53,7 +56,7 @@ const SHEETS = {
 } as const;
 
 /** The section rows of "premium details", by their label. */
-const PREMIUM_ROWS = new Map<string, 'FIRE' | OtherSection>([
+export const PREMIUM_ROWS = new Map<string, 'FIRE' | OtherSection>([
   ['fire', 'FIRE'],
   ['burglary', 'BURGLARY'],
   ['fire floater', 'FIRE_FLOATER'],
@@ -70,6 +73,23 @@ const PREMIUM_ROWS = new Map<string, 'FIRE' | OtherSection>([
   ['boiler', 'BOILER_PRESSURE_PLANT'],
   ['public liability', 'PUBLIC_LIABILITY'],
 ]);
+
+/**
+ * The Fire lines of a schedule, by the words their description starts with: the RFQ and the QCR
+ * word and order them differently ("Office equipments and all..." / "Office Equipments
+ * including...").
+ */
+const FIRE_LINE_WORDS: Record<FireGroup, RegExp> = {
+  BUILDING: /^all building/,
+  FFF: /^furniture/,
+  OFFICE_EQUIPMENT: /^office equipment/,
+  ELECTRICAL: /^entire power/,
+  PLANT_MACHINERY: /^all types of plant and machinery/,
+  STOCKS: /^all types of stock/,
+  OTHER: /^any other item/,
+};
+/** "Total Sum Insured - Fire & Allied Perils" (RFQ), "Total Sum Insured - Fire" (QCR). */
+const FIRE_TOTAL_LABEL = 'Total Sum Insured - Fire';
 
 /** The schedule's section titles (start of the label), longest first. */
 const SCHEDULE_TITLES: readonly [string, OtherSection][] = [
@@ -120,16 +140,16 @@ const SCHEDULE_LABELS = [
   'Occupancy',
 ] as const;
 
-const amount = (value: string | null | undefined) =>
+export const amount = (value: string | null | undefined) =>
   value === null || value === undefined ? null : Number(value);
 
 /** "2026-27" for a policy starting in 2026. */
-function policyYear(date: string): string {
+export function policyYear(date: string): string {
   const year = Number(date.slice(0, 4));
   return `${year}-${String((year + 1) % 100).padStart(2, '0')}`;
 }
 
-function dayBefore(date: string): string {
+export function dayBefore(date: string): string {
   const day = new Date(`${date}T00:00:00Z`);
   day.setUTCDate(day.getUTCDate() - 1);
   return day.toISOString().slice(0, 10);
@@ -182,7 +202,9 @@ export function checkRfqTemplate(workbook: ExcelJS.Workbook): TemplateCheck {
   };
 }
 
-function findLocationHeader(sheet: ExcelJS.Worksheet): { row: number; column: number } | null {
+export function findLocationHeader(
+  sheet: ExcelJS.Worksheet,
+): { row: number; column: number } | null {
   for (let row = 1; row <= Math.min(sheet.rowCount, 20); row += 1) {
     const column = findColumn(sheet, row, 'Location 1');
     if (column) return { row, column };
@@ -190,12 +212,45 @@ function findLocationHeader(sheet: ExcelJS.Worksheet): { row: number; column: nu
   return null;
 }
 
-interface FillContext {
+/** What every sheet filler reads. The QCR (qcr-template.ts) fills its schedule with these too. */
+export interface FillContext {
   record: ProposalRecord;
   client: ClientDoc;
   masters: RfqMasters;
   renewal: boolean;
+  /** The document being filled: its standard notes are those marked for it. */
+  document: 'RFQ' | 'QCR';
+  /** The premium details heading edited on the RFQ (R-2), if any. */
+  title?: string;
   existingOf: (code: string) => { sumInsured: string | null; premium: string | null } | undefined;
+}
+
+/** The fill context of a case: the Existing column's sums and the policy software's premiums. */
+export function fillContextOf(
+  record: ProposalRecord,
+  client: ClientDoc,
+  masters: RfqMasters,
+  document: FillContext['document'],
+): FillContext {
+  const premiums = new Map(
+    record.existingPolicy?.sections.map((section) => [section.code, section.premium]) ?? [],
+  );
+  const sums = new Map<string, string | null>([
+    ['FIRE', record.fire.existing],
+    ...record.sections.map((section) => [section.code, section.existing] as const),
+  ]);
+  return {
+    record,
+    client,
+    masters,
+    renewal: record.type === 'EXISTING',
+    document,
+    existingOf: (code) => {
+      const sumInsured = sums.get(code) ?? null;
+      const premium = premiums.get(code as never) ?? null;
+      return sumInsured === null && premium === null ? undefined : { sumInsured, premium };
+    },
+  };
 }
 
 function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
@@ -213,7 +268,7 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
     sheet,
     1,
     1,
-    renewal ? `RFQ FOR THE RENEWAL OF ${year}` : `RFQ FOR NEW BUSINESS ${year}`,
+    context.title ?? (renewal ? `RFQ FOR THE RENEWAL OF ${year}` : `RFQ FOR NEW BUSINESS ${year}`),
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });
   if (insuredRow) setValue(sheet, insuredRow, 1, `Insured Name: ${record.client.name}`);
@@ -356,7 +411,7 @@ function scheduleBlocks(
   );
 }
 
-function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
+export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   const { record, client, masters, renewal } = context;
   const existing = record.existing;
   // Working notes outside the printed columns are the client's, not the insurer's.
@@ -383,7 +438,12 @@ function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       const place = location.location;
       if (!place) return null;
       const a = place.address;
-      return `${place.name}: ${[a.line1, a.line2, a.city, `${a.state} ${a.pincode}`].filter(Boolean).join(', ')}`;
+      // With several locations, each one's sum insured, as the client's template asks.
+      const total =
+        record.locations.length > 1
+          ? ` — Fire sum insured ₹${formatIndianNumber(wholeRupees(location.fireTotal), 0)}`
+          : '';
+      return `${place.name}: ${[a.line1, a.line2, a.city, `${a.state} ${a.pincode}`].filter(Boolean).join(', ')}${total}`;
     })
     .filter((line): line is string => line !== null);
   const period =
@@ -450,13 +510,11 @@ function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   };
   const fireRow = findRow(sheet, 'Fire & Allied Perils') ?? header + 1;
   const totalRowOf = () =>
-    findRow(sheet, 'Total Sum Insured - Fire & Allied Perils', { column: 2, from: fireRow }) ??
-    fireRow + 7;
+    findRow(sheet, FIRE_TOTAL_LABEL, { column: 2, from: fireRow, prefix: true }) ?? fireRow + 7;
   const findLine = (group: FireGroup) => {
-    const key = labelKey(FIRE_GROUP_LABELS[group]).slice(0, 25);
     const totalRow = totalRowOf();
     for (let row = fireRow + 1; row < totalRow; row += 1) {
-      if (labelKey(cellText(sheet.getCell(row, 2))).startsWith(key)) return row;
+      if (FIRE_LINE_WORDS[group].test(labelKey(cellText(sheet.getCell(row, 2))))) return row;
     }
     return null;
   };
@@ -486,7 +544,7 @@ function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       );
     }
   }
-  const total = findRow(sheet, 'Total Sum Insured - Fire & Allied Perils', { column: 2 });
+  const total = findRow(sheet, FIRE_TOTAL_LABEL, { column: 2, from: fireRow, prefix: true });
   if (total)
     writeFigures(
       total,
@@ -612,8 +670,26 @@ function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     });
   }
 
-  // The standard notes for the RFQ, above the broker's footer.
-  const notes = masters.notes.filter((note) => note.active && note.onRfq);
+  // Above the broker's footer: what the Data Sheet adds (hypothecation, stock in the open, its notes
+  // for the insurers), then the standard notes for the document.
+  const name = (location: (typeof record.locations)[number]) =>
+    location.location?.name ?? 'Location';
+  const notes = [
+    ...record.locations.flatMap((location) =>
+      location.hypothecation
+        ? [{ text: `Hypothecation (${name(location)}): ${location.hypothecation}` }]
+        : [],
+    ),
+    ...record.locations.flatMap((location) =>
+      location.openStock
+        ? [{ text: `Stock kept at open space (${name(location)}): ${location.openStock}` }]
+        : [],
+    ),
+    ...(record.notes ? [{ text: `Notes for the insurers: ${record.notes}` }] : []),
+    ...masters.notes.filter(
+      (note) => note.active && (context.document === 'QCR' ? note.onQcr : note.onRfq),
+    ),
+  ];
   const area = printRows(sheet);
   const footer =
     findRow(sheet, 'Fiducial', { prefix: true, from: area.from, to: area.to }) ??
@@ -632,15 +708,23 @@ function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       const note = notes[offset - 1];
       setValue(sheet, row, printed.from, offset === 0 ? 'NOTE:' : (note?.text ?? ''));
       const cell = sheet.getCell(row, printed.from);
-      cell.font = { ...cell.font, bold: offset === 0, color: { argb: 'FF000000' } };
-      cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+      restyle(cell, {
+        font: { ...cell.font, bold: offset === 0, color: { argb: 'FF000000' } },
+        alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+      });
       if (note) sheet.getRow(row).height = Math.max(15, Math.ceil(note.text.length / 120) * 15);
     }
   }
 }
 
-/** "Total Sum Insured - Burglary on 1st loss basis 50% of sum insured" and the like. */
-const BASIS_PREFIX = labelKey('Total Sum Insured - Burglary on');
+/** "Total Sum Insured - Burglary on 1st loss basis 50% of sum insured", "... Burglary Floater on 100%". */
+const BASIS_PREFIX = labelKey('Total Sum Insured - Burglary');
+
+/** The percentage a basis row stands for: "on 100%" is the full value, "basis 25%" a first loss. */
+function basisPercentOf(label: string): number | null {
+  const match = /(?:basis|on)\s+(\d+)\b/.exec(labelKey(label));
+  return match ? Number(match[1]) : null;
+}
 
 /**
  * The row of a section's basis (C-3), the template's optional rows otherwise hidden. A basis the
@@ -657,9 +741,14 @@ function basisRow(
   }
   const last = rows[rows.length - 1];
   if (last === undefined) return null;
-  const label = `Total Sum Insured - Burglary on ${BURGLARY_BASIS_LABELS[basis]}`;
-  let chosen = rows.find((row) => labelKey(cellText(sheet.getCell(row, 2))) === labelKey(label));
+  const percent = BURGLARY_BASIS_PERCENT[basis];
+  let chosen = rows.find((row) => basisPercentOf(cellText(sheet.getCell(row, 2))) === percent);
   if (chosen === undefined) {
+    // Worded like the template's last basis row, with this basis's percentage.
+    const lastLabel = cellText(sheet.getCell(last, 2));
+    const label = /\d+\s*%/.test(lastLabel)
+      ? lastLabel.replace(/\d+(?=\s*%)/, String(percent))
+      : `Total Sum Insured - Burglary on ${BURGLARY_BASIS_LABELS[basis]}`;
     insertRows(sheet, last + 1, 1, last);
     setValue(sheet, last + 1, 1, cellText(sheet.getCell(last, 1)));
     setValue(sheet, last + 1, 2, label);
@@ -693,7 +782,7 @@ function writeCovers(
   }
 }
 
-function fillRiskDetails(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
+export function fillRiskDetails(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
   const header = findLocationHeader(sheet);
   if (!header) return;
   const lastColumn = Math.max(sheet.columnCount, header.column + record.locations.length);
@@ -753,7 +842,7 @@ function fillClaims(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
   });
 }
 
-function fillAnnexure(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
+export function fillAnnexure(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
   // Bottom up, so rows added to one block do not move the blocks still to fill.
   const codes = (Object.keys(ANNEXURE_SECTIONS) as AnnexureSection[]).toReversed();
   for (const code of codes) {
@@ -814,7 +903,7 @@ interface AddonLine {
  * add-on master (the template's lists stay when it has none). Once the case has chosen a product
  * or add-ons, the lists of other products are hidden (the sheets stay in the file).
  */
-function fillAddonSheets(
+export function fillAddonSheets(
   workbook: ExcelJS.Workbook,
   addons: readonly CatalogItem<'addons'>[],
   record: ProposalRecord,
@@ -897,25 +986,9 @@ export function fillRfqTemplate(
   record: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters & { addons: readonly CatalogItem<'addons'>[] },
+  options: { title?: string } = {},
 ): void {
-  const premiums = new Map(
-    record.existingPolicy?.sections.map((section) => [section.code, section.premium]) ?? [],
-  );
-  const sums = new Map<string, string | null>([
-    ['FIRE', record.fire.existing],
-    ...record.sections.map((section) => [section.code, section.existing] as const),
-  ]);
-  const context: FillContext = {
-    record,
-    client,
-    masters,
-    renewal: record.type === 'EXISTING',
-    existingOf: (code) => {
-      const sumInsured = sums.get(code) ?? null;
-      const premium = premiums.get(code as never) ?? null;
-      return sumInsured === null && premium === null ? undefined : { sumInsured, premium };
-    },
-  };
+  const context = { ...fillContextOf(record, client, masters, 'RFQ'), title: options.title };
   const sheet = (name: string) => sheetNamed(workbook, name);
   const premium = sheet(SHEETS.premium);
   if (premium) fillPremiumDetails(premium, context);

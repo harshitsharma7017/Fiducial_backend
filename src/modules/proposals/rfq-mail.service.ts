@@ -1,4 +1,6 @@
 import {
+  PDF_CONTENT_TYPE,
+  XLSX_CONTENT_TYPE,
   AUDIT_ACTIONS,
   AUDIT_ENTITIES,
   ERROR_CODES,
@@ -46,7 +48,7 @@ import {
   recordOf,
   type Actor,
 } from './proposals.service.ts';
-import { rfqFileFor } from './rfq-document.ts';
+import { approvedRfq, bufferOf, rfqStanding } from '../rfq/rfq-approval.ts';
 
 export interface MailDeps {
   transport: MailTransport;
@@ -167,13 +169,27 @@ async function senderOf(actor: Actor): Promise<{ name: string; email: string }> 
   return { name: user.name, email: user.email };
 }
 
-/** The RFQ file, kept once for every mail of the send; refused over the attachment limit. */
+/**
+ * The approved RFQ version's file (R-5: an unapproved RFQ is not sent), kept once for every mail
+ * of the send; refused over the attachment limit.
+ */
 async function rfqAttachment(
   record: ProposalRecord,
   format: MailAttachmentFormat,
-  deps: MailDeps,
 ): Promise<StoredAttachment> {
-  const file = await rfqFileFor(record, format, deps.defaultGstRatePercent);
+  const version = await approvedRfq(record);
+  const file =
+    format === 'pdf'
+      ? {
+          fileName: `${version.fileName}.pdf`,
+          contentType: PDF_CONTENT_TYPE,
+          data: bufferOf(version.pdf),
+        }
+      : {
+          fileName: `${version.fileName}.xlsx`,
+          contentType: XLSX_CONTENT_TYPE,
+          data: bufferOf(version.xlsx),
+        };
   if (!fitsAttachmentLimit(file.data.length)) {
     throw unprocessable(
       ERROR_CODES.RFQ_ATTACHMENT_TOO_LARGE,
@@ -441,8 +457,14 @@ export async function previewMails(
         ...render(template, record, recipient, dueDate, sender.name),
       };
     }),
-    attachmentName: input.kind === 'RFQ' ? `RFQ-${record.reference}.${input.format}` : null,
+    attachmentName: input.kind === 'RFQ' ? `${await rfqFileName(record)}.${input.format}` : null,
   };
+}
+
+/** The name of the RFQ file the mails carry: the latest version's. */
+async function rfqFileName(record: ProposalRecord): Promise<string> {
+  const { latest } = await rfqStanding(record);
+  return latest ? latest.fileName : `RFQ-${record.reference}`;
 }
 
 /**
@@ -482,7 +504,7 @@ export async function sendRfq(
     const [template, sender, attachment] = await Promise.all([
       getEmailTemplate('RFQ'),
       senderOf(actor),
-      rfqAttachment(record, input.format, deps),
+      rfqAttachment(record, input.format),
     ]);
     for (const recipient of pending) {
       const insurerId = recipient.insurer.insurerId;
@@ -556,7 +578,7 @@ export async function sendReminder(
     const [template, sender, attachment] = await Promise.all([
       getEmailTemplate('REMINDER'),
       senderOf(actor),
-      input.attachRfq ? rfqAttachment(record, input.format, deps) : Promise.resolve(null),
+      input.attachRfq ? rfqAttachment(record, input.format) : Promise.resolve(null),
     ]).catch(async (error: unknown) => {
       await release(doc, insurerId);
       throw error;

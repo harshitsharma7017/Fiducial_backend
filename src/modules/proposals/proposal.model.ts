@@ -67,7 +67,8 @@ export interface ProposalInsurerDoc {
   /** The last mail sent or tried for this insurer (the full mail is in mail_log). */
   lastMail?: {
     id: Types.ObjectId;
-    kind: EmailTemplateKind;
+    /** An insurer only ever gets these two; the QCR goes to the insured. */
+    kind: Exclude<EmailTemplateKind, 'QCR'>;
     at: Date;
     result: MailResult;
   } | null;

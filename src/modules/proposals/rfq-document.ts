@@ -1,7 +1,10 @@
 import {
   PDF_CONTENT_TYPE,
   XLSX_CONTENT_TYPE,
+  NO_RFQ_EDITS,
+  applyRfqEdits,
   isAnnexureSection,
+  type RfqEdits,
   type CatalogItem,
   type ProposalRecord,
 } from '../../shared/index.ts';
@@ -14,6 +17,7 @@ import { openTemplate, saveWorkbook, sheetNamed } from '../documents/excel-templ
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
+import { RfqStateModel } from '../rfq/rfq.model.ts';
 import { fillRfqTemplate } from './rfq-template.ts';
 import { buildRfqWorkbookDocument, type RfqMasters } from './rfq-workbook.ts';
 
@@ -37,7 +41,7 @@ const PDF_ORDER = [
   'claim details',
 ];
 
-function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): ExcelJS.Worksheet[] {
+export function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): ExcelJS.Worksheet[] {
   const anyAnnexure = record.sections.some(
     (section) => section.included && isAnnexureSection(section.code) && section.annexure.length > 0,
   );
@@ -62,20 +66,24 @@ function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): ExcelJS.
  * template's letterhead.
  */
 export async function rfqDocument(
-  record: ProposalRecord,
+  caseRecord: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters & { addons: readonly CatalogItem<'addons'>[] },
   format: 'xlsx' | 'pdf',
+  edits: RfqEdits = NO_RFQ_EDITS,
 ): Promise<RfqDocument> {
+  // R-2: the edits made on the RFQ replace the Data Sheet's values on it.
+  const record = applyRfqEdits(caseRecord, edits);
+  const title = edits.title ?? undefined;
   const template = await templateFile('RFQ');
   let workbook: ExcelJS.Workbook;
   let letterhead: Letterhead = { logo: null, address: null };
   if (template) {
     workbook = await openTemplate(template.data);
     letterhead = letterheadOf(workbook);
-    fillRfqTemplate(workbook, record, client, masters);
+    fillRfqTemplate(workbook, record, client, masters, { title });
   } else {
-    workbook = buildRfqWorkbookDocument(record, client, masters);
+    workbook = buildRfqWorkbookDocument(record, client, masters, { title });
   }
   const layout: RfqLayout = template ? 'template' : 'built-in';
   const name = `RFQ-${record.reference}`;
@@ -108,6 +116,7 @@ export async function rfqFileFor(
   record: ProposalRecord,
   format: 'xlsx' | 'pdf',
   defaultGstRatePercent: string,
+  edits?: RfqEdits,
 ): Promise<RfqDocument> {
   const client = await ClientModel.findById(record.client.id).lean();
   if (!client) throw notFound('The proposal’s client no longer exists');
@@ -119,5 +128,12 @@ export async function rfqFileFor(
     catalogItems('notes'),
     catalogItems('addons'),
   ]);
-  return rfqDocument(record, client, { gstRatePercent, products, sections, notes, addons }, format);
+  const saved = edits ?? (await RfqStateModel.findOne({ proposalId: record.id }).lean())?.edits;
+  return rfqDocument(
+    record,
+    client,
+    { gstRatePercent, products, sections, notes, addons },
+    format,
+    saved ?? NO_RFQ_EDITS,
+  );
 }

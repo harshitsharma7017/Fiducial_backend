@@ -24,6 +24,9 @@ import {
   type ExistingPolicySource,
 } from './modules/proposals/existing-policy-source.ts';
 import { createProposalsRouter } from './modules/proposals/proposals.routes.ts';
+import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
+import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
+import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
 import { createMailRouter } from './modules/mail/mail.routes.ts';
 import { transportFromEnv, type MailTransport } from './modules/mail/transport.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
@@ -118,6 +121,12 @@ export function createApp({
       policySource,
       mailTransport: transport,
     }),
+  );
+  api.use('/proposals', createQuotesRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use('/proposals', createRfqRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use(
+    '/proposals',
+    createQcrRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT, mailTransport: transport }),
   );
   api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));

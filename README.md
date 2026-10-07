@@ -259,6 +259,76 @@ format }`. One mail per insurer, To its chosen addresses only (its RFQ addresses
   mail server accepted a mail but before it was recorded, that insurer's claim expires after 10 minutes and a retry
   could mail it twice. Tests use a fake transport and never reach an SMTP server.
 
+## The RFQ: versions and approval (R-1, R-2, R-5)
+
+`/api/v1/proposals/{id}/rfq/...` (module `src/modules/rfq/`, contracts in `src/shared/rfq.ts`).
+
+- **From the case** (R-1): premium details, schedule, risk details, claims, annexure and add-ons all come from the
+  Data Sheet. In the client's template the schedule also carries each location's sum insured (several locations),
+  hypothecation, stock kept in the open and the notes for insurers, under NOTE.
+- **Edits** (R-2, `PUT /{id}/rfq/edits`, `proposals.edit`): the heading, the notes for insurers, risk details per
+  location and the claims table can be changed on the RFQ only; the Data Sheet is untouched. `applyRfqEdits()` and
+  `rfqTitleOf()` (shared) apply them the same way in the preview and the files.
+- **Versions** (R-2, `POST /{id}/rfq/versions`): each generation is the next version (v1, v2, v3), keeping the Excel
+  and PDF made then and the case as it was (`GET /{id}/rfq/versions/{v}`, `/file?format=`). A version whose case or
+  edits changed since is "stale".
+- **Approval** (R-5): the latest version is submitted (`proposals.edit`), then approved or returned with comments
+  (`proposals.approve`); every step is kept with its comment, audited and on the case's activity.
+- **Sending**: emailing the RFQ, marking it sent outside the app, and reminders that attach it need the latest
+  version approved and not stale (409 `RFQ_NOT_APPROVED` otherwise); mails attach that version's stored file
+  (`RFQ-PRP-2026-0001-v2.pdf`). `GET /{id}/rfq?format=` still downloads the RFQ as it is now, with the edits.
+
+## Insurers' quotes (Q-1 to Q-5)
+
+`/api/v1/proposals/{id}/quotes` and the routes under it (module `src/modules/quotes/`, contracts in
+`src/shared/quotes.ts`). Reading needs `proposals.view`; recording `proposals.edit`.
+
+- **Options**: an insurer quotes each option the RFQ asked for — a renewal's existing sum insured, Proposed Option 1,
+  and Option 2 when the case has one (the RFQ's premium details blocks).
+- **Entry** (Q-1, `POST /{id}/insurers/{insurerId}/quotes`): the premium of Fire (with and without terrorism) and of
+  every other section included, optionally the sum insured the insurer quoted on. Net, GST at the case's own rate
+  (kept from its creation) and total are worked out exactly to the paisa, with terrorism and, when Fire was quoted
+  without it, without (`quoteTotals()`, shared with the web app).
+- **Terms and deviations** (Q-2): each add-on and cover the RFQ asked for accepted or declined, deductibles,
+  capacity %, conditions and validity date. `quoteDeviations()` lists where the quote departs from the RFQ: a section
+  not quoted, a different sum insured, an add-on declined or not answered, capacity under 100%, validity ending
+  before the policy starts.
+- **Proof** (Q-3): the insurer's mail (.eml, .msg), a PDF or a picture of it is uploaded first
+  (`POST /{id}/insurers/{insurerId}/quote-attachments?fileName=`, raw body up to 10 MB, type checked from the
+  content; kept in `quote_attachments`), and every quote needs at least one attachment of its own insurer (400
+  otherwise). `GET /{id}/quote-attachments/{attachmentId}` downloads one.
+- **Versions** (Q-4): each save is a new, unchangeable version (collection `quotes`, unique per insurer, option and
+  version); from the second on the reason is required. Every version is listed, newest first.
+- **Declined** (Q-5): `PUT /{id}/insurers/{insurerId}/response` with `DECLINED` now needs the reason (`note`).
+- **For the QCR**: `qcr` in the quotes response is each option's latest version from the insurers that have not
+  declined. Recording a quote moves the insurer to Quoted. Every quote and upload is audited (`QUOTE_RECORDED`,
+  `QUOTE_ATTACHMENT_UPLOADED`).
+
+## The QCR (QC-1 to QC-6)
+
+`/api/v1/proposals/{id}/qcr` (module `src/modules/qcr/`, contracts in `src/shared/qcr.ts`).
+
+- **Comparison** (QC-1, QC-2): built each time from the case and the latest version of every quote: per option
+  (a renewal's existing sum insured, Option 1, Option 2), the existing policy (last year's sums insured and the policy
+  software's premiums) and up to five insurers that have not declined. As in the client's QCR, premiums compare Fire
+  without terrorism (with terrorism when that is all an insurer quoted); net, GST at the case's rate and total come
+  from the quote entries exactly. The lowest total of each option is marked (ties all marked); `differences` lists
+  the topics where insurers differ (sections quoted, add-ons accepted, capacity, validity, deductibles, conditions).
+- **Broker's part** (QC-3, `PUT /{id}/qcr`, `proposals.edit`): recommended insurer and option, recommendation,
+  remarks, cheque / payment in favour of.
+- **Approval** (QC-6, `POST /{id}/qcr/approve`, `proposals.approve`): approves the fingerprint the approver saw (409
+  `QCR_CHANGED` if it changed, `QCR_INCOMPLETE` while a quote, the recommendation or the payment is missing). A new
+  quote version or an edit afterwards voids it.
+- **Export** (QC-4, QC-5, `GET /{id}/qcr/document?format=xlsx|pdf`, `proposals.export`): the client's QCR template
+  (Masters → Document templates) filled in place — premium details as the comparison with net, GST and total as
+  formulas carrying their values and the lowest total highlighted; payment, recommendation, remarks and coverage
+  differences below; the terrorism note with the extra premium of the recommended quote; the schedule, annexure,
+  risk details and add-on sheets as on the RFQ, plus each insurer's deductibles and conditions under Warranties /
+  Conditions. Options no insurer quoted are hidden. Without the template, a built-in layout.
+- **Send** (QC-6, `POST /{id}/qcr/email`, `proposals.send`): only an approved QCR unchanged since approval (409
+  `QCR_NOT_APPROVED`), as one mail to the chosen addresses from the QCR email template (Email templates), with the
+  QCR attached; logged in the case's mail log ("The insured") and audited.
+
 ## Product and cover masters (M-4 to M-9)
 
 `/api/v1/catalog` holds six masters, all data, none of it in the code. Their layouts (columns, rules) are in

@@ -10,6 +10,7 @@ import { fitsAttachmentLimit } from '../src/modules/mail/mail-log.service.ts';
 import { ProposalModel } from '../src/modules/proposals/proposal.model.ts';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';
 import { FakeTransport } from './helpers/mail.ts';
+import { approveRfq } from './helpers/rfq.ts';
 import { seedMasters } from './helpers/masters.ts';
 
 useTestDatabase();
@@ -150,6 +151,7 @@ async function readyCase(complete = true): Promise<string> {
         notes: '',
       })
       .expect(200);
+    await approveRfq(app, id, manager, admin);
   }
   return id;
 }
@@ -258,7 +260,7 @@ describe('emailing the RFQ', () => {
     expect(second?.text).toContain('Dear ,');
     expect(first?.replyTo).toBe(managerEmail);
     expect(first?.from).toBe('rfq@broker.example');
-    expect(first?.attachment?.fileName).toBe(`RFQ-${record.reference}.xlsx`);
+    expect(first?.attachment?.fileName).toBe(`RFQ-${record.reference}-v1.xlsx`);
     expect(first?.attachment?.data.subarray(0, 2).toString()).toBe('PK');
 
     const sentA = record.insurers.find(
@@ -303,7 +305,7 @@ describe('emailing the RFQ', () => {
       sentBy: 'Test User',
       transport: 'smtp',
       result: 'DELIVERED',
-      attachment: { fileName: `RFQ-${record.reference}.xlsx` },
+      attachment: { fileName: `RFQ-${record.reference}-v1.xlsx` },
     });
     const next = await request(app)
       .get(`/api/v1/proposals/${id}/mails?limit=1&cursor=${page.body.nextCursor as string}`)
@@ -336,7 +338,7 @@ describe('emailing the RFQ', () => {
       })
       .expect(200);
     expect(Buffer.compare(file.body as Buffer, first?.attachment?.data ?? Buffer.alloc(0))).toBe(0);
-    expect(file.headers['content-disposition']).toContain(`RFQ-${record.reference}.xlsx`);
+    expect(file.headers['content-disposition']).toContain(`RFQ-${record.reference}-v1.xlsx`);
     // Both mails point at one stored file.
     const entries = await MailLogModel.find({ proposalId: id }).lean();
     expect(new Set(entries.map((entry) => entry.attachmentId?.toHexString())).size).toBe(1);
@@ -507,7 +509,7 @@ describe('emailing the RFQ', () => {
       .expect(200);
     expect(response.body.mails).toHaveLength(2);
     expect(response.body.mails[0].text).toContain('Dear Asha Rao,');
-    expect(response.body.attachmentName).toMatch(/^RFQ-PRP-\d{4}-\d{4}\.pdf$/);
+    expect(response.body.attachmentName).toMatch(/^RFQ-PRP-\d{4}-\d{4}-v1\.pdf$/);
     expect(transport.calls).toBe(0);
     expect(await MailLogModel.countDocuments({ proposalId: id })).toBe(0);
   });

@@ -12,6 +12,9 @@ import { CounterModel, ProposalModel } from './modules/proposals/proposal.model.
 import { MasterVersionModel } from './modules/masters/master-version.model.ts';
 import { OccupancyModel } from './modules/masters/occupancy.model.ts';
 import { PincodeModel } from './modules/masters/pincode.model.ts';
+import { QcrModel } from './modules/qcr/qcr.model.ts';
+import { RfqStateModel, RfqVersionModel } from './modules/rfq/rfq.model.ts';
+import { QuoteAttachmentModel, QuoteModel } from './modules/quotes/quote.model.ts';
 import { UserModel } from './modules/users/user.model.ts';
 
 const MODELS = [
@@ -31,6 +34,11 @@ const MODELS = [
   EmailTemplateModel,
   MailLogModel,
   MailAttachmentModel,
+  QuoteModel,
+  QuoteAttachmentModel,
+  QcrModel,
+  RfqStateModel,
+  RfqVersionModel,
 ];
 
 /**

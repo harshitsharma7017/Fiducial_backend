@@ -95,11 +95,19 @@ describe('insurer statuses', () => {
 });
 
 describe('RecordInsurerResponseRequestSchema', () => {
-  it('takes an answer and an optional note', () => {
-    expect(RecordInsurerResponseRequestSchema.parse({ status: 'DECLINED', note: '  ' })).toEqual({
-      status: 'DECLINED',
-      note: null,
-    });
+  it('takes an answer and an optional note; a decline needs its reason (Q-5)', () => {
+    expect(
+      RecordInsurerResponseRequestSchema.safeParse({ status: 'DECLINED', note: '  ' }).success,
+    ).toBe(false);
+    expect(
+      RecordInsurerResponseRequestSchema.parse({ status: 'DECLINED', note: ' Outside appetite ' }),
+    ).toEqual({ status: 'DECLINED', note: 'Outside appetite' });
+    expect(RecordInsurerResponseRequestSchema.parse({ status: 'NO_RESPONSE', note: '  ' })).toEqual(
+      {
+        status: 'NO_RESPONSE',
+        note: null,
+      },
+    );
     expect(RecordInsurerResponseRequestSchema.parse({ status: 'QUOTED' })).toEqual({
       status: 'QUOTED',
     });

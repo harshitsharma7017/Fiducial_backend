@@ -91,6 +91,9 @@ describe('audit vocabulary', () => {
       'PINCODE_CREATED',
       'CATALOG_IMPORTED',
       'CATALOG_ITEM_CREATED',
+      'QUOTE_RECORDED',
+      'QUOTE_ATTACHMENT_UPLOADED',
+      'RFQ_GENERATED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -107,15 +110,25 @@ describe('audit vocabulary', () => {
       'CATALOG_ITEM_UPDATED',
       'TEMPLATE_UPLOADED',
       'ADDON_FAVOURITES_UPDATED',
+      'QCR_SAVED',
+      'RFQ_EDITED',
+      'RFQ_SUBMITTED',
     ]);
-    expect(auditActionsOfKind('APPROVE')).toEqual(['MASTER_ACTIVATED']);
+    expect(auditActionsOfKind('APPROVE')).toEqual([
+      'MASTER_ACTIVATED',
+      'QCR_APPROVED',
+      'RFQ_APPROVED',
+      'RFQ_RETURNED',
+    ]);
     expect(auditActionsOfKind('SEND')).toEqual([
       'RFQ_SENT',
       'RFQ_EMAILED',
       'RFQ_REMINDER_EMAILED',
       'RFQ_EMAIL_FAILED',
+      'QCR_EMAILED',
+      'QCR_EMAIL_FAILED',
     ]);
-    expect(auditActionsOfKind('EXPORT')).toEqual(['RFQ_DOWNLOADED']);
+    expect(auditActionsOfKind('EXPORT')).toEqual(['RFQ_DOWNLOADED', 'QCR_DOWNLOADED']);
   });
 });
 

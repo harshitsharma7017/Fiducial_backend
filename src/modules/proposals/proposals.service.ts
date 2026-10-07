@@ -40,6 +40,7 @@ import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import type { ExistingPolicyResult, ExistingPolicySource } from './existing-policy-source.ts';
+import { approvedRfq } from '../rfq/rfq-approval.ts';
 import { loadContext, toProposalAuditView, toProposalRecord } from './proposals.mapper.ts';
 import {
   CounterModel,
@@ -672,6 +673,8 @@ export async function markRfqSent(
       },
     );
   }
+  // R-5: an RFQ goes to insurers, by mail or by hand, only once approved.
+  await approvedRfq(before);
   const chosen = new Set(input.insurerIds);
   const unknown = input.insurerIds.filter(
     (insurerId) => !doc.insurers.some((insurer) => insurer.insurerId.toHexString() === insurerId),

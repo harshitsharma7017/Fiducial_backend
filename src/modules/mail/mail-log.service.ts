@@ -79,7 +79,7 @@ async function lookupsFor(docs: readonly MailLogDoc[]): Promise<MailLookups> {
   const ids = (values: Types.ObjectId[]) => [...new Set(values.map((id) => id.toHexString()))];
   const [insurers, users, attachments] = await Promise.all([
     InsurerModel.find(
-      { _id: { $in: ids(docs.map((doc) => doc.insurerId)) } },
+      { _id: { $in: ids(docs.flatMap((doc) => (doc.insurerId ? [doc.insurerId] : []))) } },
       { company: 1, branch: 1 },
     ).lean(),
     UserModel.find({ _id: { $in: ids(docs.map((doc) => doc.sentBy)) } }, { name: 1 }).lean(),
@@ -113,8 +113,10 @@ function toSummary(doc: MailLogDoc, lookups: MailLookups): MailSummary {
   return {
     id: doc._id.toHexString(),
     kind: doc.kind,
-    insurerId: doc.insurerId.toHexString(),
-    insurerName: lookups.insurers.get(doc.insurerId.toHexString()) ?? 'Unknown insurer',
+    insurerId: doc.insurerId?.toHexString() ?? null,
+    insurerName: doc.insurerId
+      ? (lookups.insurers.get(doc.insurerId.toHexString()) ?? 'Unknown insurer')
+      : 'The insured',
     to: [...doc.to],
     subject: doc.subject,
     sentBy: lookups.users.get(doc.sentBy.toHexString()) ?? 'Unknown user',
@@ -207,5 +209,5 @@ export async function mailsOfSend(
   const docs = await MailLogModel.find({ proposalId, sendId, kind }, { text: 0, html: 0 }).lean<
     MailLogDoc[]
   >();
-  return new Map(docs.map((doc) => [doc.insurerId.toHexString(), doc]));
+  return new Map(docs.map((doc) => [doc.insurerId?.toHexString() ?? '', doc]));
 }

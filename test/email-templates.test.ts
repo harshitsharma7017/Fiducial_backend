@@ -42,13 +42,13 @@ function save(kind: string, body: Record<string, unknown>) {
 }
 
 describe('email templates', () => {
-  it('seeds both kinds with the default wording, once', async () => {
+  it('seeds every kind with the default wording, once', async () => {
     await ensureEmailTemplates();
     await ensureEmailTemplates();
-    expect(await EmailTemplateModel.countDocuments()).toBe(2);
+    expect(await EmailTemplateModel.countDocuments()).toBe(3);
 
     const items = await listTemplates(readOnlyToken);
-    expect(items.map((item) => item.kind)).toEqual(['RFQ', 'REMINDER']);
+    expect(items.map((item) => item.kind)).toEqual(['RFQ', 'REMINDER', 'QCR']);
     expect(items[0]).toMatchObject({
       ...DEFAULT_EMAIL_TEMPLATES.RFQ,
       version: 1,
@@ -118,7 +118,7 @@ describe('email templates', () => {
   });
 
   it('rejects an unknown kind and an empty body', async () => {
-    await save('QCR', { subject: 'x', body: 'y', expectedVersion: 1 }).expect(400);
+    await save('PLACEMENT', { subject: 'x', body: 'y', expectedVersion: 1 }).expect(400);
     const empty = await save('REMINDER', { subject: 'x', body: '   ', expectedVersion: 1 });
     expect(empty.status).toBe(400);
     expect(empty.body.details).toEqual([expect.objectContaining({ path: 'body' })]);

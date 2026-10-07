@@ -184,6 +184,142 @@ const ENDPOINTS: Endpoint[] = [
         .send({ status: 'DECLINED' }),
   },
   {
+    name: 'GET /proposals/{id}/quotes',
+    permission: 'proposals.view',
+    call: (token) => request(app).get(`/api/v1/proposals/${NO_ID}/quotes`).set(bearer(token)),
+  },
+  {
+    name: 'POST /proposals/{id}/insurers/{insurerId}/quotes',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/insurers/${NO_ID}/quotes`)
+        .set(bearer(token))
+        .send({ option: 'P1', sections: [], attachmentIds: [] }),
+  },
+  {
+    name: 'POST /proposals/{id}/insurers/{insurerId}/quote-attachments',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/insurers/${NO_ID}/quote-attachments?fileName=q.pdf`)
+        .set(bearer(token))
+        .set('Content-Type', 'application/pdf')
+        .send(Buffer.from('%PDF-1.4')),
+  },
+  {
+    name: 'GET /proposals/{id}/quote-attachments/{attachmentId}',
+    permission: 'proposals.view',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/quote-attachments/${NO_ID}`).set(bearer(token)),
+  },
+  {
+    name: 'GET /proposals/{id}/rfq/versions',
+    permission: 'proposals.view',
+    call: (token) => request(app).get(`/api/v1/proposals/${NO_ID}/rfq/versions`).set(bearer(token)),
+  },
+  {
+    name: 'POST /proposals/{id}/rfq/versions',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app).post(`/api/v1/proposals/${NO_ID}/rfq/versions`).set(bearer(token)),
+  },
+  {
+    name: 'PUT /proposals/{id}/rfq/edits',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .put(`/api/v1/proposals/${NO_ID}/rfq/edits`)
+        .set(bearer(token))
+        .send({ title: null, notes: null, risk: [], claims: null }),
+  },
+  {
+    name: 'GET /proposals/{id}/rfq/versions/{version}',
+    permission: 'proposals.view',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/rfq/versions/1`).set(bearer(token)),
+  },
+  {
+    name: 'GET /proposals/{id}/rfq/versions/{version}/file',
+    permission: 'proposals.export',
+    call: (token) =>
+      request(app)
+        .get(`/api/v1/proposals/${NO_ID}/rfq/versions/1/file?format=pdf`)
+        .set(bearer(token)),
+  },
+  {
+    name: 'POST /proposals/{id}/rfq/versions/{version}/submit',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/rfq/versions/1/submit`)
+        .set(bearer(token))
+        .send({}),
+  },
+  {
+    name: 'POST /proposals/{id}/rfq/versions/{version}/approve',
+    permission: 'proposals.approve',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/rfq/versions/1/approve`)
+        .set(bearer(token))
+        .send({}),
+  },
+  {
+    name: 'POST /proposals/{id}/rfq/versions/{version}/return',
+    permission: 'proposals.approve',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/rfq/versions/1/return`)
+        .set(bearer(token))
+        .send({ comment: 'Fix it' }),
+  },
+  {
+    name: 'GET /proposals/{id}/qcr',
+    permission: 'proposals.view',
+    call: (token) => request(app).get(`/api/v1/proposals/${NO_ID}/qcr`).set(bearer(token)),
+  },
+  {
+    name: 'PUT /proposals/{id}/qcr',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app).put(`/api/v1/proposals/${NO_ID}/qcr`).set(bearer(token)).send({
+        recommendedInsurerId: null,
+        recommendedOption: null,
+        recommendation: null,
+        remarks: null,
+        paymentInFavourOf: null,
+      }),
+  },
+  {
+    name: 'POST /proposals/{id}/qcr/approve',
+    permission: 'proposals.approve',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/qcr/approve`)
+        .set(bearer(token))
+        .send({ fingerprint: 'x' }),
+  },
+  {
+    name: 'GET /proposals/{id}/qcr/document',
+    permission: 'proposals.export',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/qcr/document?format=pdf`).set(bearer(token)),
+  },
+  {
+    name: 'POST /proposals/{id}/qcr/email',
+    permission: 'proposals.send',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/qcr/email`)
+        .set(bearer(token))
+        .send({
+          sendId: '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f62',
+          to: ['a@b.example'],
+          format: 'pdf',
+        }),
+  },
+  {
     name: 'GET /proposals/{id}/mails',
     permission: 'proposals.view',
     call: (token) => request(app).get(`/api/v1/proposals/${NO_ID}/mails`).set(bearer(token)),

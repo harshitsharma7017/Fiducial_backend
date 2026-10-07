@@ -19,6 +19,19 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKind, { subject: strin
         '{{senderName}}',
       ].join('\n'),
     },
+    QCR: {
+      subject: 'Quote comparison: {{insuredName}} ({{reference}})',
+      body: [
+        'Dear {{contactName}},',
+        '',
+        'Please find attached the comparison of the quotes we received for {{insuredName}} for the policy period {{policyPeriod}}, with our recommendation.',
+        '',
+        'Kindly confirm the option you would like us to place.',
+        '',
+        'Regards,',
+        '{{senderName}}',
+      ].join('\n'),
+    },
     REMINDER: {
       subject: 'Reminder: request for quotation: {{insuredName}} ({{reference}})',
       body: [

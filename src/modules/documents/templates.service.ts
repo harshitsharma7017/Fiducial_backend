@@ -16,6 +16,7 @@ import { withTransaction } from '../../lib/db.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import type { Actor } from '../clients/clients.service.ts';
+import { checkQcrTemplate } from '../qcr/qcr-template.ts';
 import { checkRfqTemplate } from '../proposals/rfq-template.ts';
 import { UserModel } from '../users/user.model.ts';
 import { DocumentTemplateModel, type DocumentTemplateDoc } from './document-template.model.ts';
@@ -49,6 +50,7 @@ async function checkTemplate(
     );
   }
   if (kind === 'RFQ') return checkRfqTemplate(workbook);
+  if (kind === 'QCR') return checkQcrTemplate(workbook);
   const letterhead = letterheadOf(workbook);
   return {
     ok: true,

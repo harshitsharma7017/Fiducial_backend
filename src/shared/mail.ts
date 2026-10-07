@@ -15,12 +15,13 @@ import { MAX_PROPOSAL_INSURERS, ProposalRecordSchema, type ProposalRecord } from
 // preview is exactly what is sent.
 
 /** The two emails the app sends. */
-export const EMAIL_TEMPLATE_KINDS = ['RFQ', 'REMINDER'] as const;
+export const EMAIL_TEMPLATE_KINDS = ['RFQ', 'REMINDER', 'QCR'] as const;
 export const EmailTemplateKindSchema = z.enum(EMAIL_TEMPLATE_KINDS);
 export type EmailTemplateKind = z.infer<typeof EmailTemplateKindSchema>;
 export const EMAIL_TEMPLATE_KIND_LABELS: Record<EmailTemplateKind, string> = {
   RFQ: 'RFQ email',
   REMINDER: 'Reminder email',
+  QCR: 'QCR email to the insured',
 };
 
 export const EMAIL_SUBJECT_MAX = 200;
@@ -367,7 +368,9 @@ export const MAIL_RESULT_LABELS: Record<MailResult, string> = {
 export const MailSummarySchema = z.object({
   id: ObjectIdSchema,
   kind: EmailTemplateKindSchema,
-  insurerId: ObjectIdSchema,
+  /** Null for a mail to the insured (the QCR). */
+  insurerId: ObjectIdSchema.nullable(),
+  /** The insurer and branch, or "The insured". */
   insurerName: z.string(),
   to: z.array(z.string()),
   subject: z.string(),

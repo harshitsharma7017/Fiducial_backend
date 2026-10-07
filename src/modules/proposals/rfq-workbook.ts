@@ -46,7 +46,7 @@ const DEFAULT_PRODUCT_LINES = [
 ];
 
 /** Indian digit grouping (1,23,45,678) for whole rupees. */
-const RUPEES = '[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
+export const RUPEES = '[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
 const HEADER_FILL: ExcelJS.Fill = {
   type: 'pattern',
   pattern: 'solid',
@@ -55,13 +55,13 @@ const HEADER_FILL: ExcelJS.Fill = {
 
 const amount = (value: string | null) => (value === null ? null : Number(value));
 
-function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
+export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sheet.addRow([text]);
   row.font = { bold: true, size: 13 };
   sheet.mergeCells(row.number, 1, row.number, span);
 }
 
-function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
+export function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
   const row = sheet.addRow(values);
   row.font = { bold: true };
   row.alignment = { wrapText: true, vertical: 'top' };
@@ -72,14 +72,14 @@ function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
   return row;
 }
 
-function labelled(sheet: ExcelJS.Worksheet, label: string, value: string, span: number) {
+export function labelled(sheet: ExcelJS.Worksheet, label: string, value: string, span: number) {
   const row = sheet.addRow([label, value]);
   row.getCell(1).font = { bold: true };
   row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
   if (span > 2) sheet.mergeCells(row.number, 2, row.number, span);
 }
 
-function money(row: ExcelJS.Row, columns: number[]) {
+export function money(row: ExcelJS.Row, columns: number[]) {
   for (const column of columns) row.getCell(column).numFmt = RUPEES;
 }
 
@@ -90,13 +90,21 @@ function addressLine(location: NonNullable<ProposalRecord['locations'][number]['
     .join(', ');
 }
 
-function premiumDetails(workbook: ExcelJS.Workbook, record: ProposalRecord, gstRate: number) {
+function premiumDetails(
+  workbook: ExcelJS.Workbook,
+  record: ProposalRecord,
+  gstRate: number,
+  heading?: string,
+) {
   const sheet = workbook.addWorksheet('premium details');
   sheet.columns = [{ width: 34 }, { width: 20 }, { width: 22 }, { width: 22 }];
   const renewal = record.type === 'EXISTING';
   title(
     sheet,
-    renewal ? 'RFQ FOR RENEWAL — PROPERTY INSURANCE' : 'RFQ FOR NEW BUSINESS — PROPERTY INSURANCE',
+    heading ??
+      (renewal
+        ? 'RFQ FOR RENEWAL — PROPERTY INSURANCE'
+        : 'RFQ FOR NEW BUSINESS — PROPERTY INSURANCE'),
     4,
   );
   labelled(sheet, 'Insured Name:', record.client.name, 4);
@@ -166,11 +174,12 @@ function premiumDetails(workbook: ExcelJS.Workbook, record: ProposalRecord, gstR
   }
 }
 
-function schedule(
+export function schedule(
   workbook: ExcelJS.Workbook,
   record: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters,
+  document: 'RFQ' | 'QCR' = 'RFQ',
 ) {
   const sectionMaster = new Map(masters.sections.map((section) => [section.code, section]));
   // A renewal adds the client format's "Existing Sum Insured" column, from last year's policy.
@@ -208,7 +217,13 @@ function schedule(
   if (renewal) {
     sheet.addRow([`Policy No: ${existing?.policyNumber ?? ''}`]).font = { bold: true };
   }
-  title(sheet, 'RFQ - SCHEDULE FOR PROPERTY INSURANCE', span);
+  title(
+    sheet,
+    document === 'QCR'
+      ? 'QUOTE COMPARISON - SCHEDULE FOR PROPERTY INSURANCE'
+      : 'RFQ - SCHEDULE FOR PROPERTY INSURANCE',
+    span,
+  );
   labelled(sheet, 'Insured Name', client.name, span);
   labelled(sheet, 'Insured GST No', client.gstin ?? 'Not registered', span);
   const { address } = client;
@@ -377,7 +392,9 @@ function schedule(
   }
   if (record.notes) labelled(sheet, 'Notes', record.notes, span);
 
-  const notes = masters.notes.filter((note) => note.active && note.onRfq);
+  const notes = masters.notes.filter(
+    (note) => note.active && (document === 'QCR' ? note.onQcr : note.onRfq),
+  );
   if (notes.length > 0) {
     sheet.addRow([]);
     sheet.addRow(['NOTE:']).font = { bold: true };
@@ -457,7 +474,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
 }
 
 /** The client's Annexure sheet (D-5): each included annexure section's items and their total. */
-function annexure(workbook: ExcelJS.Workbook, record: ProposalRecord) {
+export function annexure(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   const sections = record.sections.filter(
     (section) => section.included && isAnnexureSection(section.code) && section.annexure.length > 0,
   );
@@ -503,7 +520,7 @@ function annexure(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   }
 }
 
-function riskDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
+export function riskDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   const sheet = workbook.addWorksheet('risk details');
   sheet.columns = [{ width: 6 }, { width: 40 }, ...record.locations.map(() => ({ width: 32 }))];
   header(sheet, [
@@ -558,7 +575,7 @@ function claimDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
 }
 
 /** The add-on covers chosen on the case (C-4), with their limits where the master gives them. */
-function addonCovers(
+export function addonCovers(
   workbook: ExcelJS.Workbook,
   record: ProposalRecord,
   addons: readonly CatalogItem<'addons'>[],
@@ -587,10 +604,11 @@ export function buildRfqWorkbookDocument(
   record: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters & { addons?: readonly CatalogItem<'addons'>[] },
+  options: { title?: string } = {},
 ): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiducial';
-  premiumDetails(workbook, record, Number(masters.gstRatePercent));
+  premiumDetails(workbook, record, Number(masters.gstRatePercent), options.title);
   schedule(workbook, record, client, masters);
   fireByLocation(workbook, record);
   annexure(workbook, record);

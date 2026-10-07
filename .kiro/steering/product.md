@@ -51,6 +51,17 @@ insurers, the RFQ workbook and marking it sent (emailed by the user; sending loc
 and cover masters (M-4 to M-9: products with ranges, coverage sections, add-on lists, BSUS/BLUS add-on rates, GST
 with effective dates, standard notes), loaded from one Excel workbook and edited on screen.
 
+RFQ (R-1, R-2, R-5): generated from the case, previewed with its own fields edited in place, kept as v1, v2,
+v3, submitted and approved or returned with comments; only an approved, current version is sent.
+
+QCR (QC-1 to QC-6): existing policy and up to five insurers per option from the latest quotes, lowest total
+marked, coverage differences, recommendation / remarks / payment in favour of, approval of exactly what is shown,
+export in the client's QCR layout (Excel and A4 PDF), and the approved QCR mailed to the insured.
+
+Quotes (Q-1 to Q-5): per insurer and option, the premium of each section (Fire with and without terrorism), net,
+GST and total; the insurer's terms with deviations from the RFQ flagged; its mail or PDF required; revised versions
+with reasons; declines with reasons, left out of the QCR (which uses each latest version).
+
 Case options (C-1 to C-6): product suggested from the Fire sum insured with an override and its reason; Existing,
 Option 1 and Option 2 for every schedule line; Burglary on 100% or first loss from the Fire contents; add-ons from
 the product's lists with favourites per client; Required / Not required per section add-on cover. All print on the

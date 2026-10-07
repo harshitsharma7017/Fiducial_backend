@@ -14,7 +14,7 @@ export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
   PLACEMENT_SLIP: 'Placement Slip',
 };
 /** Which document kinds the engine fills today; the others are stored for when they are built. */
-export const FILLED_DOCUMENT_KINDS: readonly DocumentKind[] = ['RFQ'];
+export const FILLED_DOCUMENT_KINDS: readonly DocumentKind[] = ['RFQ', 'QCR'];
 
 /** Largest template accepted, in bytes. */
 export const MAX_TEMPLATE_BYTES = 5 * 1024 * 1024;

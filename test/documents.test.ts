@@ -204,7 +204,7 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
       list.body.items.map((i: { kind: string; filled: boolean }) => [i.kind, i.filled]),
     ).toEqual([
       ['RFQ', true],
-      ['QCR', false],
+      ['QCR', true],
       ['PLACEMENT_SLIP', false],
     ]);
     const file = await binary(

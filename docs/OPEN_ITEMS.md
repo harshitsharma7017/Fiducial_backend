@@ -100,6 +100,20 @@ and Open Questions).
 - Add-on lists per product (C-4): unless the product master's "Add-on lists" column says otherwise, BSUS and BLUS use
   the BSUS & BLUS list, SFSP the SFSP list and PAR the PAR list. Which product uses the "Fire-Additional Addon" list
   is not known: please say, and it is set in that column.
+- RFQ approval (R-5): the latest version must be approved (by `proposals.approve`: Approvers and Admins, Q12)
+  before the RFQ is emailed or marked sent; a change to the case or the RFQ's edits after approval needs a new
+  version. An approver may approve a version they submitted themselves. Edits made on the RFQ (heading, notes, risk
+  details, claims) do not change the Data Sheet. Please confirm.
+- QCR (QC-1 to QC-6): premiums compare Fire without terrorism, as the client's QCR heads its columns; the lowest
+  total is marked whatever the quote's deviations, which are listed beside it. The client's QCR has no place for the
+  recommendation, remarks or coverage differences, so they are added below "Cheque / payment in favour of"; the
+  terrorism note gets the recommended insurer's extra premium per option. Approval is by `proposals.approve`
+  (Approvers and Admins, Q12). Please confirm, and give the QCR email's wording (Q14).
+- Quotes (Q-1 to Q-5): premiums take paise; GST is worked out on the net premium at the case's rate and rounded
+  half up to the paisa. Deductibles and conditions are free text, so they are not compared with the RFQ; capacity is
+  the insurer's share of the risk in %. A decline is per insurer (all options), with its reason; recording a quote
+  for a declined insurer moves it back to Quoted. Please confirm these, and whether GST should be on the total
+  rounded to the rupee as on the client's QCR.
 - Cover toggles (C-6): the toggles of each section are the add-on covers the coverage section master lists for it
   (the RFQ's "Addon coverages" rows), so a "Floater clause" toggle exists where the master lists it (Fire - Floater).
   Unanswered covers print blank on the RFQ. Please confirm this is the set of toggles wanted per section.

@@ -120,6 +120,14 @@ export function findColumn(
   return null;
 }
 
+/**
+ * Changes some of a cell's style for this cell only. Cells loaded from a template share one style
+ * object when they look alike, so setting cell.fill or cell.font would change all of them.
+ */
+export function restyle(cell: ExcelJS.Cell, patch: Partial<ExcelJS.Style>): void {
+  cell.style = { ...cell.style, ...patch };
+}
+
 /** Writes a value, keeping the cell's style; amounts get Indian grouping where none is set. */
 export function setValue(
   sheet: ExcelJS.Worksheet,
@@ -131,14 +139,12 @@ export function setValue(
   const cell = sheet.getCell(row, column);
   cell.value = value;
   if (typeof value === 'number' && options.rupees && (!cell.numFmt || cell.numFmt === 'General')) {
-    cell.numFmt = RUPEES_FORMAT;
+    restyle(cell, { numFmt: RUPEES_FORMAT });
   }
   if (typeof value === 'string' && value.includes('\n')) {
-    cell.alignment = {
-      ...cell.alignment,
-      wrapText: true,
-      vertical: cell.alignment?.vertical ?? 'top',
-    };
+    restyle(cell, {
+      alignment: { ...cell.alignment, wrapText: true, vertical: cell.alignment?.vertical ?? 'top' },
+    });
   }
 }
 

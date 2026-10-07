@@ -1098,8 +1098,14 @@ export const ProposalInsurerParamsSchema = z.strictObject({
 });
 
 /** Records an insurer's answer to the RFQ (E-4). */
-export const RecordInsurerResponseRequestSchema = z.strictObject({
-  status: z.enum(RESPONSE_STATUSES),
-  note: blankAsNull(z.string().trim().max(500, 'Keep the note under 500 characters')).optional(),
-});
+export const RecordInsurerResponseRequestSchema = z
+  .strictObject({
+    status: z.enum(RESPONSE_STATUSES),
+    note: blankAsNull(z.string().trim().max(500, 'Keep the note under 500 characters')).optional(),
+  })
+  // Q-5: a decline is recorded with the insurer's reason.
+  .refine((body) => body.status !== 'DECLINED' || Boolean(body.note), {
+    path: ['note'],
+    message: 'Give the reason the insurer declined',
+  });
 export type RecordInsurerResponseRequest = z.infer<typeof RecordInsurerResponseRequestSchema>;
