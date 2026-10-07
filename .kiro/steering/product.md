@@ -51,6 +51,11 @@ insurers, the RFQ workbook and marking it sent (emailed by the user; sending loc
 and cover masters (M-4 to M-9: products with ranges, coverage sections, add-on lists, BSUS/BLUS add-on rates, GST
 with effective dates, standard notes), loaded from one Excel workbook and edited on screen.
 
+Case options (C-1 to C-6): product suggested from the Fire sum insured with an override and its reason; Existing,
+Option 1 and Option 2 for every schedule line; Burglary on 100% or first loss from the Fire contents; add-ons from
+the product's lists with favourites per client; Required / Not required per section add-on cover. All print on the
+RFQ.
+
 Cases (D-1, D-2): new business and renewals, 9 stages, assigned staff; a renewal copies last year's policy from the
 policy software's public API (existing-policy-source.ts).
 

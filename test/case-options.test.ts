@@ -580,6 +580,7 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     const par = workbook.getWorksheet('PAR-Addon')!;
     expect(par.getCell('B2').value).toBe('Waiver of recourse');
     expect(par.getCell('B3').value).toBeNull();
+    expect(par.getRow(3).hidden).toBe(true);
     expect(workbook.getWorksheet('SFSP-Addon')!.state).toBe('hidden');
     expect(workbook.getWorksheet('BSUS & BLUS-Addon')!.state).toBe('hidden');
     expect(workbook.worksheets.map((sheet) => sheet.name)).toContain('Fire-Additional Addon');

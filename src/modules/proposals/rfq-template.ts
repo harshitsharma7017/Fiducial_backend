@@ -886,6 +886,8 @@ function fillAddonSheets(
         setValue(sheet, index + 2, 2, item.name);
       });
     }
+    // The template's rows below a shorter list are hidden, so the PDF does not print them.
+    for (let row = items.length + 2; row <= used; row += 1) sheet.getRow(row).hidden = true;
   }
 }
 

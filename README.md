@@ -186,6 +186,25 @@ it fails there until the frontend is synced.
   once nothing is missing.
 - **Insurers** (`PUT /{id}/insurers`, `proposals.edit`): up to five active insurers from the insurer master. One the
   RFQ was sent to cannot be taken off.
+- **Product** (C-1): the record's `product` is the one chosen on the Data Sheet, else the first the Fire sum insured
+  suggests (`SUGGESTED`). A suggested product is `CHOSEN`; one outside the suggestion is `OVERRIDE` and needs
+  `product.reason` (400 otherwise). Before any Fire sum insured, any product may be chosen.
+- **Three options** (C-2): every schedule line has Existing, Option 1 and Option 2 — Fire lines, section sums insured
+  and the section lines (`lines`, `lines2`, `existingLines`). A renewal's Existing column starts as the policy
+  software's copy (`existingPolicy`, kept as fetched); figures typed on the Data Sheet replace it (`existing.source`
+  `DATA_SHEET`), and Fetch again goes back to the copy.
+- **Burglary basis** (C-3): 100% or first loss 25/50/75% (`basis`, Burglary and Burglary Floater). With a basis,
+  Burglary's sum insured is the Fire contents (all items but buildings; Option 2 the contents lines given a second
+  figure), worked out on every read; `basisAmounts` is the share per option. Older cases with a typed amount and no
+  basis are unchanged.
+- **Add-ons** (C-4): chosen from the product's add-on lists (the product master's "Add-on lists", else the list named
+  like the product), checked against the add-on master. Favourites per client: `GET/PUT
+/api/v1/clients/{id}/addon-favourites` (`proposals.view` / `proposals.edit`, audited `ADDON_FAVOURITES_UPDATED`).
+- **Covers** (C-6): each section's add-on covers from the coverage section master (Earthquake, STFI, Terrorism,
+  Floater clause...) are answered Required or Not required (`fireCovers`, `sections[].covers`); unanswered is null.
+- The RFQ prints all of these: the three columns, the basis row (a 75% row is added to the client's template), the
+  covers' answers, the chosen product only, and the chosen add-ons on the product's sheet (other products' add-on
+  sheets are hidden). The QCR and Placement Slip will read the same fields.
 - **RFQ** (`GET /{id}/rfq?format=xlsx|pdf`, `proposals.export`): the RFQ as Excel (default) or as an A4 PDF with
   the broker's letterhead. When the client's RFQ template is uploaded (see Document templates) the workbook is that
   file, filled; otherwise a built-in layout (premium details, schedule, Fire by location, Annexure, risk details,
@@ -245,14 +264,14 @@ format }`. One mail per insurer, To its chosen addresses only (its RFQ addresses
 `/api/v1/catalog` holds six masters, all data, none of it in the code. Their layouts (columns, rules) are in
 `src/shared/catalog.ts`; rows are stored in the `catalog_items` collection, amounts and percentages as Decimal128.
 
-| Master (`{master}`)               | What it holds                                                                    | Used by                                                     |
-| --------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Products (`products`)             | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive)       | Each proposal's suggested products; the RFQ's product lines |
-| Coverage sections (`sections`)    | The 14 sections: name, order, on/off, schedule lines, add-on covers              | Data Sheet and RFQ order and wording; RFQ add-on lines      |
-| Add-on covers (`addons`)          | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit   | Searchable reference                                        |
-| BSUS & BLUS rates (`addon-rules`) | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base | `addon-premium.ts` (pure, not yet in a screen)              |
-| Tax rates (`tax-rates`)           | GST rates with effective dates                                                   | Proposals (rate kept at creation), RFQ, Fire rate check     |
-| Standard notes (`notes`)          | NOTE and disclaimer text, which documents print it, order                        | The RFQ export (notes marked "On RFQ")                      |
+| Master (`{master}`)               | What it holds                                                                            | Used by                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Products (`products`)             | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive), add-on lists | Each proposal's suggested products; the RFQ's product lines; the add-on picker |
+| Coverage sections (`sections`)    | The 14 sections: name, order, on/off, schedule lines, add-on covers                      | Data Sheet and RFQ order and wording; RFQ add-on lines                         |
+| Add-on covers (`addons`)          | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit           | Searchable reference                                                           |
+| BSUS & BLUS rates (`addon-rules`) | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base         | `addon-premium.ts` (pure, not yet in a screen)                                 |
+| Tax rates (`tax-rates`)           | GST rates with effective dates                                                           | Proposals (rate kept at creation), RFQ, Fire rate check                        |
+| Standard notes (`notes`)          | NOTE and disclaimer text, which documents print it, order                                | The RFQ export (notes marked "On RFQ")                                         |
 
 - **Workbook**: `GET /catalog/workbook` returns every master in one .xlsx (an Instructions sheet, then a sheet per master
   with drop-downs). `POST /catalog/import` checks an upload (dry run by default); with `dryRun=false`, each sheet in the

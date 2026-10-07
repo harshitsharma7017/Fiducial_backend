@@ -95,7 +95,16 @@ and Open Questions).
   workbooks (sections, add-on lists, notes) and from document 05 (add-on rates).
 - Products are suggested from the proposal's total Fire sum insured (Option 1): "up to" includes the limit, "above"
   excludes it, so 5 Cr exactly suggests BSUS and 5 Cr + 1 suggests BLUS and PAR. Several products can be suggested;
-  the product is still chosen at the QCR (Q04).
+  the first is used until the team chooses one on the Data Sheet (C-1). A product outside the suggestion needs a
+  reason. Whether the QCR may still change it is Q04.
+- Add-on lists per product (C-4): unless the product master's "Add-on lists" column says otherwise, BSUS and BLUS use
+  the BSUS & BLUS list, SFSP the SFSP list and PAR the PAR list. Which product uses the "Fire-Additional Addon" list
+  is not known: please say, and it is set in that column.
+- Cover toggles (C-6): the toggles of each section are the add-on covers the coverage section master lists for it
+  (the RFQ's "Addon coverages" rows), so a "Floater clause" toggle exists where the master lists it (Fire - Floater).
+  Unanswered covers print blank on the RFQ. Please confirm this is the set of toggles wanted per section.
+- Burglary basis (C-3): the RFQ format has rows for 100%, 25% and 50%; a 75% row is added when chosen. Option 2 of
+  the contents adds only the contents lines given a second Fire figure, as the Fire Option 2 total does.
 - Sections switched off are left out of new Data Sheets and the RFQ, but a proposal that already includes one keeps
   it. Fire cannot be switched off and is always first. Schedule lines are stored for each section but the Data Sheet
   still captures the other sections by sum insured only.
