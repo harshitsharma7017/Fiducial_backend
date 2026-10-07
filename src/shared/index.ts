@@ -19,6 +19,7 @@ export * from './gst.ts';
 export * from './health.ts';
 export * from './imports.ts';
 export * from './insurers.ts';
+export * from './mail.ts';
 export * from './masters.ts';
 export * from './permissions.ts';
 export * from './proposals.ts';

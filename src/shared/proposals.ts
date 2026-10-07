@@ -394,6 +394,67 @@ export const RISK_DETAIL_FIELDS = [
 export type RiskDetailKey = (typeof RISK_DETAIL_FIELDS)[number]['key'];
 
 export const MAX_PROPOSAL_INSURERS = 5;
+
+/**
+ * Where an insurer on a case stands (E-4). Not sent until the RFQ goes; Reminded after a
+ * reminder; Quoted, Declined or No response once the team records the answer. No response is
+ * set by a user, never by the app.
+ */
+export const INSURER_STATUSES = [
+  'NOT_SENT',
+  'SENT',
+  'REMINDED',
+  'QUOTED',
+  'DECLINED',
+  'NO_RESPONSE',
+] as const;
+export const InsurerStatusSchema = z.enum(INSURER_STATUSES);
+export type InsurerStatus = z.infer<typeof InsurerStatusSchema>;
+export const INSURER_STATUS_LABELS: Record<InsurerStatus, string> = {
+  NOT_SENT: 'Not sent',
+  SENT: 'Sent',
+  REMINDED: 'Reminded',
+  QUOTED: 'Quoted',
+  DECLINED: 'Declined',
+  NO_RESPONSE: 'No response',
+};
+
+/** The answers a user records for an insurer that has the RFQ. */
+export const RESPONSE_STATUSES = ['QUOTED', 'DECLINED', 'NO_RESPONSE'] as const;
+export type ResponseStatus = (typeof RESPONSE_STATUSES)[number];
+
+/** True once the RFQ has gone to the insurer, whatever it answered since. */
+export function hasRfq(status: InsurerStatus): boolean {
+  return status !== 'NOT_SENT';
+}
+
+/** Waiting for the insurer's answer: sent or reminded, nothing recorded yet. */
+export function isAwaitingResponse(status: InsurerStatus): boolean {
+  return status === 'SENT' || status === 'REMINDED';
+}
+
+const RESPONSES: readonly InsurerStatus[] = RESPONSE_STATUSES;
+
+/**
+ * The status changes allowed (requirement 7.2): the RFQ is sent once; a waiting insurer can be
+ * reminded or given an answer; an answer can be corrected to another answer. Nothing goes back
+ * to Not sent.
+ */
+export function canMoveInsurer(from: InsurerStatus, to: InsurerStatus): boolean {
+  if (from === 'NOT_SENT') return to === 'SENT';
+  if (isAwaitingResponse(from)) return to === 'REMINDED' || RESPONSES.includes(to);
+  return RESPONSES.includes(to);
+}
+
+/** Still waiting after the quote due date (both YYYY-MM-DD, India time). */
+export function isOverdue(
+  insurer: { status: InsurerStatus; dueDate: string | null },
+  todayIst: string,
+): boolean {
+  return (
+    isAwaitingResponse(insurer.status) && insurer.dueDate !== null && insurer.dueDate < todayIst
+  );
+}
 export const MAX_CLAIM_ROWS = 3;
 
 /** Whole rupees; blank is no amount. */
@@ -789,6 +850,8 @@ export const MarkRfqSentRequestSchema = z.strictObject({
     .array(ObjectIdSchema)
     .min(1, 'Choose the insurers the RFQ was sent to')
     .max(MAX_PROPOSAL_INSURERS),
+  /** The quote due date given to these insurers; the case's due date when left out. */
+  dueDate: z.iso.date().optional(),
 });
 export type MarkRfqSentRequest = z.infer<typeof MarkRfqSentRequestSchema>;
 
@@ -830,10 +893,40 @@ export const ProposalInsurerSchema = z.object({
   company: z.string(),
   branch: z.string(),
   rfqEmails: z.array(z.string()),
+  /** The branch's contacts that have an email, as the send screen offers them. */
+  contacts: z.array(
+    z.object({ name: z.string(), designation: z.string().nullable(), email: z.string() }),
+  ),
   active: z.boolean(),
-  status: z.enum(['NOT_SENT', 'SENT']),
+  status: InsurerStatusSchema,
+  /** APP: emailed from the app; OUTSIDE: marked as sent by hand. Null until sent. */
+  sentVia: z.enum(['APP', 'OUTSIDE']).nullable(),
   sentAt: IsoDateTimeSchema.nullable(),
   sentBy: z.string().nullable(),
+  /** The date this insurer was asked to quote by. */
+  dueDate: z.iso.date().nullable(),
+  /** Sent or reminded, and the due date has passed (India time). */
+  overdue: z.boolean(),
+  reminderCount: z.number().int().min(0),
+  lastRemindedAt: IsoDateTimeSchema.nullable(),
+  /** The answer last recorded. */
+  response: z
+    .object({
+      status: z.enum(RESPONSE_STATUSES),
+      note: z.string().nullable(),
+      at: IsoDateTimeSchema,
+      by: z.string(),
+    })
+    .nullable(),
+  /** The last mail the app sent or tried to send to this insurer. */
+  lastMail: z
+    .object({
+      id: ObjectIdSchema,
+      kind: z.enum(['RFQ', 'REMINDER']),
+      at: IsoDateTimeSchema,
+      result: z.enum(['DELIVERED', 'OUTBOX', 'FAILED']),
+    })
+    .nullable(),
 });
 export type ProposalInsurer = z.infer<typeof ProposalInsurerSchema>;
 
@@ -997,3 +1090,16 @@ export const ProposalListResponseSchema = paginatedSchema(ProposalRecordSchema);
 export type ProposalListResponse = z.infer<typeof ProposalListResponseSchema>;
 
 export const ProposalIdParamsSchema = z.strictObject({ id: ObjectIdSchema });
+
+/** One insurer on one case. */
+export const ProposalInsurerParamsSchema = z.strictObject({
+  id: ObjectIdSchema,
+  insurerId: ObjectIdSchema,
+});
+
+/** Records an insurer's answer to the RFQ (E-4). */
+export const RecordInsurerResponseRequestSchema = z.strictObject({
+  status: z.enum(RESPONSE_STATUSES),
+  note: blankAsNull(z.string().trim().max(500, 'Keep the note under 500 characters')).optional(),
+});
+export type RecordInsurerResponseRequest = z.infer<typeof RecordInsurerResponseRequestSchema>;

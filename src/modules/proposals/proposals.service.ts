@@ -7,9 +7,11 @@ import {
   ROLES,
   ADDON_LIST_LABELS,
   SUM_INSURED_LINE,
+  formatDate,
   formatRupeesShort,
   hasBasis,
   hasExistingFigures,
+  hasRfq,
   isAnnexureSection,
   can,
   wholeRupees,
@@ -65,7 +67,7 @@ function locked(): AppError {
   );
 }
 
-function closed(): AppError {
+export function closed(): AppError {
   return conflict(ERROR_CODES.PROPOSAL_LOCKED, 'This case is closed.');
 }
 
@@ -166,7 +168,7 @@ export async function lastPolicyOf(
   };
 }
 
-async function recordOf(doc: ProposalDoc): Promise<ProposalRecord> {
+export async function recordOf(doc: ProposalDoc): Promise<ProposalRecord> {
   return toProposalRecord(doc, await loadContext([doc]));
 }
 
@@ -205,14 +207,41 @@ async function assertClientLocations(
   }
 }
 
+/** The record of a just-updated case, with its stored stage kept in step (same transaction). */
+export async function keepStage(
+  updated: ProposalDoc,
+  session: mongo.ClientSession,
+): Promise<ProposalRecord> {
+  const record = await recordOf(updated);
+  if (record.stage !== updated.stage) {
+    await ProposalModel.updateOne(
+      { _id: updated._id },
+      { $set: { stage: record.stage } },
+      { session },
+    );
+  }
+  return record;
+}
+
+/**
+ * Where a change applies: `guard` narrows the update (it fails with `changed()` when the case no
+ * longer matches), and `arrayFilters` serve dotted paths such as insurers.$[target].status.
+ */
+export interface SaveTarget {
+  guard?: Record<string, unknown>;
+  arrayFilters?: Record<string, unknown>[];
+  changed?: () => AppError;
+}
+
 /** Saves the change, keeps the stored stage in step, and writes the audit entry. */
-async function saveWith(
+export async function saveWith(
   doc: ProposalDoc,
-  set: Partial<ProposalDoc>,
+  set: Partial<ProposalDoc> & Record<string, unknown>,
   activity: string | null,
   action: AuditAction,
   actor: Actor,
   before: ProposalRecord | null,
+  target: SaveTarget = {},
 ): Promise<ProposalRecord> {
   return withTransaction(async (session) => {
     const update: Record<string, unknown> = {
@@ -223,20 +252,18 @@ async function saveWith(
         activity: { at: new Date(), actorId: new Types.ObjectId(actor.id), message: activity },
       };
     }
-    const updated = await ProposalModel.findByIdAndUpdate(doc._id, update, {
-      returnDocument: 'after',
-      runValidators: true,
-      session,
-    }).lean();
-    if (!updated) throw proposalNotFound();
-    const record = await recordOf(updated);
-    if (record.stage !== updated.stage) {
-      await ProposalModel.updateOne(
-        { _id: doc._id },
-        { $set: { stage: record.stage } },
-        { session },
-      );
-    }
+    const updated = await ProposalModel.findOneAndUpdate(
+      { ...target.guard, _id: doc._id },
+      update,
+      {
+        returnDocument: 'after',
+        runValidators: true,
+        session,
+        ...(target.arrayFilters ? { arrayFilters: target.arrayFilters } : {}),
+      },
+    ).lean();
+    if (!updated) throw target.changed && target.guard ? target.changed() : proposalNotFound();
+    const record = await keepStage(updated, session);
     await writeAudit(
       {
         userId: actor.id,
@@ -253,7 +280,7 @@ async function saveWith(
   });
 }
 
-async function loadDoc(id: string): Promise<ProposalDoc> {
+export async function loadDoc(id: string): Promise<ProposalDoc> {
   const doc = await ProposalModel.findById(id).lean();
   if (!doc) throw proposalNotFound();
   return doc;
@@ -493,7 +520,7 @@ export async function updateDataSheet(
 ): Promise<ProposalRecord> {
   const doc = await loadDoc(id);
   if (doc.stage === 'CLOSED') throw closed();
-  if (doc.insurers.some((insurer) => insurer.status === 'SENT')) throw locked();
+  if (doc.insurers.some((insurer) => hasRfq(insurer.status))) throw locked();
   await assertClientLocations(
     doc.clientId,
     input.locations.map((location) => location.locationId),
@@ -583,7 +610,7 @@ export async function setInsurers(
   const doc = await loadDoc(id);
   const wanted = new Set(input.insurerIds);
   const sentMissing = doc.insurers.filter(
-    (insurer) => insurer.status === 'SENT' && !wanted.has(insurer.insurerId.toHexString()),
+    (insurer) => hasRfq(insurer.status) && !wanted.has(insurer.insurerId.toHexString()),
   );
   if (sentMissing.length > 0) {
     throw conflict(ERROR_CODES.CONFLICT, 'An insurer the RFQ was sent to cannot be taken off.');
@@ -655,6 +682,7 @@ export async function markRfqSent(
     ]);
   }
   const now = new Date();
+  const dueDate = input.dueDate ?? doc.dueDate;
   const sentTo = before.insurers.filter(
     (insurer) => chosen.has(insurer.insurerId) && insurer.status === 'NOT_SENT',
   );
@@ -666,14 +694,16 @@ export async function markRfqSent(
           ? {
               ...insurer,
               status: 'SENT' as const,
+              sentVia: 'OUTSIDE' as const,
               sentAt: now,
               sentBy: new Types.ObjectId(actor.id),
+              dueDate,
             }
           : insurer,
       ),
     },
     sentTo.length > 0
-      ? `RFQ sent to ${sentTo.map((insurer) => `${insurer.company}, ${insurer.branch} (${insurer.rfqEmails.join(', ')})`).join('; ')}`
+      ? `RFQ sent outside the app to ${sentTo.map((insurer) => `${insurer.company}, ${insurer.branch} (${insurer.rfqEmails.join(', ')})`).join('; ')}, quotes due ${formatDate(dueDate)}`
       : null,
     AUDIT_ACTIONS.RFQ_SENT,
     actor,
@@ -718,7 +748,7 @@ export async function refreshExistingPolicy(
     throw conflict(ERROR_CODES.CONFLICT, 'Only a renewal has an existing policy.');
   }
   if (doc.stage === 'CLOSED') throw closed();
-  if (doc.insurers.some((insurer) => insurer.status === 'SENT')) throw locked();
+  if (doc.insurers.some((insurer) => hasRfq(insurer.status))) throw locked();
   const client = await ClientModel.findById(doc.clientId, { name: 1, gstin: 1 }).lean();
   if (!client) throw notFound('The proposal’s client no longer exists');
   const result = await source.latest({ gstin: client.gstin, clientName: client.name });

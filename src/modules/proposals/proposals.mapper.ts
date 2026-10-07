@@ -6,6 +6,8 @@ import {
   SECTION_LINES,
   addonListsForProduct,
   hasBasis,
+  hasRfq,
+  isOverdue,
   productRangeText,
   suggestProducts,
   wholeRupees,
@@ -17,6 +19,7 @@ import {
 } from '../../shared/index.ts';
 import type { Types } from 'mongoose';
 import { decimal128ToString } from '../../lib/decimal.ts';
+import { istDay } from '../../lib/ist-day.ts';
 import { catalogItems } from '../catalog/catalog.service.ts';
 import type { ClientLocationDoc } from '../clients/client-location.model.ts';
 import { ClientLocationModel } from '../clients/client-location.model.ts';
@@ -47,6 +50,8 @@ export interface ProposalContext {
   /** The product and coverage section masters, in their order. */
   products: readonly CatalogItem<'products'>[];
   sections: readonly CatalogItem<'sections'>[];
+  /** When the records are read, for the Overdue flags (India date). */
+  now: Date;
 }
 
 const key = (id: Types.ObjectId) => id.toHexString();
@@ -59,6 +64,7 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
     docs.flatMap((doc) => [
       key(doc.ownerId),
       ...doc.insurers.flatMap((i) => (i.sentBy ? [key(i.sentBy)] : [])),
+      ...doc.insurers.flatMap((i) => (i.response ? [key(i.response.by)] : [])),
       ...doc.activity.flatMap((a) => (a.actorId ? [key(a.actorId)] : [])),
     ]),
   );
@@ -77,6 +83,7 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
     users: new Map(users.map((doc) => [key(doc._id), doc.name])),
     products,
     sections,
+    now: new Date(),
   };
 }
 
@@ -315,8 +322,9 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
       : null;
 
   const missing = missingForRfq({ locations, fireProposed1: totals.proposed1, sections, product });
-  const anySent = doc.insurers.some((insurer) => insurer.status === 'SENT');
+  const anySent = doc.insurers.some((insurer) => hasRfq(insurer.status));
   const stage = stageOf(missing, anySent, doc.stageOverride ?? null);
+  const today = istDay(context.now);
   const copy = doc.existingPolicy ?? null;
   const lookup = doc.existingPolicyLookup ?? null;
   const fireMaster = context.sections.find((section) => section.code === 'FIRE');
@@ -416,15 +424,44 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     locked: anySent || stage === 'CLOSED',
     insurers: doc.insurers.map((entry) => {
       const insurer = context.insurers.get(key(entry.insurerId));
+      const dueDate = entry.dueDate ?? null;
+      const response = entry.response ?? null;
+      const lastMail = entry.lastMail ?? null;
       return {
         insurerId: key(entry.insurerId),
         company: insurer?.company ?? 'Unknown insurer',
         branch: insurer?.branch ?? '',
         rfqEmails: insurer ? [...insurer.rfqEmails] : [],
+        contacts: (insurer?.contacts ?? []).flatMap((contact) =>
+          contact.email
+            ? [{ name: contact.name, designation: contact.designation, email: contact.email }]
+            : [],
+        ),
         active: insurer?.active ?? false,
         status: entry.status,
+        sentVia: entry.sentVia ?? (hasRfq(entry.status) ? 'OUTSIDE' : null),
         sentAt: entry.sentAt?.toISOString() ?? null,
         sentBy: entry.sentBy ? userName(entry.sentBy) : null,
+        dueDate,
+        overdue: isOverdue({ status: entry.status, dueDate }, today),
+        reminderCount: entry.reminderCount ?? 0,
+        lastRemindedAt: entry.lastRemindedAt?.toISOString() ?? null,
+        response: response
+          ? {
+              status: response.status,
+              note: response.note,
+              at: response.at.toISOString(),
+              by: userName(response.by),
+            }
+          : null,
+        lastMail: lastMail
+          ? {
+              id: key(lastMail.id),
+              kind: lastMail.kind,
+              at: lastMail.at.toISOString(),
+              result: lastMail.result,
+            }
+          : null,
       };
     }),
     activity: [...doc.activity]

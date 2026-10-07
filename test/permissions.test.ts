@@ -14,6 +14,8 @@ beforeAll(async () => {
   for (const role of ROLES) tokens.set(role, (await tokenFor(app, [role])).token);
 });
 
+const NO_ID = '0123456789abcdef01234567';
+
 interface Endpoint {
   name: string;
   permission: Permission;
@@ -23,6 +25,26 @@ interface Endpoint {
 // One call per guarded route. An allowed call may still fail for other reasons (the activation
 // id below does not exist), but never with 401 or 403.
 const ENDPOINTS: Endpoint[] = [
+  {
+    name: 'GET /email-templates',
+    permission: 'masters.view',
+    call: (token) => request(app).get('/api/v1/email-templates').set(bearer(token)),
+  },
+  {
+    name: 'PUT /email-templates/{kind}',
+    permission: 'masters.manage',
+    // A stale version: allowed roles get 409, never 401 or 403.
+    call: (token) =>
+      request(app)
+        .put('/api/v1/email-templates/REMINDER')
+        .set(bearer(token))
+        .send({ subject: 'Reminder', body: 'Dear {{contactName}}', expectedVersion: 999 }),
+  },
+  {
+    name: 'GET /mail/status',
+    permission: 'settings.view',
+    call: (token) => request(app).get('/api/v1/mail/status').set(bearer(token)),
+  },
   {
     name: 'GET /users',
     permission: 'users.manage',
@@ -114,6 +136,69 @@ const ENDPOINTS: Endpoint[] = [
     name: 'GET /audit',
     permission: 'audit.view',
     call: (token) => request(app).get('/api/v1/audit').set(bearer(token)),
+  },
+  // RFQ mail: the case id does not exist, so an allowed call ends in 404 and mails nobody.
+  {
+    name: 'POST /proposals/{id}/rfq/preview',
+    permission: 'proposals.send',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/rfq/preview`)
+        .set(bearer(token))
+        .send({ insurers: [{ insurerId: NO_ID, to: ['a@b.example'] }], dueDate: '2099-01-01' }),
+  },
+  {
+    name: 'POST /proposals/{id}/rfq/email',
+    permission: 'proposals.send',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/rfq/email`)
+        .set(bearer(token))
+        .send({
+          sendId: '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60',
+          insurers: [{ insurerId: NO_ID, to: ['a@b.example'] }],
+          dueDate: '2099-01-01',
+          format: 'xlsx',
+        }),
+  },
+  {
+    name: 'POST /proposals/{id}/insurers/{insurerId}/reminder',
+    permission: 'proposals.send',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/insurers/${NO_ID}/reminder`)
+        .set(bearer(token))
+        .send({
+          sendId: '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f61',
+          to: ['a@b.example'],
+          attachRfq: false,
+        }),
+  },
+  {
+    name: 'PUT /proposals/{id}/insurers/{insurerId}/response',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .put(`/api/v1/proposals/${NO_ID}/insurers/${NO_ID}/response`)
+        .set(bearer(token))
+        .send({ status: 'DECLINED' }),
+  },
+  {
+    name: 'GET /proposals/{id}/mails',
+    permission: 'proposals.view',
+    call: (token) => request(app).get(`/api/v1/proposals/${NO_ID}/mails`).set(bearer(token)),
+  },
+  {
+    name: 'GET /proposals/{id}/mails/{mailId}',
+    permission: 'proposals.view',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/mails/${NO_ID}`).set(bearer(token)),
+  },
+  {
+    name: 'GET /proposals/{id}/mails/{mailId}/attachment',
+    permission: 'proposals.export',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/mails/${NO_ID}/attachment`).set(bearer(token)),
   },
 ];
 

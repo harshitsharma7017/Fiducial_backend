@@ -1,15 +1,23 @@
 import {
   ADDON_LISTS,
   BURGLARY_BASES,
+  EMAIL_TEMPLATE_KINDS,
   EXISTING_POLICY_STATUSES,
   FIRE_GROUPS,
   FIRE_ITEM_KEYS,
+  INSURER_STATUSES,
+  MAIL_RESULTS,
   OTHER_SECTIONS,
   PROPOSAL_STAGES,
   PROPOSAL_TYPES,
+  RESPONSE_STATUSES,
   type AddonList,
   type BurglaryBasis,
+  type EmailTemplateKind,
+  type InsurerStatus,
+  type MailResult,
   type ProposalType,
+  type ResponseStatus,
   type FireGroup,
   type FireItemKey,
   type OtherSection,
@@ -36,11 +44,35 @@ export interface ProposalLocationDoc {
   risk?: Record<string, string | null>;
 }
 
+/**
+ * One insurer on a case. Proposals saved before RFQ email hold only insurerId, status (Not sent
+ * or Sent), sentAt and sentBy; the other fields read as null or 0 when missing.
+ */
 export interface ProposalInsurerDoc {
   insurerId: Types.ObjectId;
-  status: 'NOT_SENT' | 'SENT';
+  status: InsurerStatus;
+  sentVia?: 'APP' | 'OUTSIDE' | null;
   sentAt: Date | null;
   sentBy: Types.ObjectId | null;
+  /** The quote due date given to this insurer (YYYY-MM-DD). */
+  dueDate?: string | null;
+  reminderCount?: number;
+  lastRemindedAt?: Date | null;
+  response?: {
+    status: ResponseStatus;
+    note: string | null;
+    at: Date;
+    by: Types.ObjectId;
+  } | null;
+  /** The last mail sent or tried for this insurer (the full mail is in mail_log). */
+  lastMail?: {
+    id: Types.ObjectId;
+    kind: EmailTemplateKind;
+    at: Date;
+    result: MailResult;
+  } | null;
+  /** Set while a mail to this insurer is being sent, so two sends cannot both mail it. */
+  sending?: { sendId: string; at: Date } | null;
 }
 
 export interface AnnexureRowDoc {
@@ -361,9 +393,44 @@ const proposalSchema = new Schema<ProposalDoc>(
       new Schema(
         {
           insurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', required: true },
-          status: { type: String, enum: ['NOT_SENT', 'SENT'], required: true },
+          status: { type: String, enum: INSURER_STATUSES, required: true },
+          sentVia: { type: String, enum: ['APP', 'OUTSIDE', null], default: null },
           sentAt: { type: Date, default: null },
           sentBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+          dueDate: { type: String, default: null },
+          reminderCount: { type: Number, default: 0, min: 0 },
+          lastRemindedAt: { type: Date, default: null },
+          response: {
+            type: new Schema(
+              {
+                status: { type: String, enum: RESPONSE_STATUSES, required: true },
+                note: { type: String, default: null },
+                at: { type: Date, required: true },
+                by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+              },
+              noId,
+            ),
+            default: null,
+          },
+          lastMail: {
+            type: new Schema(
+              {
+                id: { type: Schema.Types.ObjectId, ref: 'MailLog', required: true },
+                kind: { type: String, enum: EMAIL_TEMPLATE_KINDS, required: true },
+                at: { type: Date, required: true },
+                result: { type: String, enum: MAIL_RESULTS, required: true },
+              },
+              noId,
+            ),
+            default: null,
+          },
+          sending: {
+            type: new Schema(
+              { sendId: { type: String, required: true }, at: { type: Date, required: true } },
+              noId,
+            ),
+            default: null,
+          },
         },
         noId,
       ),

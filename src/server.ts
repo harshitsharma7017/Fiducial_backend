@@ -3,6 +3,7 @@ import { ConfigError, loadEnv, type Env } from './config/env.ts';
 import { connectDatabase, disconnectDatabase } from './lib/db.ts';
 import { createLogger } from './lib/logger.ts';
 import { ensureIndexes } from './models.ts';
+import { ensureEmailTemplates } from './modules/email-templates/email-templates.service.ts';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -29,6 +30,7 @@ process.on('unhandledRejection', (reason) => {
 try {
   await connectDatabase(config.MONGODB_URI);
   await ensureIndexes();
+  await ensureEmailTemplates();
 } catch (error) {
   logger.fatal({ err: error }, 'Could not connect to MongoDB');
   process.exit(1);

@@ -4,7 +4,7 @@
 
 - Node.js 24 LTS (`.nvmrc`), TypeScript 6.0 (`strict`), ESM.
 - Express 5, Zod 4, Mongoose 9 on MongoDB 7 (single-node replica set), pino + pino-http, helmet, cors,
-  express-rate-limit, argon2, jose (JWT), decimal.js, exceljs, zod-to-openapi + Swagger UI.
+  express-rate-limit, argon2, jose (JWT), decimal.js, exceljs, nodemailer, zod-to-openapi + Swagger UI.
 - Tests: Vitest 5, Supertest, `MongoMemoryReplSet` (mongodb-memory-server).
 - Tooling: ESLint 10 (flat config, type-aware), Prettier, Husky + lint-staged, GitHub Actions.
 
@@ -32,5 +32,9 @@
 - **Masters**: read through `getActiveVersion()`; rows change only by an Admin's audited correction
   of the ACTIVE version (`master-rows.service.ts`: old and new values in the audit log) or by uploading a new version;
   never edit a DRAFT's or SUPERSEDED version's rows.
+- **Mail**: send only through the `MailTransport` passed to `createApp()` (`src/modules/mail/transport.ts`); tests
+  inject `FakeTransport` (`test/helpers/mail.ts`) and never reach an SMTP server. One mail per insurer, To its own
+  addresses from the insurer master only: never Cc or Bcc, never an address typed by a user. Header values go through
+  `headerValue()`; SMTP errors become a reason without credentials. Log every mail in `mail_log` (append-only).
 - **Runtime**: Node runs the TypeScript directly (type stripping), so use erasable syntax only (no enums or
   namespaces), `import type` for types and `.ts` extensions in relative imports.

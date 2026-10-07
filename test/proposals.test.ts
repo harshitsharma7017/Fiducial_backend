@@ -1,4 +1,4 @@
-import { RISK_DETAIL_FIELDS, XLSX_CONTENT_TYPE } from '../src/shared/index.ts';
+import { RISK_DETAIL_FIELDS, XLSX_CONTENT_TYPE, formatDate } from '../src/shared/index.ts';
 import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -649,10 +649,25 @@ describe('new-business proposals', () => {
       .send({ insurerIds: [insurers[0]] })
       .expect(200);
     expect(sent.body).toMatchObject({ stage: 'RFQ_SENT', locked: true });
-    expect(sent.body.insurers[0]).toMatchObject({ status: 'SENT', sentBy: 'Test User' });
-    expect(sent.body.insurers[1].status).toBe('NOT_SENT');
+    // Marked by hand: sent outside the app, quotes due on the case's due date.
+    expect(sent.body.insurers[0]).toMatchObject({
+      status: 'SENT',
+      sentVia: 'OUTSIDE',
+      sentBy: 'Test User',
+      // The Data Sheet's due date, saved above.
+      dueDate: sent.body.dueDate,
+      overdue: false,
+      reminderCount: 0,
+      response: null,
+      lastMail: null,
+    });
+    expect(sent.body.insurers[1]).toMatchObject({
+      status: 'NOT_SENT',
+      sentVia: null,
+      dueDate: null,
+    });
     expect(sent.body.activity[0].message).toBe(
-      'RFQ sent to Test General, Fort (fort@insurer.example)',
+      `RFQ sent outside the app to Test General, Fort (fort@insurer.example), quotes due ${formatDate(sent.body.dueDate as string)}`,
     );
     const audit = await AuditLogModel.findOne({ action: 'RFQ_SENT', entityId: proposal.id }).lean();
     expect(audit?.after).toMatchObject({ stage: 'RFQ_SENT' });

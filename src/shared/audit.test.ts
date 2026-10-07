@@ -99,6 +99,8 @@ describe('audit vocabulary', () => {
       'INSURER_UPDATED',
       'PROPOSAL_UPDATED',
       'PROPOSAL_STAGE_CHANGED',
+      'INSURER_RESPONSE_RECORDED',
+      'EMAIL_TEMPLATE_UPDATED',
       'OCCUPANCY_UPDATED',
       'PINCODE_UPDATED',
       'MASTER_SUPERSEDED',
@@ -107,7 +109,12 @@ describe('audit vocabulary', () => {
       'ADDON_FAVOURITES_UPDATED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual(['MASTER_ACTIVATED']);
-    expect(auditActionsOfKind('SEND')).toEqual(['RFQ_SENT']);
+    expect(auditActionsOfKind('SEND')).toEqual([
+      'RFQ_SENT',
+      'RFQ_EMAILED',
+      'RFQ_REMINDER_EMAILED',
+      'RFQ_EMAIL_FAILED',
+    ]);
     expect(auditActionsOfKind('EXPORT')).toEqual(['RFQ_DOWNLOADED']);
   });
 });

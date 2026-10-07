@@ -8,6 +8,19 @@ import {
   MoveProposalStageRequestSchema,
   ProposalOwnersResponseSchema,
   MarkRfqSentRequestSchema,
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
+  MailDetailSchema,
+  MailListQuerySchema,
+  MailListResponseSchema,
+  MailPreviewResponseSchema,
+  PreviewMailRequestSchema,
+  ProposalInsurerParamsSchema,
+  ProposalMailParamsSchema,
+  RecordInsurerResponseRequestSchema,
+  SendMailResponseSchema,
+  SendReminderRequestSchema,
+  SendRfqRequestSchema,
   ProposalIdParamsSchema,
   ProposalListQuerySchema,
   ProposalListResponseSchema,
@@ -17,14 +30,10 @@ import {
 } from '../../shared/index.ts';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
-import { notFound } from '../../lib/errors.ts';
-import { istDay } from '../../lib/ist-day.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
-import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
-import { ClientModel } from '../clients/client.model.ts';
 import {
   createProposal,
   getProposal,
@@ -40,7 +49,12 @@ import {
   type Actor,
 } from './proposals.service.ts';
 import type { ExistingPolicySource } from './existing-policy-source.ts';
-import { rfqDocument } from './rfq-document.ts';
+import { rfqFileFor } from './rfq-document.ts';
+import { writeAudit } from '../audit/audit.service.ts';
+import { caseMailAttachment, getCaseMail, listCaseMails } from '../mail/mail-log.service.ts';
+import type { MailTransport } from '../mail/transport.ts';
+import { recordResponse } from './insurer-status.ts';
+import { previewMails, sendReminder, sendRfq, type MailDeps } from './rfq-mail.service.ts';
 
 function actorOf(req: Request): Actor {
   return { id: currentUser(req).id, requestId: req.requestId };
@@ -56,9 +70,15 @@ export function createProposalsRouter(options: {
   gstRatePercent: string;
   /** Where renewals get last year's policy (the policy software's public API). */
   policySource: ExistingPolicySource;
+  /** How RFQ mails leave (smtp, outbox or off). */
+  mailTransport: MailTransport;
 }): Router {
   const router = Router();
   router.use(authenticate(options));
+  const mail: MailDeps = {
+    transport: options.mailTransport,
+    defaultGstRatePercent: options.gstRatePercent,
+  };
 
   router.get(
     '/',
@@ -153,22 +173,7 @@ export function createProposalsRouter(options: {
       { params: ProposalIdParamsSchema, query: DocumentFormatQuerySchema },
       async ({ params, query }, req, res) => {
         const record = await proposalForRfq(params.id, actorOf(req), query.format);
-        const client = await ClientModel.findById(record.client.id).lean();
-        if (!client) throw notFound('The proposal’s client no longer exists');
-        const [gstRatePercent, products, sections, notes, addons] = await Promise.all([
-          record.gstRatePercent ??
-            taxRatePercentOn('GST', istDay(new Date(record.createdAt)), options.gstRatePercent),
-          catalogItems('products'),
-          catalogItems('sections'),
-          catalogItems('notes'),
-          catalogItems('addons'),
-        ]);
-        const file = await rfqDocument(
-          record,
-          client,
-          { gstRatePercent, products, sections, notes, addons },
-          query.format,
-        );
+        const file = await rfqFileFor(record, query.format, options.gstRatePercent);
         res.setHeader('Content-Type', file.contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
         res.setHeader('X-Document-Layout', file.layout);
@@ -186,6 +191,92 @@ export function createProposalsRouter(options: {
         res.json(await markRfqSent(params.id, body, actorOf(req)));
       },
     ),
+  );
+
+  router.post(
+    '/:id/rfq/preview',
+    requirePermission('proposals.send'),
+    route(
+      { params: ProposalIdParamsSchema, body: PreviewMailRequestSchema },
+      async ({ params, body }, req, res) => {
+        res.json(await previewMails(params.id, body, actorOf(req)));
+      },
+    ),
+  );
+
+  router.post(
+    '/:id/rfq/email',
+    requirePermission('proposals.send'),
+    route(
+      { params: ProposalIdParamsSchema, body: SendRfqRequestSchema },
+      async ({ params, body }, req, res) => {
+        res.json(await sendRfq(params.id, body, actorOf(req), mail));
+      },
+    ),
+  );
+
+  router.post(
+    '/:id/insurers/:insurerId/reminder',
+    requirePermission('proposals.send'),
+    route(
+      { params: ProposalInsurerParamsSchema, body: SendReminderRequestSchema },
+      async ({ params, body }, req, res) => {
+        res.json(await sendReminder(params.id, params.insurerId, body, actorOf(req), mail));
+      },
+    ),
+  );
+
+  router.put(
+    '/:id/insurers/:insurerId/response',
+    requirePermission('proposals.edit'),
+    route(
+      { params: ProposalInsurerParamsSchema, body: RecordInsurerResponseRequestSchema },
+      async ({ params, body }, req, res) => {
+        res.json(await recordResponse(params.id, params.insurerId, body, actorOf(req)));
+      },
+    ),
+  );
+
+  router.get(
+    '/:id/mails',
+    requirePermission('proposals.view'),
+    route(
+      { params: ProposalIdParamsSchema, query: MailListQuerySchema },
+      async ({ params, query }, _req, res) => {
+        await getProposal(params.id);
+        res.json(await listCaseMails(params.id, query));
+      },
+    ),
+  );
+
+  router.get(
+    '/:id/mails/:mailId',
+    requirePermission('proposals.view'),
+    route({ params: ProposalMailParamsSchema }, async ({ params }, _req, res) => {
+      res.json(await getCaseMail(params.id, params.mailId));
+    }),
+  );
+
+  router.get(
+    '/:id/mails/:mailId/attachment',
+    requirePermission('proposals.export'),
+    route({ params: ProposalMailParamsSchema }, async ({ params }, req, res) => {
+      const file = await caseMailAttachment(params.id, params.mailId);
+      await writeAudit({
+        userId: currentUser(req).id,
+        action: AUDIT_ACTIONS.RFQ_DOWNLOADED,
+        entity: AUDIT_ENTITIES.PROPOSAL,
+        entityId: params.id,
+        after: { fileName: file.fileName, mailId: params.mailId },
+        requestId: req.requestId,
+      });
+      res.setHeader('Content-Type', file.contentType);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${file.fileName.replace(/["\r\n]/g, '')}"`,
+      );
+      res.send(file.data);
+    }),
   );
 
   return router;
@@ -286,9 +377,9 @@ documentRoute({
   method: 'post',
   path: '/api/v1/proposals/{id}/rfq/sent',
   tags: ['Proposals'],
-  summary: 'Mark the RFQ as sent',
+  summary: 'Mark the RFQ as sent outside the app',
   description:
-    'Needs proposals.send. Records that the RFQ was emailed to these insurers (already on the proposal): who and when. The proposal moves to RFQ Sent and its Data Sheet locks. Audited as a send.',
+    'Needs proposals.send. Records that the RFQ was sent to these insurers (already on the proposal) another way: who, when and the quote due date (dueDate, else the case’s). The proposal moves to RFQ Sent and its Data Sheet locks. Audited as a send.',
   request: { params: ProposalIdParamsSchema, body: json(MarkRfqSentRequestSchema) },
   responses: {
     200: { description: 'The proposal', ...json(ProposalRecordSchema) },
@@ -347,5 +438,111 @@ documentRoute({
   responses: {
     200: { description: 'The proposal', ...json(ProposalRecordSchema) },
     ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/rfq/preview',
+  tags: ['RFQ mail'],
+  summary: 'Preview the RFQ or reminder mails',
+  description:
+    'Needs proposals.send. The mails a send would make, one per insurer, from the saved template (kind RFQ or REMINDER). Addresses must be the insurer’s own in the insurer master. Sends and stores nothing.',
+  request: { params: ProposalIdParamsSchema, body: json(PreviewMailRequestSchema) },
+  responses: {
+    200: { description: 'The mails', ...json(MailPreviewResponseSchema) },
+    ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/rfq/email',
+  tags: ['RFQ mail'],
+  summary: 'Email the RFQ to insurers',
+  description:
+    'Needs proposals.send. One mail per insurer, To its chosen addresses only (never Cc or Bcc), with the RFQ attached (xlsx or pdf, at most 10 MB) and the quote due date. Each insurer gets SENT, FAILED (with the reason; it stays Not sent) or SKIPPED (already sent, or another send is in progress). Repeating a sendId mails nobody again. 409 MAIL_DISABLED when mail is off, DATA_SHEET_INCOMPLETE before the Data Sheet is complete; 422 RFQ_ATTACHMENT_TOO_LARGE. Every mail is logged against the case and audited.',
+  request: { params: ProposalIdParamsSchema, body: json(SendRfqRequestSchema) },
+  responses: {
+    200: { description: 'Per-insurer results and the case', ...json(SendMailResponseSchema) },
+    ...errorResponses(400, 401, 403, 404, 409, 422),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/insurers/{insurerId}/reminder',
+  tags: ['RFQ mail'],
+  summary: 'Remind an insurer',
+  description:
+    'Needs proposals.send. For an insurer that is Sent or Reminded: one mail from the Reminder template to its chosen addresses, the RFQ attached when attachRfq. On success the insurer becomes Reminded and its reminder count goes up. 409 when it has answered or mail is off. Logged and audited.',
+  request: { params: ProposalInsurerParamsSchema, body: json(SendReminderRequestSchema) },
+  responses: {
+    200: { description: 'The result and the case', ...json(SendMailResponseSchema) },
+    ...errorResponses(400, 401, 403, 404, 409, 422),
+  },
+});
+
+documentRoute({
+  method: 'put',
+  path: '/api/v1/proposals/{id}/insurers/{insurerId}/response',
+  tags: ['RFQ mail'],
+  summary: 'Record an insurer’s answer',
+  description:
+    'Needs proposals.edit. Quoted, Declined or No response, with an optional note, for an insurer that has the RFQ; an answer can be corrected to another answer. 409 for a change the status table does not allow. Audited.',
+  request: {
+    params: ProposalInsurerParamsSchema,
+    body: json(RecordInsurerResponseRequestSchema),
+  },
+  responses: {
+    200: { description: 'The case', ...json(ProposalRecordSchema) },
+    ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'get',
+  path: '/api/v1/proposals/{id}/mails',
+  tags: ['RFQ mail'],
+  summary: 'The case’s mail log',
+  description:
+    'Needs proposals.view. Every RFQ and reminder mail of the case, delivered, kept in the outbox or failed: who sent it to whom and when. Newest first; cursor pagination.',
+  request: { params: ProposalIdParamsSchema, query: MailListQuerySchema },
+  responses: {
+    200: { description: 'A page of mails', ...json(MailListResponseSchema) },
+    ...errorResponses(400, 401, 403, 404),
+  },
+});
+
+documentRoute({
+  method: 'get',
+  path: '/api/v1/proposals/{id}/mails/{mailId}',
+  tags: ['RFQ mail'],
+  summary: 'One mail with its text',
+  description: 'Needs proposals.view. The mail as sent: From, To, subject, text and HTML bodies.',
+  request: { params: ProposalMailParamsSchema },
+  responses: {
+    200: { description: 'The mail', ...json(MailDetailSchema) },
+    ...errorResponses(400, 401, 403, 404),
+  },
+});
+
+documentRoute({
+  method: 'get',
+  path: '/api/v1/proposals/{id}/mails/{mailId}/attachment',
+  tags: ['RFQ mail'],
+  summary: 'Download a mail’s attachment',
+  description:
+    'Needs proposals.export. The RFQ file exactly as the mail carried it. 404 when the mail had none. Audited as an export.',
+  request: { params: ProposalMailParamsSchema },
+  responses: {
+    200: {
+      description: 'The file',
+      content: {
+        [XLSX_CONTENT_TYPE]: { schema: z.string().meta({ format: 'binary' }) },
+        [PDF_CONTENT_TYPE]: { schema: z.string().meta({ format: 'binary' }) },
+      },
+    },
+    ...errorResponses(400, 401, 403, 404),
   },
 });

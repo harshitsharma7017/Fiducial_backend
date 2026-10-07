@@ -1,6 +1,9 @@
 import { AuditLogModel } from './modules/audit/audit.model.ts';
 import { CatalogItemModel } from './modules/catalog/catalog-item.model.ts';
 import { DocumentTemplateModel } from './modules/documents/document-template.model.ts';
+import { EmailTemplateModel } from './modules/email-templates/email-template.model.ts';
+import { MailAttachmentModel } from './modules/mail/mail-attachment.model.ts';
+import { MailLogModel } from './modules/mail/mail-log.model.ts';
 import { AddonFavouritesModel } from './modules/clients/addon-favourites.model.ts';
 import { ClientLocationModel } from './modules/clients/client-location.model.ts';
 import { ClientModel } from './modules/clients/client.model.ts';
@@ -25,6 +28,9 @@ const MODELS = [
   CatalogItemModel,
   DocumentTemplateModel,
   AddonFavouritesModel,
+  EmailTemplateModel,
+  MailLogModel,
+  MailAttachmentModel,
 ];
 
 /**

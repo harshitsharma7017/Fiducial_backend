@@ -42,6 +42,7 @@
     "jose": "6.2.12",
     "jszip": "3.10.2",
     "mongoose": "9.10.4",
+    "nodemailer": "10.0.15",
     "pdfmake": "0.3.11",
     "pino": "10.4.0",
     "pino-http": "11.0.0",

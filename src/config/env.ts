@@ -1,3 +1,4 @@
+import { MAIL_TRANSPORTS } from '../shared/index.ts';
 import { z } from 'zod';
 
 /** Express "trust proxy": false, true, a hop count, or a list such as "loopback, 10.0.0.0/8". */
@@ -75,6 +76,22 @@ export const EnvSchema = z
     EXISTING_POLICY_API_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
     /** How that software is named on screen, for example "PolicyDesk". */
     EXISTING_POLICY_SOURCE_NAME: z.string().trim().min(1).max(60).default('the policy software'),
+    /**
+     * How RFQ mails leave: smtp delivers them, outbox only keeps them in the mail log, off refuses
+     * to send. Unset means outbox, except off in production, so nothing is mailed by accident.
+     */
+    MAIL_TRANSPORT: z.enum(MAIL_TRANSPORTS).optional(),
+    /** The From address of every mail; required for smtp. */
+    MAIL_FROM: z.email('Must be an email address such as rfq@example.com').optional(),
+    SMTP_HOST: z.string().trim().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+    /** true: TLS from the start (port 465); false: STARTTLS when the server offers it. */
+    SMTP_SECURE: z
+      .enum(['true', 'false'], 'Must be true or false')
+      .default('false')
+      .transform((value) => value === 'true'),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.startsWith('dev-only')) {
@@ -84,7 +101,36 @@ export const EnvSchema = z
         message: 'The example development secret cannot be used in production',
       });
     }
-  });
+    if (env.MAIL_TRANSPORT === 'smtp') {
+      const required = {
+        MAIL_FROM: env.MAIL_FROM,
+        SMTP_HOST: env.SMTP_HOST,
+        SMTP_PORT: env.SMTP_PORT,
+      };
+      for (const [name, value] of Object.entries(required)) {
+        if (value === undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'Required when MAIL_TRANSPORT=smtp',
+          });
+        }
+      }
+    }
+    if (env.SMTP_PASSWORD !== undefined && env.SMTP_USER === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SMTP_PASSWORD'],
+        message: 'Set SMTP_USER as well, or leave SMTP_PASSWORD unset',
+      });
+    }
+  })
+  .transform((env) => ({
+    ...env,
+    MAIL_TRANSPORT:
+      env.MAIL_TRANSPORT ??
+      (env.NODE_ENV === 'production' ? ('off' as const) : ('outbox' as const)),
+  }));
 
 export type Env = z.output<typeof EnvSchema>;
 

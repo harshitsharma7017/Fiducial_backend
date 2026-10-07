@@ -36,6 +36,8 @@ never a role. The table follows the PRD personas and waits for the client's conf
 - **GSTIN**: 15-character GST registration number: state code, the holder's PAN, a registration number, "Z" and a
   check character. Validated in `src/shared/gst.ts`; unique per client.
 - **Risk location**: an insured site of a client; its pincode (from the master) gives the state, district and EQ zone.
+- **Insurer status**: per insurer on a case. Not sent → Sent (emailed or marked sent outside the app) → Reminded →
+  Quoted, Declined or No response (set by a user, correctable). Rules in `canMoveInsurer()` (`src/shared/proposals.ts`).
 - **Master version**: each import is a `DRAFT`; an admin activates it (`ACTIVE`); the previous one becomes
   `SUPERSEDED`. Lookups and ratings always read the ACTIVE version; old versions are kept.
 
@@ -55,7 +57,12 @@ policy software's public API (existing-policy-source.ts).
 Document engine (R-3, R-4): Admins upload the client's Excel templates; the RFQ downloads as that template filled
 (Excel) or as an A4 PDF with the broker's letterhead. QCR and Placement Slip templates are stored, not yet filled.
 
-Not built yet: quotes, QCR, placement slips, other documents, sending email.
+RFQ email (E-2, E-3, E-4, E-6): Admin-edited email templates with merge fields; the API emails the RFQ, one mail per
+insurer with the RFQ attached and a quote due date; reminders; insurer statuses (Not sent, Sent, Reminded, Quoted,
+Declined, No response; Overdue shown after the due date); a mail log per case. Mail is `outbox` in development and
+`off` in production until SMTP is configured (Q14).
+
+Not built yet: quotes, QCR, placement slips, other documents.
 
 ## Rules
 

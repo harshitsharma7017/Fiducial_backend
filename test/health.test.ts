@@ -130,6 +130,16 @@ describe('API documentation', () => {
         'PUT /api/v1/catalog/{master}/order',
         'PUT /api/v1/catalog/{master}/{id}',
         'GET /api/v1/audit',
+        'GET /api/v1/email-templates',
+        'PUT /api/v1/email-templates/{kind}',
+        'GET /api/v1/mail/status',
+        'POST /api/v1/proposals/{id}/rfq/preview',
+        'POST /api/v1/proposals/{id}/rfq/email',
+        'POST /api/v1/proposals/{id}/insurers/{insurerId}/reminder',
+        'PUT /api/v1/proposals/{id}/insurers/{insurerId}/response',
+        'GET /api/v1/proposals/{id}/mails',
+        'GET /api/v1/proposals/{id}/mails/{mailId}',
+        'GET /api/v1/proposals/{id}/mails/{mailId}/attachment',
       ].sort(),
     );
     // The audit query's filters are documented as query parameters.

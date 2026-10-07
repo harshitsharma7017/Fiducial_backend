@@ -61,6 +61,60 @@ describe('loadEnv', () => {
   });
 });
 
+describe('mail settings', () => {
+  const SMTP = {
+    MAIL_TRANSPORT: 'smtp',
+    MAIL_FROM: 'rfq@broker.example',
+    SMTP_HOST: 'smtp.broker.example',
+    SMTP_PORT: '587',
+  };
+
+  it('keeps mail in the outbox by default, and turns it off in production', () => {
+    expect(loadEnv(VALID).MAIL_TRANSPORT).toBe('outbox');
+    expect(loadEnv({ ...VALID, NODE_ENV: 'test' }).MAIL_TRANSPORT).toBe('outbox');
+    expect(loadEnv({ ...VALID, NODE_ENV: 'production' }).MAIL_TRANSPORT).toBe('off');
+    expect(
+      loadEnv({ ...VALID, NODE_ENV: 'production', MAIL_TRANSPORT: 'outbox' }).MAIL_TRANSPORT,
+    ).toBe('outbox');
+  });
+
+  it('reads the smtp settings', () => {
+    const env = loadEnv({ ...VALID, ...SMTP, SMTP_SECURE: 'true', SMTP_USER: 'mailer' });
+    expect(env).toMatchObject({
+      MAIL_TRANSPORT: 'smtp',
+      SMTP_PORT: 587,
+      SMTP_SECURE: true,
+      SMTP_USER: 'mailer',
+    });
+    expect(loadEnv({ ...VALID, ...SMTP }).SMTP_SECURE).toBe(false);
+  });
+
+  it.each(['MAIL_FROM', 'SMTP_HOST', 'SMTP_PORT'] as const)('needs %s for smtp', (name) => {
+    const { [name]: _missing, ...rest } = SMTP;
+    expect(() => loadEnv({ ...VALID, ...rest })).toThrow(
+      new RegExp(`${name}: Required when MAIL_TRANSPORT=smtp`),
+    );
+  });
+
+  it('refuses a password without a user, without echoing it', () => {
+    let error: unknown;
+    try {
+      loadEnv({ ...VALID, ...SMTP, SMTP_PASSWORD: 'smtp-secret-password' });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as ConfigError).message).toContain('SMTP_PASSWORD');
+    expect((error as ConfigError).message).not.toContain('smtp-secret-password');
+  });
+
+  it('refuses an unknown transport, a bad From and a bad SMTP_SECURE', () => {
+    expect(() => loadEnv({ ...VALID, MAIL_TRANSPORT: 'sendmail' })).toThrow(/MAIL_TRANSPORT/);
+    expect(() => loadEnv({ ...VALID, MAIL_FROM: 'not-an-address' })).toThrow(/MAIL_FROM/);
+    expect(() => loadEnv({ ...VALID, SMTP_SECURE: 'yes' })).toThrow(/SMTP_SECURE/);
+  });
+});
+
 describe('loadScriptEnv', () => {
   it('needs only the database URI', () => {
     expect(loadScriptEnv({ MONGODB_URI: VALID.MONGODB_URI }).MONGODB_URI).toBe(VALID.MONGODB_URI);

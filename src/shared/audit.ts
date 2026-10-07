@@ -29,6 +29,11 @@ export const AUDIT_ACTIONS = {
   PROPOSAL_STAGE_CHANGED: 'PROPOSAL_STAGE_CHANGED',
   RFQ_DOWNLOADED: 'RFQ_DOWNLOADED',
   RFQ_SENT: 'RFQ_SENT',
+  RFQ_EMAILED: 'RFQ_EMAILED',
+  RFQ_REMINDER_EMAILED: 'RFQ_REMINDER_EMAILED',
+  RFQ_EMAIL_FAILED: 'RFQ_EMAIL_FAILED',
+  INSURER_RESPONSE_RECORDED: 'INSURER_RESPONSE_RECORDED',
+  EMAIL_TEMPLATE_UPDATED: 'EMAIL_TEMPLATE_UPDATED',
   MASTER_IMPORTED: 'MASTER_IMPORTED',
   OCCUPANCY_CREATED: 'OCCUPANCY_CREATED',
   OCCUPANCY_UPDATED: 'OCCUPANCY_UPDATED',
@@ -60,13 +65,15 @@ export const AUDIT_ENTITIES = {
   CATALOG_ITEM: 'catalog_item',
   /** A document template (entity id: its kind, such as "RFQ"). */
   DOCUMENT_TEMPLATE: 'document_template',
+  /** An email template (entity id: its kind, "RFQ" or "REMINDER"). */
+  EMAIL_TEMPLATE: 'email_template',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
 
 /**
- * The kind of event, as feature F-3 and requirement AUD-01 list them. SEND and EXPORT start with
- * the RFQ: marking it sent and downloading it.
+ * The kind of event, as feature F-3 and requirement AUD-01 list them. SEND covers the RFQ:
+ * emailing it, reminding, a failed mail and marking it sent by hand; EXPORT covers downloading it.
  */
 export const AUDIT_KINDS = ['SESSION', 'CREATE', 'EDIT', 'APPROVE', 'SEND', 'EXPORT'] as const;
 export const AuditKindSchema = z.enum(AUDIT_KINDS);
@@ -89,6 +96,11 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   PROPOSAL_STAGE_CHANGED: 'EDIT',
   RFQ_DOWNLOADED: 'EXPORT',
   RFQ_SENT: 'SEND',
+  RFQ_EMAILED: 'SEND',
+  RFQ_REMINDER_EMAILED: 'SEND',
+  RFQ_EMAIL_FAILED: 'SEND',
+  INSURER_RESPONSE_RECORDED: 'EDIT',
+  EMAIL_TEMPLATE_UPDATED: 'EDIT',
   MASTER_IMPORTED: 'CREATE',
   OCCUPANCY_CREATED: 'CREATE',
   OCCUPANCY_UPDATED: 'EDIT',
@@ -119,7 +131,12 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   PROPOSAL_UPDATED: 'Proposal edited',
   PROPOSAL_STAGE_CHANGED: 'Proposal stage changed',
   RFQ_DOWNLOADED: 'RFQ downloaded',
-  RFQ_SENT: 'RFQ sent',
+  RFQ_SENT: 'RFQ marked as sent',
+  RFQ_EMAILED: 'RFQ emailed',
+  RFQ_REMINDER_EMAILED: 'RFQ reminder emailed',
+  RFQ_EMAIL_FAILED: 'RFQ email failed',
+  INSURER_RESPONSE_RECORDED: 'Insurer response recorded',
+  EMAIL_TEMPLATE_UPDATED: 'Email template edited',
   MASTER_IMPORTED: 'Master imported',
   OCCUPANCY_CREATED: 'Occupancy added',
   OCCUPANCY_UPDATED: 'Occupancy edited',
@@ -155,6 +172,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   catalog: 'Product and cover master',
   catalog_item: 'Master row',
   document_template: 'Document template',
+  email_template: 'Email template',
 };
 
 /** The actions of one kind, for filtering the log. */

@@ -6,6 +6,10 @@ import {
   type ProposalRecord,
 } from '../../shared/index.ts';
 import type ExcelJS from 'exceljs';
+import { notFound } from '../../lib/errors.ts';
+import { istDay } from '../../lib/ist-day.ts';
+import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
+import { ClientModel } from '../clients/client.model.ts';
 import { openTemplate, saveWorkbook, sheetNamed } from '../documents/excel-template.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
@@ -94,4 +98,26 @@ export async function rfqDocument(
     fileName: `${name}.xlsx`,
     layout,
   };
+}
+
+/**
+ * The RFQ of a case as it is now, with the masters it reads (GST, products, sections, notes,
+ * add-ons): the file the download returns and the mails attach.
+ */
+export async function rfqFileFor(
+  record: ProposalRecord,
+  format: 'xlsx' | 'pdf',
+  defaultGstRatePercent: string,
+): Promise<RfqDocument> {
+  const client = await ClientModel.findById(record.client.id).lean();
+  if (!client) throw notFound('The proposal’s client no longer exists');
+  const [gstRatePercent, products, sections, notes, addons] = await Promise.all([
+    record.gstRatePercent ??
+      taxRatePercentOn('GST', istDay(new Date(record.createdAt)), defaultGstRatePercent),
+    catalogItems('products'),
+    catalogItems('sections'),
+    catalogItems('notes'),
+    catalogItems('addons'),
+  ]);
+  return rfqDocument(record, client, { gstRatePercent, products, sections, notes, addons }, format);
 }

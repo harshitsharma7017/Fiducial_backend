@@ -8,7 +8,8 @@ This repository holds the **foundation**: authentication, role-based permissions
 occupancy and pincode masters with a validated import, the client master with any number of risk locations per
 client, the insurer master with the email addresses RFQs go to, the product and cover masters (products, coverage
 sections, add-ons, BSUS/BLUS add-on rates, GST rates, standard notes), the Fire rating check, and new-business
-proposals from creation to the RFQ (Data Sheet, RFQ workbook, insurers, marking it sent). The web app lives in the separate
+proposals from creation to the RFQ (Data Sheet, RFQ workbook, insurers, emailing it or marking it sent), insurer
+statuses with reminders and responses, and a mail log per case. The web app lives in the separate
 **Fiducial_frontend** repository and calls this API through its own server-side routes.
 
 Project documents are in [docs/](docs/); open questions and data issues are in
@@ -75,7 +76,8 @@ src/
   config/               Zod-validated environment
   lib/                  logger, errors, decimal helpers, db, OpenAPI registry
   middleware/           request id, auth, permissions, validation, error handling
-  modules/              auth, users, audit, masters (with import/), clients, insurers, imports, rating, health
+  modules/              auth, users, audit, masters (with import/), clients, insurers, imports, rating, health,
+                        proposals, documents, catalog, email-templates, mail (transport, mail log)
   scripts/              seed-admin.ts, import-masters.ts
   shared/               API contracts (Zod schemas, enums, formatters), copied to the frontend
 test/                   Supertest integration tests and helpers
@@ -190,11 +192,53 @@ it fails there until the frontend is synced.
   claim details). The `X-Document-Layout` header says which (`template` or `built-in`). `409
 DATA_SHEET_INCOMPLETE` until nothing is missing. The product (BSUS, BLUS, SFSP or PAR) is listed for the insurer
   and chosen at the QCR. Each download is audited with its format.
-- **Sent** (`POST /{id}/rfq/sent`, `proposals.send`): the RFQ is emailed from the user's own mailbox; this records
-  for which insurers it went, who sent it and when. The proposal moves to RFQ Sent and its Data Sheet locks (`409
-PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
+- **Sent outside the app** (`POST /{id}/rfq/sent`, `proposals.send`): for an RFQ sent another way, records for which
+  insurers it went, who and when, and the quote due date (`dueDate`, else the case's). No mail is logged.
+- Once the first insurer has the RFQ (emailed or marked sent) the proposal moves to RFQ Sent and its Data Sheet locks
+  (`409 PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
 - Client, location and insurer details are read live from the masters, so a corrected address shows on the next
   RFQ. Every change is audited with before and after values.
+
+## RFQ email, insurer statuses and the mail log (E-2 to E-6)
+
+- **Email templates** (`/api/v1/email-templates`; read `masters.view`, edit `masters.manage`): the RFQ and Reminder
+  mails' subject and body, seeded with neutral wording at startup. Merge fields are `{{insuredName}}`,
+  `{{policyPeriod}}`, `{{dueDate}}`, `{{reference}}`, `{{insurerName}}`, `{{contactName}}` and `{{senderName}}`; an
+  unknown field or a stray `{{` or `}}` is a 400 naming it. Saving sends `expectedVersion` and fails with
+  `409 TEMPLATE_VERSION_CONFLICT` when someone saved meanwhile. `renderMail()` in `src/shared/mail.ts` fills them for
+  both the API and the web app's preview: values are escaped in the HTML part and the subject is one line.
+- **Sending** (`POST /proposals/{id}/rfq/email`, `proposals.send`): `{ sendId, insurers: [{ insurerId, to }], dueDate,
+format }`. One mail per insurer, To its chosen addresses only (its RFQ addresses and contacts' emails in the insurer
+  master; anything else is a 400 and nothing is sent), never Cc or Bcc, Reply-To the sender, with the RFQ attached
+  (xlsx or pdf, at most 10 MB, `422 RFQ_ATTACHMENT_TOO_LARGE`). Each insurer gets `SENT`, `FAILED` (with the reason;
+  it stays Not sent, to try again) or `SKIPPED` (another send to it was in progress). Naming an insurer that already
+  has the RFQ is a 409. Repeating a `sendId` mails nobody again and returns the first results.
+  `POST /{id}/rfq/preview` returns the mails without sending.
+- **Reminders** (`POST /{id}/insurers/{insurerId}/reminder`, `proposals.send`): the Reminder template to an insurer
+  that is Sent or Reminded, the RFQ attached when `attachRfq`; it becomes Reminded and its count goes up. Manual
+  only.
+- **Responses** (`PUT /{id}/insurers/{insurerId}/response`, `proposals.edit`): Quoted, Declined or No response with an
+  optional note. `canMoveInsurer()` in `src/shared/proposals.ts` holds the allowed changes; nothing goes back to Not
+  sent. Each insurer also carries its due date, `overdue` (Sent or Reminded after the due date, India time), reminder
+  count, last response and last mail.
+- **Mail log** (`GET /{id}/mails`, `/mails/{mailId}`, `proposals.view`; `/mails/{mailId}/attachment`,
+  `proposals.export`): every mail sent, kept in the outbox or failed, with To, subject, both bodies, the template
+  version, the attachment (stored once in `mail_attachments` by SHA-256), the sender, the transport and the result.
+  `mail_log` is append-only. Each mail also adds an activity line and an audit entry (`RFQ_EMAILED`,
+  `RFQ_REMINDER_EMAILED` or `RFQ_EMAIL_FAILED`, with the insurer's status before and after).
+- **Mail settings** (`GET /mail/status`, `settings.view`, never shows credentials):
+
+  | Variable                     | Meaning                                                                                                                               |
+  | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+  | `MAIL_TRANSPORT`             | `smtp` delivers; `outbox` keeps mails in the log only; `off` refuses (`409 MAIL_DISABLED`). Unset: `outbox`, but `off` in production. |
+  | `MAIL_FROM`                  | The From address; required for smtp (outbox uses `rfq@outbox.invalid`).                                                               |
+  | `SMTP_HOST`, `SMTP_PORT`     | Required for smtp.                                                                                                                    |
+  | `SMTP_SECURE`                | `true` for TLS from the start (port 465); `false` (default) uses STARTTLS when offered.                                               |
+  | `SMTP_USER`, `SMTP_PASSWORD` | Optional; the password needs the user. Never logged or returned.                                                                      |
+
+  Mail goes out from the API process, one insurer after another, with no job queue. If the server stops after the
+  mail server accepted a mail but before it was recorded, that insurer's claim expires after 10 minutes and a retry
+  could mail it twice. Tests use a fake transport and never reach an SMTP server.
 
 ## Product and cover masters (M-4 to M-9)
 
