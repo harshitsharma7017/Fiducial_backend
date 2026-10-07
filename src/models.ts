@@ -2,6 +2,7 @@ import { AuditLogModel } from './modules/audit/audit.model.ts';
 import { ClientLocationModel } from './modules/clients/client-location.model.ts';
 import { ClientModel } from './modules/clients/client.model.ts';
 import { InsurerModel } from './modules/insurers/insurer.model.ts';
+import { CounterModel, ProposalModel } from './modules/proposals/proposal.model.ts';
 import { MasterVersionModel } from './modules/masters/master-version.model.ts';
 import { OccupancyModel } from './modules/masters/occupancy.model.ts';
 import { PincodeModel } from './modules/masters/pincode.model.ts';
@@ -16,6 +17,8 @@ const MODELS = [
   ClientModel,
   ClientLocationModel,
   InsurerModel,
+  ProposalModel,
+  CounterModel,
 ];
 
 /**

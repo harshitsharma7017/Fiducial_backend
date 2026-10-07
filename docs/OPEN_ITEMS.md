@@ -56,6 +56,14 @@ and Open Questions).
   changes in place and its audit entry keeps each field's old and new value; lookups and the Fire rate check use the
   change at once. Larger changes are made in Excel and uploaded as a new version. Risk locations keep the state,
   district and zone they were given when saved. Rows are not deleted on screen.
+- Proposals (new business, to the RFQ): the RFQ is emailed by the user from their own mailbox and then marked as
+  sent in the app; the app does not send email. Marking it sent locks the Data Sheet. The Data Sheet captures Fire
+  in detail per location and the other 13 sections by sum insured only (Proposed 1 and 2); their detailed schedules
+  (stock declarations, money in transit limits, and so on) are not captured yet. The product is chosen at the QCR,
+  so the RFQ lists all four for the insurers.
+- RFQ Option 2: the Fire Option 2 total adds only the lines given a second figure; lines left blank are not carried
+  over from Option 1. Please confirm, or say whether a blank line should count at its Option 1 figure.
+- Proposals cannot be deleted or reopened after the RFQ is sent; renewals are not served by the API yet.
 - Clients, risk locations and insurers are never deleted. Insurers can be deactivated; clients and locations cannot
   until the client confirms how records referenced by proposals should be retired.
 

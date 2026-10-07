@@ -180,7 +180,7 @@ describe('GET /api/v1/audit', () => {
     const get = (query: string) =>
       request(app).get(`/api/v1/audit?${query}`).set(bearer(admin.token));
     await get('kind=DELETE').expect(400);
-    await get('entity=proposal').expect(400);
+    await get('entity=quote').expect(400);
     await get('entityId=0123456789abcdef01234567').expect(400);
     await get('actorId=not-an-id').expect(400);
     await get('cursor=0123456789abcdef01234567').expect(400);

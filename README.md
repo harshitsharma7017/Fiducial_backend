@@ -6,7 +6,8 @@ Slip.
 
 This repository holds the **foundation**: authentication, role-based permissions, user admin, an append-only audit log with a read API, IIB
 occupancy and pincode masters with a validated import, the client master with any number of risk locations per
-client, the insurer master with the email addresses RFQs go to, and the Fire rating check. The web app lives in the separate
+client, the insurer master with the email addresses RFQs go to, the Fire rating check, and new-business proposals from
+creation to the RFQ (Data Sheet, RFQ workbook, insurers, marking it sent). The web app lives in the separate
 **Fiducial_frontend** repository and calls this API through its own server-side routes.
 
 Project documents are in [docs/](docs/); open questions and data issues are in
@@ -102,8 +103,8 @@ it fails there until the frontend is synced.
   creates and edits, master imports, activations and the versions they supersede are written to the append-only `audit_logs` collection, in the same transaction as the
   change. Each entry keeps the record's fields before and after, so `GET /api/v1/audit` (Admin) can show who changed
   what, when, and each field's old and new value. It filters by kind (sign-in, create, edit, approve, send, export),
-  by record and by who acted. Nothing is sent or exported yet; those entries arrive with RFQ email and document
-  export.
+  by record and by who acted. Proposals are audited too: each RFQ download is an export (`RFQ_DOWNLOADED`) and
+  marking the RFQ sent is a send (`RFQ_SENT`).
 - **Roles and permissions**: each route needs one permission (`requirePermission()`), and
   `src/shared/permissions.ts` maps roles to permissions for both repos:
 
@@ -117,8 +118,8 @@ it fails there until the frontend is synced.
   | `masters.manage`, `users.manage`, `settings.view`, `audit.view` | yes   |          |                      |                          |           |
 
   The role codes are `ADMIN`, `MANAGER` (Approver), `ACCOUNT_MANAGER` (Relationship Manager), `PLACEMENT_EXEC`
-  (Underwriting / Placement) and `READ_ONLY`. A user with several roles holds the union. The proposal permissions
-  guard the web app's screens until the proposals API exists. The client still has to confirm the table (see
+  (Underwriting / Placement) and `READ_ONLY`. A user with several roles holds the union. The proposals API uses
+  `proposals.create`, `.edit`, `.export` and `.send` as described below. The client still has to confirm the table (see
   `docs/OPEN_ITEMS.md`).
 
 - Every endpoint is documented with `documentRoute()` next to its route.
@@ -138,6 +139,33 @@ it fails there until the frontend is synced.
   (`GET /api/v1/insurers?active=true`); only Admins (`masters.manage`) change them. Insurers are deactivated, never
   deleted. Company and branch together are unique, ignoring case and extra spaces (`409 INSURER_EXISTS`).
 - Clients, locations and insurers are edited with `PATCH` (only the fields sent change) and never deleted.
+
+## New-business proposals (to the RFQ)
+
+`/api/v1/proposals` serves new business from creation to the RFQ. Renewals are not served by the API yet; the web app
+still shows them from sample data.
+
+- **Create** (`POST`, `proposals.create`): a client from the client master, any of its risk locations and the date
+  quotes are needed by. Numbered `PRP-<year>-<n>` from a per-year counter. Starts as Draft.
+- **Data Sheet** (`PUT /{id}/data-sheet`, `proposals.edit`): saved as a whole. Per location, the 16 Fire items
+  (`FIRE_ITEMS` in `src/shared/proposals.ts`); building items are measured, priced as area × rate to the rupee
+  (half up) unless an amount is typed. Also hypothecation, stock in the open and the nine risk details. For the
+  proposal: an optional Option 2 per Fire line, the 13 other sections (included or not, Proposed 1 and 2), up to
+  three years of claims and notes. Amounts are whole rupees.
+- **Completeness**: every response lists in `missing` what the Data Sheet still needs before the RFQ (at least one
+  location, Fire sums insured for every location, Proposed 1 for every included section). The stage is Data Sheet
+  once nothing is missing.
+- **Insurers** (`PUT /{id}/insurers`, `proposals.edit`): up to five active insurers from the insurer master. One the
+  RFQ was sent to cannot be taken off.
+- **RFQ** (`GET /{id}/rfq`, `proposals.export`): the workbook in the client's RFQ layout — premium details (with
+  GST formulas from `GST_RATE_PERCENT`), schedule, Fire by location, risk details and claim details. `409
+DATA_SHEET_INCOMPLETE` until nothing is missing. The product (BSUS, BLUS, SFSP or PAR) is listed for the insurer
+  and chosen at the QCR.
+- **Sent** (`POST /{id}/rfq/sent`, `proposals.send`): the RFQ is emailed from the user's own mailbox; this records
+  for which insurers it went, who sent it and when. The proposal moves to RFQ Sent and its Data Sheet locks (`409
+PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
+- Client, location and insurer details are read live from the masters, so a corrected address shows on the next
+  RFQ. Every change is audited with before and after values.
 
 ## Excel import
 

@@ -18,6 +18,7 @@ export * from './imports.ts';
 export * from './insurers.ts';
 export * from './masters.ts';
 export * from './permissions.ts';
+export * from './proposals.ts';
 export * from './rating.ts';
 export * from './risk-types.ts';
 export * from './roles.ts';

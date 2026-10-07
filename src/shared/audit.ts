@@ -24,6 +24,10 @@ export const AUDIT_ACTIONS = {
   CLIENT_LOCATION_UPDATED: 'CLIENT_LOCATION_UPDATED',
   INSURER_CREATED: 'INSURER_CREATED',
   INSURER_UPDATED: 'INSURER_UPDATED',
+  PROPOSAL_CREATED: 'PROPOSAL_CREATED',
+  PROPOSAL_UPDATED: 'PROPOSAL_UPDATED',
+  RFQ_DOWNLOADED: 'RFQ_DOWNLOADED',
+  RFQ_SENT: 'RFQ_SENT',
   MASTER_IMPORTED: 'MASTER_IMPORTED',
   OCCUPANCY_CREATED: 'OCCUPANCY_CREATED',
   OCCUPANCY_UPDATED: 'OCCUPANCY_UPDATED',
@@ -41,6 +45,7 @@ export const AUDIT_ENTITIES = {
   CLIENT: 'client',
   CLIENT_LOCATION: 'client_location',
   INSURER: 'insurer',
+  PROPOSAL: 'proposal',
   MASTER_VERSION: 'master_version',
   OCCUPANCY: 'occupancy',
   PINCODE: 'pincode',
@@ -49,8 +54,8 @@ export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
 
 /**
- * The kind of event, as feature F-3 and requirement AUD-01 list them. SEND and EXPORT have no
- * actions yet: they arrive with RFQ email and document export.
+ * The kind of event, as feature F-3 and requirement AUD-01 list them. SEND and EXPORT start with
+ * the RFQ: marking it sent and downloading it.
  */
 export const AUDIT_KINDS = ['SESSION', 'CREATE', 'EDIT', 'APPROVE', 'SEND', 'EXPORT'] as const;
 export const AuditKindSchema = z.enum(AUDIT_KINDS);
@@ -68,6 +73,10 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   CLIENT_LOCATION_UPDATED: 'EDIT',
   INSURER_CREATED: 'CREATE',
   INSURER_UPDATED: 'EDIT',
+  PROPOSAL_CREATED: 'CREATE',
+  PROPOSAL_UPDATED: 'EDIT',
+  RFQ_DOWNLOADED: 'EXPORT',
+  RFQ_SENT: 'SEND',
   MASTER_IMPORTED: 'CREATE',
   OCCUPANCY_CREATED: 'CREATE',
   OCCUPANCY_UPDATED: 'EDIT',
@@ -89,6 +98,10 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CLIENT_LOCATION_UPDATED: 'Risk location edited',
   INSURER_CREATED: 'Insurer created',
   INSURER_UPDATED: 'Insurer edited',
+  PROPOSAL_CREATED: 'Proposal created',
+  PROPOSAL_UPDATED: 'Proposal edited',
+  RFQ_DOWNLOADED: 'RFQ downloaded',
+  RFQ_SENT: 'RFQ sent',
   MASTER_IMPORTED: 'Master imported',
   OCCUPANCY_CREATED: 'Occupancy added',
   OCCUPANCY_UPDATED: 'Occupancy edited',
@@ -112,6 +125,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   client: 'Client',
   client_location: 'Risk location',
   insurer: 'Insurer',
+  proposal: 'Proposal',
   master_version: 'Master version',
   occupancy: 'Occupancy',
   pincode: 'Pincode',

@@ -17,6 +17,7 @@ import { InsurerModel } from '../insurers/insurer.model.ts';
 import { MasterVersionModel } from '../masters/master-version.model.ts';
 import { OccupancyModel } from '../masters/occupancy.model.ts';
 import { PincodeModel } from '../masters/pincode.model.ts';
+import { ProposalModel } from '../proposals/proposal.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import { recordKey, toAuditLogEntry, type AuditLookups } from './audit.mapper.ts';
 import { AuditLogModel, type AuditLogDoc } from './audit.model.ts';
@@ -80,6 +81,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
   const insurerIds = new Set<string>();
   const occupancyIds = new Set<string>();
   const pincodeIds = new Set<string>();
+  const proposalIds = new Set<string>();
   for (const doc of docs) {
     if (doc.userId) userIds.add(doc.userId.toHexString());
     if (!doc.entityId || !OBJECT_ID.test(doc.entityId)) continue;
@@ -90,21 +92,28 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
     if (doc.entity === AUDIT_ENTITIES.INSURER) insurerIds.add(doc.entityId);
     if (doc.entity === AUDIT_ENTITIES.OCCUPANCY) occupancyIds.add(doc.entityId);
     if (doc.entity === AUDIT_ENTITIES.PINCODE) pincodeIds.add(doc.entityId);
+    if (doc.entity === AUDIT_ENTITIES.PROPOSAL) proposalIds.add(doc.entityId);
   }
 
-  const [users, versions, locations, insurers, occupancies, pincodes] = await Promise.all([
-    UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1 }).lean(),
-    MasterVersionModel.find(
-      { _id: { $in: [...versionIds] } },
-      { type: 1, sourceFileName: 1 },
-    ).lean(),
-    ClientLocationModel.find({ _id: { $in: [...locationIds] } }, { clientId: 1, name: 1 }).lean(),
-    InsurerModel.find({ _id: { $in: [...insurerIds] } }, { company: 1, branch: 1 }).lean(),
-    OccupancyModel.find({ _id: { $in: [...occupancyIds] } }, { tacCode: 1, description: 1 }).lean(),
-    PincodeModel.find({ _id: { $in: [...pincodeIds] } }, { pincode: 1, district: 1 }).lean(),
-  ]);
+  const [users, versions, locations, insurers, occupancies, pincodes, proposals] =
+    await Promise.all([
+      UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1 }).lean(),
+      MasterVersionModel.find(
+        { _id: { $in: [...versionIds] } },
+        { type: 1, sourceFileName: 1 },
+      ).lean(),
+      ClientLocationModel.find({ _id: { $in: [...locationIds] } }, { clientId: 1, name: 1 }).lean(),
+      InsurerModel.find({ _id: { $in: [...insurerIds] } }, { company: 1, branch: 1 }).lean(),
+      OccupancyModel.find(
+        { _id: { $in: [...occupancyIds] } },
+        { tacCode: 1, description: 1 },
+      ).lean(),
+      PincodeModel.find({ _id: { $in: [...pincodeIds] } }, { pincode: 1, district: 1 }).lean(),
+      ProposalModel.find({ _id: { $in: [...proposalIds] } }, { reference: 1, clientId: 1 }).lean(),
+    ]);
   // A location is labelled with its client's name, so those clients are read too.
   for (const location of locations) clientIds.add(location.clientId.toHexString());
+  for (const proposal of proposals) clientIds.add(proposal.clientId.toHexString());
   const clients = await ClientModel.find({ _id: { $in: [...clientIds] } }, { name: 1 }).lean();
   const clientNames = new Map(clients.map((client) => [client._id.toHexString(), client.name]));
 
@@ -139,6 +148,13 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
     labels.set(
       recordKey(AUDIT_ENTITIES.OCCUPANCY, occupancy._id.toHexString()),
       `${occupancy.tacCode} · ${occupancy.description}`,
+    );
+  }
+  for (const proposal of proposals) {
+    const clientName = clientNames.get(proposal.clientId.toHexString());
+    labels.set(
+      recordKey(AUDIT_ENTITIES.PROPOSAL, proposal._id.toHexString()),
+      clientName ? `${proposal.reference} · ${clientName}` : proposal.reference,
     );
   }
   for (const pincode of pincodes) {

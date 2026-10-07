@@ -106,6 +106,13 @@ describe('API documentation', () => {
         'GET /api/v1/insurers/{id}',
         'PATCH /api/v1/insurers/{id}',
         'POST /api/v1/rating/fire',
+        'GET /api/v1/proposals',
+        'POST /api/v1/proposals',
+        'GET /api/v1/proposals/{id}',
+        'PUT /api/v1/proposals/{id}/data-sheet',
+        'PUT /api/v1/proposals/{id}/insurers',
+        'GET /api/v1/proposals/{id}/rfq',
+        'POST /api/v1/proposals/{id}/rfq/sent',
         'GET /api/v1/audit',
       ].sort(),
     );

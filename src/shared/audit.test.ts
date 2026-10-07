@@ -85,6 +85,7 @@ describe('audit vocabulary', () => {
       'CLIENT_CREATED',
       'CLIENT_LOCATION_CREATED',
       'INSURER_CREATED',
+      'PROPOSAL_CREATED',
       'MASTER_IMPORTED',
       'OCCUPANCY_CREATED',
       'PINCODE_CREATED',
@@ -94,14 +95,14 @@ describe('audit vocabulary', () => {
       'CLIENT_UPDATED',
       'CLIENT_LOCATION_UPDATED',
       'INSURER_UPDATED',
+      'PROPOSAL_UPDATED',
       'OCCUPANCY_UPDATED',
       'PINCODE_UPDATED',
       'MASTER_SUPERSEDED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual(['MASTER_ACTIVATED']);
-    // Sending and exporting are not built yet.
-    expect(auditActionsOfKind('SEND')).toEqual([]);
-    expect(auditActionsOfKind('EXPORT')).toEqual([]);
+    expect(auditActionsOfKind('SEND')).toEqual(['RFQ_SENT']);
+    expect(auditActionsOfKind('EXPORT')).toEqual(['RFQ_DOWNLOADED']);
   });
 });
 
@@ -115,7 +116,7 @@ describe('AuditLogQuerySchema', () => {
 
   it('rejects unknown kinds, entities and keys, and defaults the page size', () => {
     expect(AuditLogQuerySchema.safeParse({ kind: 'DELETE' }).success).toBe(false);
-    expect(AuditLogQuerySchema.safeParse({ entity: 'proposal' }).success).toBe(false);
+    expect(AuditLogQuerySchema.safeParse({ entity: 'quote' }).success).toBe(false);
     expect(AuditLogQuerySchema.safeParse({ sort: 'at' }).success).toBe(false);
     expect(AuditLogQuerySchema.parse({}).limit).toBe(20);
   });

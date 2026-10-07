@@ -44,9 +44,10 @@ never a role. The table follows the PRD personas and waits for the client's conf
 Built: auth with lockout, roles and permissions, user admin, append-only audit with a read API (who, when, old and
 new values), master import with a validation report, occupancy and pincode lookups, the Fire rating check, the client
 master with GSTIN validation and any number of risk locations per client (M-1, M-2), the insurer master with RFQ
-email addresses (M-3), and the web app shell.
+email addresses (M-3), the web app shell, and new-business proposals to the RFQ: the Data Sheet, up to five
+insurers, the RFQ workbook and marking it sent (emailed by the user; sending locks the Data Sheet).
 
-Not built yet: risks, Data Sheet, RFQ, quotes, QCR, placement slips, document generation, email.
+Not built yet: renewals in the API, quotes, QCR, placement slips, other documents, sending email.
 
 ## Rules
 

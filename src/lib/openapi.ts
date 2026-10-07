@@ -81,6 +81,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       { name: 'Masters', description: 'Reads always use the ACTIVE master version.' },
       { name: 'Clients', description: 'The insured and their risk locations.' },
       { name: 'Insurers', description: 'Insurer branches and the email addresses RFQs go to.' },
+      { name: 'Proposals', description: 'New business, from creation to the RFQ.' },
       {
         name: 'Imports',
         description: 'Excel templates and bulk import of clients, locations and insurers.',
