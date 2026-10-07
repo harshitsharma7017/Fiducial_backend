@@ -89,6 +89,8 @@ describe('audit vocabulary', () => {
       'MASTER_IMPORTED',
       'OCCUPANCY_CREATED',
       'PINCODE_CREATED',
+      'CATALOG_IMPORTED',
+      'CATALOG_ITEM_CREATED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -99,6 +101,7 @@ describe('audit vocabulary', () => {
       'OCCUPANCY_UPDATED',
       'PINCODE_UPDATED',
       'MASTER_SUPERSEDED',
+      'CATALOG_ITEM_UPDATED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual(['MASTER_ACTIVATED']);
     expect(auditActionsOfKind('SEND')).toEqual(['RFQ_SENT']);

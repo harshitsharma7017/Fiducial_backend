@@ -77,7 +77,13 @@ export function fireTotals(
 export interface SheetValues {
   locations: readonly LocationValues[];
   fireProposed1: Decimal;
-  sections: ReadonlyArray<{ code: OtherSection; included: boolean; proposed1: string | null }>;
+  sections: ReadonlyArray<{
+    code: OtherSection;
+    /** The master's wording; the built-in label when not given. */
+    name?: string;
+    included: boolean;
+    proposed1: string | null;
+  }>;
 }
 
 /** What the Data Sheet still needs before an RFQ can go out; empty when it is complete. */
@@ -98,7 +104,7 @@ export function missingForRfq(sheet: SheetValues): string[] {
       (section.proposed1 === null || new Decimal(section.proposed1).isZero())
     ) {
       missing.push(
-        `${OTHER_SECTION_LABELS[section.code]}: enter the Proposed 1 sum insured, or leave the section out.`,
+        `${section.name ?? OTHER_SECTION_LABELS[section.code]}: enter the Proposed 1 sum insured, or leave the section out.`,
       );
     }
   }

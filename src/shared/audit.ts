@@ -35,6 +35,9 @@ export const AUDIT_ACTIONS = {
   PINCODE_UPDATED: 'PINCODE_UPDATED',
   MASTER_ACTIVATED: 'MASTER_ACTIVATED',
   MASTER_SUPERSEDED: 'MASTER_SUPERSEDED',
+  CATALOG_IMPORTED: 'CATALOG_IMPORTED',
+  CATALOG_ITEM_CREATED: 'CATALOG_ITEM_CREATED',
+  CATALOG_ITEM_UPDATED: 'CATALOG_ITEM_UPDATED',
 } as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -49,6 +52,9 @@ export const AUDIT_ENTITIES = {
   MASTER_VERSION: 'master_version',
   OCCUPANCY: 'occupancy',
   PINCODE: 'pincode',
+  /** A whole product and cover master (entity id: its code, such as "addons"), for imports. */
+  CATALOG: 'catalog',
+  CATALOG_ITEM: 'catalog_item',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -84,6 +90,9 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   PINCODE_UPDATED: 'EDIT',
   MASTER_ACTIVATED: 'APPROVE',
   MASTER_SUPERSEDED: 'EDIT',
+  CATALOG_IMPORTED: 'CREATE',
+  CATALOG_ITEM_CREATED: 'CREATE',
+  CATALOG_ITEM_UPDATED: 'EDIT',
 };
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -109,6 +118,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   PINCODE_UPDATED: 'Pincode edited',
   MASTER_ACTIVATED: 'Master activated',
   MASTER_SUPERSEDED: 'Master superseded',
+  CATALOG_IMPORTED: 'Product and cover master imported',
+  CATALOG_ITEM_CREATED: 'Master row added',
+  CATALOG_ITEM_UPDATED: 'Master row edited',
 };
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
@@ -129,6 +141,8 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   master_version: 'Master version',
   occupancy: 'Occupancy',
   pincode: 'Pincode',
+  catalog: 'Product and cover master',
+  catalog_item: 'Master row',
 };
 
 /** The actions of one kind, for filtering the log. */

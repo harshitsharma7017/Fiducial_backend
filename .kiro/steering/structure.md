@@ -17,6 +17,8 @@ src/
     insurers/            insurer master (M-3): branches, contacts, RFQ emails
     proposals/           new business to the RFQ: Data Sheet, completeness (proposal-calc.ts, pure), insurers,
                          RFQ workbook (rfq-workbook.ts), marking it sent; per-year reference counter
+    catalog/             product and cover masters (M-4 to M-9): one collection, a workbook of a sheet per
+                         master, row edits and reorder; addon-premium.ts prices BSUS/BLUS add-ons (pure)
     imports/             Excel templates, sample rows, per-row preview and import of chosen valid rows
     rating/              calculateFire() (pure), extension points, POST /rating/fire
     health/

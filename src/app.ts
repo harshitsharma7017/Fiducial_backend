@@ -15,6 +15,7 @@ import { createClientsRouter } from './modules/clients/clients.routes.ts';
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import { createImportsRouter } from './modules/imports/imports.routes.ts';
 import { createInsurersRouter } from './modules/insurers/insurers.routes.ts';
+import { createCatalogRouter } from './modules/catalog/catalog.routes.ts';
 import { createProposalsRouter } from './modules/proposals/proposals.routes.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
 import { createRatingRouter } from './modules/rating/rating.routes.ts';
@@ -75,6 +76,7 @@ export function createApp({ config, logger }: AppDependencies): Express {
   api.use('/masters', createMastersRouter(jwt));
   api.use('/clients', createClientsRouter(jwt));
   api.use('/insurers', createInsurersRouter(jwt));
+  api.use('/catalog', createCatalogRouter(jwt));
   api.use('/imports', createImportsRouter(jwt));
   api.use('/proposals', createProposalsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));

@@ -321,14 +321,26 @@ export const ProposalRecordSchema = z.object({
     /** Null when no Fire line has a second option. */
     proposed2: z.string().nullable(),
   }),
+  /**
+   * The other sections in the coverage section master's order and wording. A section switched off
+   * in the master is left out unless this proposal already includes it.
+   */
   sections: z.array(
     z.object({
       code: z.enum(OTHER_SECTIONS),
+      name: z.string(),
       included: z.boolean(),
       proposed1: z.string().nullable(),
       proposed2: z.string().nullable(),
     }),
   ),
+  /** Products whose range in the product master holds the Fire Option 1 sum insured. */
+  suggestedProducts: z.array(z.object({ code: z.string(), name: z.string(), range: z.string() })),
+  /**
+   * GST % from the tax master when the proposal was created; it does not change when the rate
+   * does. Null for proposals created before the tax master existed.
+   */
+  gstRatePercent: z.string().nullable(),
   claims: z.array(
     z.object({
       period: z.string(),

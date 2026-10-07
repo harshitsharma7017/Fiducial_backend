@@ -59,6 +59,8 @@ export interface ProposalDoc {
     insurer: string | null;
   }>;
   notes: string | null;
+  /** GST % in force when the proposal was created (tax master), kept for its documents. */
+  gstRatePercent?: Types.Decimal128 | null;
   insurers: ProposalInsurerDoc[];
   activity: Array<{ at: Date; actorId: Types.ObjectId | null; message: string }>;
   createdBy: Types.ObjectId;
@@ -136,6 +138,7 @@ const proposalSchema = new Schema<ProposalDoc>(
       ),
     ],
     notes: text,
+    gstRatePercent: money,
     insurers: [
       new Schema(
         {

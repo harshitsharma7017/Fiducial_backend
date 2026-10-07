@@ -4,6 +4,8 @@ import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
+import { taxRatePercentOn } from '../catalog/catalog.service.ts';
+import { istDay } from '../../lib/ist-day.ts';
 import { rateFire } from './rating.service.ts';
 
 export function createRatingRouter(options: { jwtSecret: string; gstRatePercent: string }): Router {
@@ -13,7 +15,13 @@ export function createRatingRouter(options: { jwtSecret: string; gstRatePercent:
   router.post(
     '/fire',
     route({ body: FireRatingRequestSchema }, async ({ body }, _req, res) => {
-      res.json(await rateFire(body, { gstRatePercent: options.gstRatePercent }));
+      // Today's GST from the tax master, else the configured default.
+      const gstRatePercent = await taxRatePercentOn(
+        'GST',
+        istDay(new Date()),
+        options.gstRatePercent,
+      );
+      res.json(await rateFire(body, { gstRatePercent }));
     }),
   );
 

@@ -45,7 +45,9 @@ Built: auth with lockout, roles and permissions, user admin, append-only audit w
 new values), master import with a validation report, occupancy and pincode lookups, the Fire rating check, the client
 master with GSTIN validation and any number of risk locations per client (M-1, M-2), the insurer master with RFQ
 email addresses (M-3), the web app shell, and new-business proposals to the RFQ: the Data Sheet, up to five
-insurers, the RFQ workbook and marking it sent (emailed by the user; sending locks the Data Sheet).
+insurers, the RFQ workbook and marking it sent (emailed by the user; sending locks the Data Sheet), and the product
+and cover masters (M-4 to M-9: products with ranges, coverage sections, add-on lists, BSUS/BLUS add-on rates, GST
+with effective dates, standard notes), loaded from one Excel workbook and edited on screen.
 
 Not built yet: renewals in the API, quotes, QCR, placement slips, other documents, sending email.
 

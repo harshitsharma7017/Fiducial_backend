@@ -64,6 +64,24 @@ and Open Questions).
 - RFQ Option 2: the Fire Option 2 total adds only the lines given a second figure; lines left blank are not carried
   over from Option 1. Please confirm, or say whether a blank line should count at its Option 1 figure.
 - Proposals cannot be deleted or reopened after the RFQ is sent; renewals are not served by the API yet.
+- Product and cover masters (M-4 to M-9): all six are loaded from one Excel workbook and edited on screen by Admins.
+  Each sheet uploaded replaces its master as a whole. The filled workbook was built from the client's RFQ and QCR
+  workbooks (sections, add-on lists, notes) and from document 05 (add-on rates).
+- Products are suggested from the proposal's total Fire sum insured (Option 1): "up to" includes the limit, "above"
+  excludes it, so 5 Cr exactly suggests BSUS and 5 Cr + 1 suggests BLUS and PAR. Several products can be suggested;
+  the product is still chosen at the QCR (Q04).
+- Sections switched off are left out of new Data Sheets and the RFQ, but a proposal that already includes one keeps
+  it. Fire cannot be switched off and is always first. Schedule lines are stored for each section but the Data Sheet
+  still captures the other sections by sum insured only.
+- GST: each proposal keeps the rate in force on the day it was created; the Fire rate check uses today's rate.
+- Standard notes: the Data Sheet note is marked to print on the RFQ too, as the RFQ format has no NOTE of its own.
+  The Data Sheet, QCR and Placement Slip notes print once those exports exist.
+- BSUS/BLUS add-on rates: the 15 rows were typed from the table in document 05, which was itself read from the two
+  chart images. Please check them line by line against the Sookshma and Laghu charts. The add-on premium formula
+  (rate factor % × policy rate × cover amount) reproduces document 05's worked example; "policy rate" is still Q03.
+  The RFQ/QCR "BSUS & BLUS-Addon" sheet is kept as a list (12 paid, 8 inbuilt); four of its limits still read "some %
+  on total sum insured" (Q28).
+- Add-on lists: the PAR sheet has 125 rows numbered up to 126 (one number is skipped); the numbers are kept as given.
 - Clients, risk locations and insurers are never deleted. Insurers can be deactivated; clients and locations cannot
   until the client confirms how records referenced by proposals should be retired.
 

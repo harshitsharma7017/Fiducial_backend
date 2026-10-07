@@ -12,6 +12,8 @@ useTestDatabase();
 const app = createTestApp();
 
 let adminToken: string;
+/** The original upload, kept as bytes: a re-upload is the same file, not a rebuilt one. */
+let original: Buffer;
 
 beforeAll(async () => {
   adminToken = (await tokenFor(app, ['ADMIN'])).token;
@@ -52,7 +54,8 @@ describe('IIB master upload and download', () => {
   });
 
   it('previews, imports as drafts, activates, and downloads what was uploaded', async () => {
-    const file = await buildIibWorkbook();
+    original = await buildIibWorkbook();
+    const file = original;
 
     const preview = await upload(file).expect(200);
     expect(preview.body).toMatchObject({
@@ -161,7 +164,6 @@ describe('IIB master upload and download', () => {
   });
 
   it('rolls back: a superseded file uploads again as a new draft', async () => {
-    const original = await buildIibWorkbook();
     // The first test imported and activated this file, then saved an edited copy as a draft.
     const before = await upload(original).expect(200);
     expect(before.body.alreadyImported).toBe(true);

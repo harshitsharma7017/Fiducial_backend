@@ -6,8 +6,9 @@ Slip.
 
 This repository holds the **foundation**: authentication, role-based permissions, user admin, an append-only audit log with a read API, IIB
 occupancy and pincode masters with a validated import, the client master with any number of risk locations per
-client, the insurer master with the email addresses RFQs go to, the Fire rating check, and new-business proposals from
-creation to the RFQ (Data Sheet, RFQ workbook, insurers, marking it sent). The web app lives in the separate
+client, the insurer master with the email addresses RFQs go to, the product and cover masters (products, coverage
+sections, add-ons, BSUS/BLUS add-on rates, GST rates, standard notes), the Fire rating check, and new-business
+proposals from creation to the RFQ (Data Sheet, RFQ workbook, insurers, marking it sent). The web app lives in the separate
 **Fiducial_frontend** repository and calls this API through its own server-side routes.
 
 Project documents are in [docs/](docs/); open questions and data issues are in
@@ -166,6 +167,35 @@ DATA_SHEET_INCOMPLETE` until nothing is missing. The product (BSUS, BLUS, SFSP o
 PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
 - Client, location and insurer details are read live from the masters, so a corrected address shows on the next
   RFQ. Every change is audited with before and after values.
+
+## Product and cover masters (M-4 to M-9)
+
+`/api/v1/catalog` holds six masters, all data, none of it in the code. Their layouts (columns, rules) are in
+`src/shared/catalog.ts`; rows are stored in the `catalog_items` collection, amounts and percentages as Decimal128.
+
+| Master (`{master}`)               | What it holds                                                                    | Used by                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Products (`products`)             | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive)       | Each proposal's suggested products; the RFQ's product lines |
+| Coverage sections (`sections`)    | The 14 sections: name, order, on/off, schedule lines, add-on covers              | Data Sheet and RFQ order and wording; RFQ add-on lines      |
+| Add-on covers (`addons`)          | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit   | Searchable reference                                        |
+| BSUS & BLUS rates (`addon-rules`) | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base | `addon-premium.ts` (pure, not yet in a screen)              |
+| Tax rates (`tax-rates`)           | GST rates with effective dates                                                   | Proposals (rate kept at creation), RFQ, Fire rate check     |
+| Standard notes (`notes`)          | NOTE and disclaimer text, which documents print it, order                        | The RFQ export (notes marked "On RFQ")                      |
+
+- **Workbook**: `GET /catalog/workbook` returns every master in one .xlsx (an Instructions sheet, then a sheet per master
+  with drop-downs). `POST /catalog/import` checks an upload (dry run by default); with `dryRun=false`, each sheet in the
+  file replaces its master as a whole, in one transaction, only when every sheet passes. A sheet left out of the file
+  leaves its master alone. Downloading and uploading unchanged gives the same rows.
+- **On screen**: `GET /catalog/{master}` (any role), `POST` to add a row, `PUT /{master}/{id}` to edit,
+  `PUT /{master}/order` to reorder products, sections and notes (Admins, `masters.manage`). Every change is audited
+  (`CATALOG_IMPORTED`, `CATALOG_ITEM_CREATED`, `CATALOG_ITEM_UPDATED`) with old and new values.
+- **Rules**: the 14 section codes are fixed (no adding, no code changes) and Fire is always on and first. A product's
+  upper limit must be above its lower limit. Rows are unique by product code, section code, list + add-on name,
+  add-on S No, tax + effective date and note code.
+- **GST**: a proposal stores the rate in force (India date) when it is created and keeps it. Proposals created before
+  the tax master read the rate in force on their creation date. Without any tax rate, `GST_RATE_PERCENT` is used.
+- **Until uploaded**: proposals and the RFQ fall back to the client's RFQ wording (built-in section names and order,
+  the four product lines, Fire add-ons) and suggest no product.
 
 ## Excel import
 

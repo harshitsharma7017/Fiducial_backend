@@ -12,10 +12,12 @@ import {
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { notFound } from '../../lib/errors.ts';
+import { istDay } from '../../lib/ist-day.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
+import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import {
   createProposal,
@@ -57,7 +59,11 @@ export function createProposalsRouter(options: {
     '/',
     requirePermission('proposals.create'),
     route({ body: CreateProposalRequestSchema }, async ({ body }, req, res) => {
-      res.status(201).json(await createProposal(body, actorOf(req)));
+      res.status(201).json(
+        await createProposal(body, actorOf(req), {
+          defaultGstRatePercent: options.gstRatePercent,
+        }),
+      );
     }),
   );
 
@@ -98,7 +104,19 @@ export function createProposalsRouter(options: {
       const record = await proposalForRfq(params.id, actorOf(req));
       const client = await ClientModel.findById(record.client.id).lean();
       if (!client) throw notFound('The proposal’s client no longer exists');
-      const file = await buildRfqWorkbook(record, client, options.gstRatePercent);
+      const [gstRatePercent, products, sections, notes] = await Promise.all([
+        record.gstRatePercent ??
+          taxRatePercentOn('GST', istDay(new Date(record.createdAt)), options.gstRatePercent),
+        catalogItems('products'),
+        catalogItems('sections'),
+        catalogItems('notes'),
+      ]);
+      const file = await buildRfqWorkbook(record, client, {
+        gstRatePercent,
+        products,
+        sections,
+        notes,
+      });
       res.setHeader('Content-Type', XLSX_CONTENT_TYPE);
       res.setHeader('Content-Disposition', `attachment; filename="RFQ-${record.reference}.xlsx"`);
       res.send(file);

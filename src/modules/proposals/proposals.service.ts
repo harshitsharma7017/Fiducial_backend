@@ -14,10 +14,12 @@ import {
 import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { toDecimal128 } from '../../lib/decimal.ts';
+import { istDay } from '../../lib/ist-day.ts';
 import { conflict, notFound, validationError, type AppError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel } from '../clients/client.model.ts';
+import { taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { loadContext, toProposalAuditView, toProposalRecord } from './proposals.mapper.ts';
 import { CounterModel, ProposalModel, type ProposalDoc } from './proposal.model.ts';
@@ -159,6 +161,7 @@ export async function getProposal(id: string): Promise<ProposalRecord> {
 export async function createProposal(
   input: CreateProposalRequest,
   actor: Actor,
+  options: { defaultGstRatePercent: string },
 ): Promise<ProposalRecord> {
   const client = await ClientModel.findById(input.clientId, { name: 1 }).lean();
   if (!client) {
@@ -166,6 +169,12 @@ export async function createProposal(
   }
   await assertClientLocations(client._id, input.locationIds, 'locationIds');
   const userId = new Types.ObjectId(actor.id);
+  // The proposal keeps this rate even if GST changes later (M-8).
+  const gstRatePercent = await taxRatePercentOn(
+    'GST',
+    istDay(new Date()),
+    options.defaultGstRatePercent,
+  );
   return withTransaction(async (session) => {
     const [doc] = await ProposalModel.create(
       [
@@ -188,6 +197,7 @@ export async function createProposal(
           sections: [],
           claims: [],
           notes: null,
+          gstRatePercent: toDecimal128(gstRatePercent),
           insurers: [],
           activity: [
             { at: new Date(), actorId: userId, message: `Proposal created for ${client.name}` },

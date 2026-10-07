@@ -113,6 +113,13 @@ describe('API documentation', () => {
         'PUT /api/v1/proposals/{id}/insurers',
         'GET /api/v1/proposals/{id}/rfq',
         'POST /api/v1/proposals/{id}/rfq/sent',
+        'GET /api/v1/catalog/workbook',
+        'POST /api/v1/catalog/import',
+        'GET /api/v1/catalog/products/suggest',
+        'GET /api/v1/catalog/{master}',
+        'POST /api/v1/catalog/{master}',
+        'PUT /api/v1/catalog/{master}/order',
+        'PUT /api/v1/catalog/{master}/{id}',
         'GET /api/v1/audit',
       ].sort(),
     );

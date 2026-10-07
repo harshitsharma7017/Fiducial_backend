@@ -1,6 +1,16 @@
-import { OTHER_SECTIONS, RISK_DETAIL_FIELDS, type ProposalRecord } from '../../shared/index.ts';
+import {
+  OTHER_SECTION_LABELS,
+  OTHER_SECTIONS,
+  RISK_DETAIL_FIELDS,
+  productRangeText,
+  suggestProducts,
+  type CatalogItem,
+  type OtherSection,
+  type ProposalRecord,
+} from '../../shared/index.ts';
 import type { Types } from 'mongoose';
 import { decimal128ToString } from '../../lib/decimal.ts';
+import { catalogItems } from '../catalog/catalog.service.ts';
 import type { ClientLocationDoc } from '../clients/client-location.model.ts';
 import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel, type ClientDoc } from '../clients/client.model.ts';
@@ -23,6 +33,9 @@ export interface ProposalContext {
   locations: ReadonlyMap<string, ClientLocationDoc>;
   insurers: ReadonlyMap<string, InsurerDoc>;
   users: ReadonlyMap<string, string>;
+  /** The product and coverage section masters, in their order. */
+  products: readonly CatalogItem<'products'>[];
+  sections: readonly CatalogItem<'sections'>[];
 }
 
 const key = (id: Types.ObjectId) => id.toHexString();
@@ -38,18 +51,45 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
       ...doc.activity.flatMap((a) => (a.actorId ? [key(a.actorId)] : [])),
     ]),
   );
-  const [clients, locations, insurers, users] = await Promise.all([
+  const [clients, locations, insurers, users, products, sections] = await Promise.all([
     ClientModel.find({ _id: { $in: [...clientIds] } }).lean(),
     ClientLocationModel.find({ _id: { $in: [...locationIds] } }).lean(),
     InsurerModel.find({ _id: { $in: [...insurerIds] } }).lean(),
     UserModel.find({ _id: { $in: [...userIds] } }, { name: 1 }).lean(),
+    catalogItems('products'),
+    catalogItems('sections'),
   ]);
   return {
     clients: new Map(clients.map((doc) => [key(doc._id), doc])),
     locations: new Map(locations.map((doc) => [key(doc._id), doc])),
     insurers: new Map(insurers.map((doc) => [key(doc._id), doc])),
     users: new Map(users.map((doc) => [key(doc._id), doc.name])),
+    products,
+    sections,
   };
+}
+
+/**
+ * The other sections in the master's order, with its names. Without a section master, the
+ * built-in order and names. A section switched off is shown only when the proposal includes it.
+ */
+function orderedSections(
+  context: ProposalContext,
+): { code: OtherSection; name: string; active: boolean }[] {
+  const fromMaster = context.sections.flatMap((section) =>
+    section.code === 'FIRE'
+      ? []
+      : [{ code: section.code, name: section.name, active: section.active }],
+  );
+  const listed = new Set(fromMaster.map((section) => section.code));
+  return [
+    ...fromMaster,
+    ...OTHER_SECTIONS.filter((code) => !listed.has(code)).map((code) => ({
+      code,
+      name: OTHER_SECTION_LABELS[code],
+      active: true,
+    })),
+  ];
 }
 
 const str = (value: Types.Decimal128 | null) => decimal128ToString(value);
@@ -104,14 +144,19 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     new Map(doc.fireOption2.map((line) => [line.group, str(line.amount)])),
   );
   const byCode = new Map(doc.sections.map((section) => [section.code, section]));
-  const sections = OTHER_SECTIONS.map((code) => {
+  const sections = orderedSections(context).flatMap(({ code, name, active }) => {
     const section = byCode.get(code);
-    return {
-      code,
-      included: section?.included ?? false,
-      proposed1: section ? str(section.proposed1) : null,
-      proposed2: section ? str(section.proposed2) : null,
-    };
+    const included = section?.included ?? false;
+    if (!active && !included) return [];
+    return [
+      {
+        code,
+        name,
+        included,
+        proposed1: section ? str(section.proposed1) : null,
+        proposed2: section ? str(section.proposed2) : null,
+      },
+    ];
   });
   const missing = missingForRfq({ locations, fireProposed1: totals.proposed1, sections });
   const anySent = doc.insurers.some((insurer) => insurer.status === 'SENT');
@@ -142,6 +187,15 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
       proposed2: totals.proposed2?.toFixed() ?? null,
     },
     sections,
+    // Nothing is suggested until the Fire sums insured are entered.
+    suggestedProducts: totals.proposed1.isZero()
+      ? []
+      : suggestProducts(context.products, totals.proposed1.toFixed()).map((product) => ({
+          code: product.code,
+          name: product.name,
+          range: productRangeText(product),
+        })),
+    gstRatePercent: str(doc.gstRatePercent ?? null),
     claims: doc.claims.map((claim) => ({
       period: claim.period,
       policyType: claim.policyType,

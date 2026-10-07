@@ -1,9 +1,10 @@
 import {
   FIRE_GROUP_LABELS,
   FIRE_ITEMS,
-  OTHER_SECTION_LABELS,
   RISK_DETAIL_FIELDS,
   formatDate,
+  productRangeText,
+  type CatalogItem,
   type ProposalRecord,
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
@@ -11,6 +12,24 @@ import type { ClientDoc } from '../clients/client.model.ts';
 
 // The RFQ in the client's layout (document 07): premium details for the insurer to fill in,
 // the schedule, Fire by location, risk details and claim details. Amounts are whole rupees.
+// Products, section add-ons and notes come from the product and cover masters; until those are
+// uploaded, the wording of the client's RFQ format is used.
+
+/** The masters the RFQ prints from. */
+export interface RfqMasters {
+  gstRatePercent: string;
+  products: readonly CatalogItem<'products'>[];
+  sections: readonly CatalogItem<'sections'>[];
+  notes: readonly CatalogItem<'notes'>[];
+}
+
+const DEFAULT_FIRE_ADDONS = ['Earthquake', 'Storm, Tempest, Flood & Inundation', 'Terrorism'];
+const DEFAULT_PRODUCT_LINES = [
+  'Upto 5 Cr sum insured: Bharat Sookshma Udyam Suraksha (BSUS)',
+  'Above 5 Cr & Upto 50 Cr sum insured: Bharat Laghu Udyam Suraksha (BLUS)',
+  'Above 50 Cr sum insured: Standard Fire & Special Perils Policy (SFSP)',
+  'Above 5 Cr sum insured: Property All Risk (PAR)',
+];
 
 /** Indian digit grouping (1,23,45,678) for whole rupees. */
 const RUPEES = '[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
@@ -85,10 +104,7 @@ function premiumDetails(workbook: ExcelJS.Workbook, record: ProposalRecord, gstR
     money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
     for (const section of record.sections) {
       const value = option === 1 ? section.proposed1 : section.proposed2;
-      const row = sheet.addRow([
-        OTHER_SECTION_LABELS[section.code],
-        section.included ? amount(value) : 'Not required',
-      ]);
+      const row = sheet.addRow([section.name, section.included ? amount(value) : 'Not required']);
       money(row, [2, 3, 4]);
     }
     const last = sheet.rowCount;
@@ -117,7 +133,13 @@ function premiumDetails(workbook: ExcelJS.Workbook, record: ProposalRecord, gstR
   }
 }
 
-function schedule(workbook: ExcelJS.Workbook, record: ProposalRecord, client: ClientDoc) {
+function schedule(
+  workbook: ExcelJS.Workbook,
+  record: ProposalRecord,
+  client: ClientDoc,
+  masters: RfqMasters,
+) {
+  const sectionMaster = new Map(masters.sections.map((section) => [section.code, section]));
   const sheet = workbook.addWorksheet('schedule');
   sheet.columns = [{ width: 24 }, { width: 70 }, { width: 22 }, { width: 22 }];
   title(sheet, 'RFQ - SCHEDULE FOR PROPERTY INSURANCE', 4);
@@ -175,17 +197,18 @@ function schedule(workbook: ExcelJS.Workbook, record: ProposalRecord, client: Cl
   ]);
   total.font = { bold: true };
   money(total, [3, 4]);
-  for (const addon of ['Earthquake', 'Storm, Tempest, Flood & Inundation', 'Terrorism']) {
-    sheet.addRow(['Addon coverages', addon]);
-  }
-  for (const product of [
-    'Upto 5 Cr sum insured: Bharat Sookshma Udyam Suraksha (BSUS)',
-    'Above 5 Cr & Upto 50 Cr sum insured: Bharat Laghu Udyam Suraksha (BLUS)',
-    'Above 50 Cr sum insured: Standard Fire & Special Perils Policy (SFSP)',
-    'Above 5 Cr sum insured: Property All Risk (PAR)',
-  ]) {
-    sheet.addRow(['Product to be chosen', product]);
-  }
+  const fire = sectionMaster.get('FIRE');
+  (fire ? fire.addons : DEFAULT_FIRE_ADDONS).forEach((addon, index) => {
+    sheet.addRow([index === 0 ? 'Addon coverages' : null, addon]);
+  });
+  const products = masters.products.filter((product) => product.active);
+  const productLines =
+    products.length > 0
+      ? products.map((product) => `${productRangeText(product)} sum insured: ${product.name}`)
+      : DEFAULT_PRODUCT_LINES;
+  productLines.forEach((line, index) => {
+    sheet.addRow([index === 0 ? 'Product to be chosen' : null, line]);
+  });
   for (const location of record.locations) {
     const name = location.location?.name ?? location.locationId;
     if (location.hypothecation)
@@ -196,23 +219,33 @@ function schedule(workbook: ExcelJS.Workbook, record: ProposalRecord, client: Cl
   const included = record.sections.filter((section) => section.included);
   for (const section of included) {
     sheet.addRow([]);
-    sheet.addRow([OTHER_SECTION_LABELS[section.code]]).font = { bold: true };
+    sheet.addRow([section.name]).font = { bold: true };
     money(
       sheet.addRow([1, 'Sum insured', amount(section.proposed1), amount(section.proposed2)]),
       [3, 4],
     );
+    (sectionMaster.get(section.code)?.addons ?? []).forEach((addon, index) => {
+      sheet.addRow([index === 0 ? 'Addon coverages' : null, addon]);
+    });
   }
   const excluded = record.sections.filter((section) => !section.included);
   if (excluded.length > 0) {
     sheet.addRow([]);
-    labelled(
-      sheet,
-      'Not required',
-      excluded.map((s) => OTHER_SECTION_LABELS[s.code]).join(', '),
-      4,
-    );
+    labelled(sheet, 'Not required', excluded.map((s) => s.name).join(', '), 4);
   }
   if (record.notes) labelled(sheet, 'Notes', record.notes, 4);
+
+  const notes = masters.notes.filter((note) => note.active && note.onRfq);
+  if (notes.length > 0) {
+    sheet.addRow([]);
+    sheet.addRow(['NOTE:']).font = { bold: true };
+    for (const note of notes) {
+      const row = sheet.addRow([note.text]);
+      row.alignment = { wrapText: true, vertical: 'top' };
+      sheet.mergeCells(row.number, 1, row.number, 4);
+      row.height = Math.max(15, Math.ceil(note.text.length / 110) * 15);
+    }
+  }
 }
 
 function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
@@ -302,12 +335,12 @@ function claimDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
 export async function buildRfqWorkbook(
   record: ProposalRecord,
   client: ClientDoc,
-  gstRatePercent: string,
+  masters: RfqMasters,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiducial';
-  premiumDetails(workbook, record, Number(gstRatePercent));
-  schedule(workbook, record, client);
+  premiumDetails(workbook, record, Number(masters.gstRatePercent));
+  schedule(workbook, record, client, masters);
   fireByLocation(workbook, record);
   riskDetails(workbook, record);
   claimDetails(workbook, record);
