@@ -63,7 +63,28 @@ and Open Questions).
   so the RFQ lists all four for the insurers.
 - RFQ Option 2: the Fire Option 2 total adds only the lines given a second figure; lines left blank are not carried
   over from Option 1. Please confirm, or say whether a blank line should count at its Option 1 figure.
-- Proposals cannot be deleted or reopened after the RFQ is sent; renewals are not served by the API yet.
+- Data Sheet Fire & Burglary (D-3): the 7 items, sub-items and wording follow the client's Data Sheet. Two text
+  fixes: "periperals" is spelled "peripherals" (as in the client's RFQ), and a stray "Interiors" line at the end of
+  item 3 is left out. Buildings are priced as sq ft × rate exactly, as Excel does; amounts are shown to the rupee. The
+  Burglary row offers the contents total (every Fire item except buildings, "all the contents as per Fire section
+  except building") as its sum insured; it is not filled in automatically, since Burglary may be on first-loss basis.
+- Other sections (D-4, D-5): an annexure section's sum insured is its items' total, and FLOP's is its annual gross
+  profit. Money, Fidelity and Public Liability keep a typed sum insured: their lines are limits and counts, and how
+  they make the section's sum insured is not stated in the formats. Fidelity follows the Data Sheet's three lines; the
+  RFQ format also has "Limit Per Event", which is not captured yet.
+- The Data Sheet's 14 "details of risk features" (number of floors, CCTV, paint booth and others) differ from the 9
+  "risk details" of the RFQ that the app captures today; aligning them is still to do.
+- Proposals cannot be deleted or reopened after the RFQ is sent, or reopened once closed.
+- The 9 stages (D-1): Draft, Data Sheet, RFQ Sent, Quotes Received, QCR, Client Approval, Placement Slip, Placed,
+  Closed (chosen with the client's team). Until the quote, QCR and placement screens exist, the team moves a case
+  through Quotes Received to Placed by hand, one stage at a time; Closed needs a reason.
+- Renewals (D-2): last year's policy comes from the policy administration software's public API. Its documentation
+  has not been received, so `existing-policy-source.ts` assumes a contract (GET `/policies/latest?gstin=&name=` with a
+  bearer key; insurer, policy number, period, sections with sum insured and premium, optional Fire lines and premium
+  totals). Please send the API's documentation (URL, authentication, how a client is identified, the answer's
+  fields) so the adapter can be matched to it. Until `EXISTING_POLICY_API_URL` is set, renewals are created without
+  the Existing column. The renewal copies the policy at creation; later changes in the software are not followed
+  unless someone fetches it again before the RFQ is sent.
 - Product and cover masters (M-4 to M-9): all six are loaded from one Excel workbook and edited on screen by Admins.
   Each sheet uploaded replaces its master as a whole. The filled workbook was built from the client's RFQ and QCR
   workbooks (sections, add-on lists, notes) and from document 05 (add-on rates).
@@ -74,6 +95,13 @@ and Open Questions).
   it. Fire cannot be switched off and is always first. Schedule lines are stored for each section but the Data Sheet
   still captures the other sections by sum insured only.
 - GST: each proposal keeps the rate in force on the day it was created; the Fire rate check uses today's rate.
+- Document templates (R-3, R-4): the RFQ is filled into the client's uploaded "Fiducial_RFQ format.xlsx". Where the
+  template has no place for a figure the engine adds one: a seventh Fire line ("Any other items") when it has an
+  amount, annexure rows beyond three, product rows and the NOTE rows above the footer. In EEI, MBD and Boiler the
+  template merges "As per Annexure" across the figure columns, so the total is written into that label ("As per
+  Annexure — Option 1 ₹45,00,000") rather than breaking the merge. The premium details' Option 1 block quotes the
+  existing sum insured, as its heading says, so sections the last policy did not have are blank there. The client's
+  red and blue text in the template is kept as they coloured it. Please confirm these choices.
 - Standard notes: the Data Sheet note is marked to print on the RFQ too, as the RFQ format has no NOTE of its own.
   The Data Sheet, QCR and Placement Slip notes print once those exports exist.
 - BSUS/BLUS add-on rates: the 15 rows were typed from the table in document 05, which was itself read from the two

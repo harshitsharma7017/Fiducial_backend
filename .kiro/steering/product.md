@@ -49,7 +49,13 @@ insurers, the RFQ workbook and marking it sent (emailed by the user; sending loc
 and cover masters (M-4 to M-9: products with ranges, coverage sections, add-on lists, BSUS/BLUS add-on rates, GST
 with effective dates, standard notes), loaded from one Excel workbook and edited on screen.
 
-Not built yet: renewals in the API, quotes, QCR, placement slips, other documents, sending email.
+Cases (D-1, D-2): new business and renewals, 9 stages, assigned staff; a renewal copies last year's policy from the
+policy software's public API (existing-policy-source.ts).
+
+Document engine (R-3, R-4): Admins upload the client's Excel templates; the RFQ downloads as that template filled
+(Excel) or as an A4 PDF with the broker's letterhead. QCR and Placement Slip templates are stored, not yet filled.
+
+Not built yet: quotes, QCR, placement slips, other documents, sending email.
 
 ## Rules
 

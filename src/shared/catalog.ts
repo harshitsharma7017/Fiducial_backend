@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ADDON_LISTS } from './addon-lists.ts';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
 import { groupIndianDigits } from './format.ts';
 import { OTHER_SECTIONS } from './proposals.ts';
@@ -23,15 +24,6 @@ export type CatalogMaster = z.infer<typeof CatalogMasterSchema>;
 /** Every coverage section of the Data Sheet. FIRE is first in every document. */
 export const SECTION_CODES = ['FIRE', ...OTHER_SECTIONS] as const;
 export type SectionCode = (typeof SECTION_CODES)[number];
-
-export const ADDON_LISTS = ['FIRE_ADDITIONAL', 'PAR', 'SFSP', 'BSUS_BLUS'] as const;
-export type AddonList = (typeof ADDON_LISTS)[number];
-export const ADDON_LIST_LABELS: Record<AddonList, string> = {
-  FIRE_ADDITIONAL: 'Fire additional',
-  PAR: 'PAR',
-  SFSP: 'SFSP',
-  BSUS_BLUS: 'BSUS & BLUS',
-};
 
 export const ADDON_KINDS = ['PAID', 'INBUILT'] as const;
 export type AddonKind = (typeof ADDON_KINDS)[number];
@@ -125,6 +117,10 @@ export const ProductRowSchema = z
     order: OrderSchema,
     active: z.boolean(),
     notes: textCell(500).nullable(),
+    /** The add-on lists offered for the product (C-4); empty: matched by code. */
+    addonLists: z
+      .array(z.enum(ADDON_LISTS, { error: `Use ${ADDON_LISTS.join(', ')}` }))
+      .max(ADDON_LISTS.length),
   })
   .refine(
     (row) =>
@@ -275,6 +271,14 @@ export const CATALOG_SHEETS: Record<CatalogMaster, CatalogSheet> = {
       },
       { key: 'active', header: 'Active', type: 'yesno', required: true, note: YES_NO_NOTE },
       { key: 'notes', header: 'Notes', type: 'text', required: false, note: 'Optional.' },
+      {
+        key: 'addonLists',
+        header: 'Add-on lists',
+        type: 'list',
+        options: ADDON_LISTS,
+        required: false,
+        note: `The add-on lists a case under this product picks from: ${ADDON_LISTS.join(', ')}. Separate with a semicolon (;). Blank: the list named like the product.`,
+      },
     ],
   },
   sections: {
@@ -572,13 +576,24 @@ function cellValue(column: CatalogColumn, raw: string): { value: unknown } | { m
           .trim()
           .replace(/[\s-]+/g, '_'),
       };
-    case 'list':
+    case 'list': {
+      const entries = text
+        .split(/[;\n]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      // A list of codes (product add-on lists) is written like an enum: "BSUS & BLUS" → BSUS_BLUS.
       return {
-        value: text
-          .split(/[;\n]/)
-          .map((entry) => entry.trim())
-          .filter(Boolean),
+        value: column.options
+          ? entries.map((entry) =>
+              entry
+                .toUpperCase()
+                .replace(/&/g, ' ')
+                .trim()
+                .replace(/[\s-]+/g, '_'),
+            )
+          : entries,
       };
+    }
     default:
       return { value: text };
   }

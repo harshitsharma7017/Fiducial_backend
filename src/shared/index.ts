@@ -5,12 +5,14 @@
  * copy: after changing anything here, run `npm run shared:sync` in Fiducial_frontend
  * (`npm run shared:check` there reports any difference).
  */
+export * from './addon-lists.ts';
 export * from './audit.ts';
 export * from './auth.ts';
 export * from './catalog.ts';
 export * from './clients.ts';
 export * from './common.ts';
 export * from './contacts.ts';
+export * from './documents.ts';
 export * from './errors.ts';
 export * from './format.ts';
 export * from './gst.ts';

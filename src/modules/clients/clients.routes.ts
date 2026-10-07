@@ -1,4 +1,5 @@
 import {
+  AddonFavouritesSchema,
   ClientIdParamsSchema,
   ClientListQuerySchema,
   ClientListResponseSchema,
@@ -9,6 +10,7 @@ import {
   ClientSchema,
   CreateClientLocationRequestSchema,
   CreateClientRequestSchema,
+  SetAddonFavouritesRequestSchema,
   UpdateClientLocationRequestSchema,
   UpdateClientRequestSchema,
 } from '../../shared/index.ts';
@@ -17,6 +19,7 @@ import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
+import { getAddonFavourites, setAddonFavourites } from './addon-favourites.service.ts';
 import {
   createClient,
   createClientLocation,
@@ -102,6 +105,26 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
       { params: ClientLocationParamsSchema, body: UpdateClientLocationRequestSchema },
       async ({ params, body }, req, res) => {
         res.json(await updateClientLocation(params.id, params.locationId, body, actorOf(req)));
+      },
+    ),
+  );
+
+  // Favourite add-ons (C-4) are picked while working a case, so they follow the proposal rights.
+  router.get(
+    '/:id/addon-favourites',
+    requirePermission('proposals.view'),
+    route({ params: ClientIdParamsSchema }, async ({ params }, _req, res) => {
+      res.json(await getAddonFavourites(params.id));
+    }),
+  );
+
+  router.put(
+    '/:id/addon-favourites',
+    requirePermission('proposals.edit'),
+    route(
+      { params: ClientIdParamsSchema, body: SetAddonFavouritesRequestSchema },
+      async ({ params, body }, req, res) => {
+        res.json(await setAddonFavourites(params.id, body, actorOf(req)));
       },
     ),
   );
@@ -239,5 +262,43 @@ documentRoute({
       content: { 'application/json': { schema: ClientLocationSchema } },
     },
     ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'get',
+  path: '/api/v1/clients/{id}/addon-favourites',
+  tags: ['Clients'],
+  summary: "List a client's favourite add-ons",
+  description:
+    'Needs proposals.view. The add-on covers the add-on picker lists first for the client.',
+  request: { params: ClientIdParamsSchema },
+  responses: {
+    200: {
+      description: 'The favourites',
+      content: { 'application/json': { schema: AddonFavouritesSchema } },
+    },
+    ...errorResponses(400, 401, 403, 404),
+  },
+});
+
+documentRoute({
+  method: 'put',
+  path: '/api/v1/clients/{id}/addon-favourites',
+  tags: ['Clients'],
+  summary: "Replace a client's favourite add-ons",
+  description:
+    'Needs proposals.edit. The whole list is replaced. Audited (ADDON_FAVOURITES_UPDATED) with ' +
+    'the list before and after.',
+  request: {
+    params: ClientIdParamsSchema,
+    body: { content: { 'application/json': { schema: SetAddonFavouritesRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The saved favourites',
+      content: { 'application/json': { schema: AddonFavouritesSchema } },
+    },
+    ...errorResponses(400, 401, 403, 404),
   },
 });

@@ -8,6 +8,7 @@ import { createApp } from '../../src/app.ts';
 import { loadEnv, type Env } from '../../src/config/env.ts';
 import { createLogger } from '../../src/lib/logger.ts';
 import { ensureIndexes } from '../../src/models.ts';
+import type { ExistingPolicySource } from '../../src/modules/proposals/existing-policy-source.ts';
 import { hashPassword } from '../../src/modules/auth/password.ts';
 import { UserModel } from '../../src/modules/users/user.model.ts';
 
@@ -36,10 +37,14 @@ export function useTestDatabase(): void {
   });
 }
 
-export function createTestApp(overrides: Partial<Env> = {}): Express {
+export function createTestApp(
+  overrides: Partial<Env> = {},
+  existingPolicySource?: ExistingPolicySource,
+): Express {
   return createApp({
     config: { ...TEST_ENV, ...overrides },
     logger: createLogger({ level: 'silent' }),
+    existingPolicySource,
   });
 }
 

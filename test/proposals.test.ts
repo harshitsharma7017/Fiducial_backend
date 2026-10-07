@@ -93,6 +93,7 @@ function create(token = manager, locationIds = [plant1, plant2]) {
 const dataSheet = (overrides: Record<string, unknown> = {}) => ({
   dueDate: '2026-11-20',
   policyStart: '',
+  policyEnd: '',
   locations: [
     {
       locationId: plant1,
@@ -220,7 +221,7 @@ describe('new-business proposals', () => {
     expect(partial.body.locations[0].risk.fireFighting).toBe('Extinguishers and hydrant');
     expect(partial.body.fire).toMatchObject({ proposed1: '2700000', proposed2: '1000000' });
     expect(partial.body.fire.groups.find((g: { group: string }) => g.group === 'BUILDING')).toEqual(
-      { group: 'BUILDING', proposed1: '2000000', proposed2: null },
+      { group: 'BUILDING', existing: null, proposed1: '2000000', proposed2: null },
     );
 
     const complete = await request(app)
@@ -322,6 +323,288 @@ describe('new-business proposals', () => {
       .get(`/api/v1/proposals/${proposal.id}/rfq`)
       .set(bearer(readOnly))
       .expect(403);
+  });
+
+  it('D-3 and D-7: prints Fire & Burglary as the client’s Data Sheet, with exact totals', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [
+                // 10.5 sq ft at ₹3 is ₹31.50: Excel shows 32 for each and 63 in total.
+                { key: 'BUILDING_1', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
+                { key: 'BUILDING_2', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
+                { key: 'GENSET', sqFt: '', ratePerSqFt: '', amount: '1000' },
+                { key: 'TRANSFORMER', sqFt: '', ratePerSqFt: '', amount: '2000' },
+                { key: 'STOCKS_THIRD_PARTY', sqFt: '', ratePerSqFt: '', amount: '500' },
+              ],
+              hypothecation: 'State Bank of India, Pune',
+              openStock: 'Steel coils in the yard',
+              risk: risk(),
+            },
+          ],
+          sections: [],
+          fireOption2: [],
+        }),
+      )
+      .expect(200);
+    const location = saved.body.locations[0];
+    expect(location.fire.find((i: { key: string }) => i.key === 'BUILDING_1').sumInsured).toBe(
+      '31.5',
+    );
+    expect(location.fireTotal).toBe('3563');
+
+    const response = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body as never);
+    const rows = workbook
+      .getWorksheet('fire by location')!
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
+    const find = (label: string) => rows.find((row) => row[1] === label);
+    expect(find('Building 1 (if applicable)')).toEqual([
+      'a',
+      'Building 1 (if applicable)',
+      10.5,
+      3,
+      31.5,
+    ]);
+    expect(find('All types of Plant and Machinery and all its accessories')?.slice(0, 1)).toEqual([
+      '5',
+    ]);
+    expect(find('All types of Plant and Machinery and all its accessories')?.[4]).toBe(3000);
+    expect(find('Any other stocks kept at third party job work location')?.[0]).toBe('a');
+    expect(find('Total sum insured')?.[4]).toBe(3563);
+    expect(find('Hypothecation if any - Please specify')?.[2]).toBe('State Bank of India, Pune');
+    expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
+      'Steel coils in the yard',
+    );
+    // Seven items in the client's numbering, with their sub-items.
+    expect(rows.map((row) => row[0]).filter((n) => typeof n === 'string' && n.length <= 2)).toEqual(
+      [
+        '1',
+        'a',
+        'b',
+        'c',
+        'd',
+        'e',
+        'f',
+        '2',
+        '3',
+        '4',
+        '5',
+        'a',
+        'b',
+        'c',
+        'd',
+        '6',
+        'a',
+        '7',
+        '1',
+        '2',
+      ],
+    );
+    const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
+    expect(schedule).toContain('Plant 1: State Bank of India, Pune');
+    expect(schedule).toContain('Plant 1: Steel coils in the yard');
+  });
+
+  it('D-4 and D-5: saves each section’s lines and annexure, and annexure totals give the sum insured', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const row = (description: string, sumInsured: string, extra: Record<string, string> = {}) => ({
+      description,
+      quantity: '',
+      dimensions: '',
+      makeModel: '',
+      serialNo: '',
+      year: '',
+      sumInsured,
+      ...extra,
+    });
+    const sheet = dataSheet({
+      locations: [
+        {
+          locationId: plant1,
+          fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+          hypothecation: '',
+          openStock: '',
+          risk: risk(),
+        },
+      ],
+      sections: [
+        {
+          code: 'FIRE_LOSS_OF_PROFIT',
+          included: true,
+          proposed1: '',
+          proposed2: '',
+          lines: { annualGrossProfit: '8000000' },
+        },
+        {
+          code: 'MONEY',
+          included: true,
+          proposed1: '600000',
+          proposed2: '',
+          lines: {
+            cashInSafe: '100000',
+            cashInTransitSingle: '200000',
+            cashInTransitAnnual: '5000000',
+          },
+        },
+        {
+          code: 'FIDELITY_GUARANTEE',
+          included: false,
+          proposed1: '',
+          proposed2: '',
+          lines: { employees: '45', limitPerEmployee: '100000', limitPerPeriod: '1000000' },
+        },
+        {
+          code: 'PLATE_GLASS',
+          included: true,
+          proposed1: '1',
+          proposed2: '',
+          annexure: [
+            row('Showroom front glass', '150000', { quantity: '4', dimensions: '3 x 2 x 0.01 m' }),
+            row('Office partition', '50000', { quantity: '10' }),
+          ],
+        },
+        {
+          code: 'EEI',
+          included: true,
+          proposed1: '',
+          proposed2: '',
+          annexure: [
+            row('CNC controller', '1250000', {
+              makeModel: 'Fanuc 0i-MF',
+              serialNo: 'F-77',
+              year: '2021',
+            }),
+          ],
+        },
+        { code: 'PUBLIC_LIABILITY', included: false, proposed1: '', proposed2: '' },
+      ],
+      fireOption2: [],
+    });
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(sheet)
+      .expect(200);
+    const section = (code: string) =>
+      saved.body.sections.find((s: { code: string }) => s.code === code) as {
+        included: boolean;
+        proposed1: string | null;
+        lines: Record<string, string | null>;
+        annexure: Array<Record<string, string | null>>;
+      };
+    // FLOP's sum insured is its annual gross profit; an annexure's is its rows' total.
+    expect(section('FIRE_LOSS_OF_PROFIT').proposed1).toBe('8000000');
+    expect(section('PLATE_GLASS').proposed1).toBe('200000');
+    expect(section('EEI').proposed1).toBe('1250000');
+    expect(section('MONEY')).toMatchObject({
+      proposed1: '600000',
+      lines: {
+        cashInSafe: '100000',
+        cashInTransitSingle: '200000',
+        cashInTransitAnnual: '5000000',
+      },
+    });
+    // Not required: kept as entered, but not on the RFQ.
+    expect(section('FIDELITY_GUARANTEE')).toMatchObject({
+      included: false,
+      lines: { employees: '45' },
+    });
+    expect(section('PUBLIC_LIABILITY').lines).toEqual({
+      anyOneAccident: null,
+      aggregateLimit: null,
+    });
+    expect(section('PLATE_GLASS').annexure[0]).toMatchObject({
+      description: 'Showroom front glass',
+      quantity: '4',
+      dimensions: '3 x 2 x 0.01 m',
+      sumInsured: '150000',
+    });
+    expect(saved.body.missing).toEqual([]);
+
+    // Lines a section does not have, or an annexure on a section without one, are refused.
+    const wrong = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send({
+        ...sheet,
+        sections: [
+          {
+            code: 'MONEY',
+            included: true,
+            proposed1: '1',
+            proposed2: '',
+            lines: { employees: '3' },
+          },
+          {
+            code: 'BURGLARY',
+            included: true,
+            proposed1: '1',
+            proposed2: '',
+            annexure: [row('x', '1')],
+          },
+        ],
+      })
+      .expect(400);
+    expect(JSON.stringify(wrong.body.details)).toContain('Money has no such line');
+    expect(JSON.stringify(wrong.body.details)).toContain('Burglary has no annexure');
+
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const values = (name: string) =>
+      workbook
+        .getWorksheet(name)!
+        .getSheetValues()
+        // Empty cells come back as gaps; compare them as null.
+        .flatMap((r) =>
+          Array.isArray(r) ? [Array.from(r.slice(1, 7), (v: unknown) => v ?? null)] : [],
+        );
+    const schedule = values('schedule');
+    expect(schedule).toContainEqual([1, 'Cash in safe / counter', 100000]);
+    expect(schedule).toContainEqual([3, 'Cash in transit - Annual carrying limit', 5000000]);
+    expect(schedule).toContainEqual([4, 'Sum insured', 600000]);
+    expect(schedule).toContainEqual([1, 'Annual Gross Profit', 8000000]);
+    expect(schedule).toContainEqual([1, 'As per Annexure (2 items)', 200000]);
+    expect(JSON.stringify(schedule)).not.toContain('No of Employees');
+    const annexure = values('Annexure');
+    expect(annexure.some((r) => r[0] === 'Plate Glass')).toBe(true);
+    expect(annexure).toContainEqual([
+      'S No',
+      'Description',
+      'No of Plate Glass',
+      'Dimension (L x B x H)',
+      'Sum Insured',
+    ]);
+    expect(annexure).toContainEqual([1, 'Showroom front glass', 4, '3 x 2 x 0.01 m', 150000]);
+    expect(annexure).toContainEqual([null, 'Total', null, null, 200000]);
+    expect(annexure).toContainEqual([1, 'CNC controller', 'Fanuc 0i-MF', 'F-77', '2021', 1250000]);
   });
 
   it('chooses insurers, marks the RFQ sent, and locks the Data Sheet', async () => {

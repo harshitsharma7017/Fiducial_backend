@@ -1,5 +1,7 @@
 import { AuditLogModel } from './modules/audit/audit.model.ts';
 import { CatalogItemModel } from './modules/catalog/catalog-item.model.ts';
+import { DocumentTemplateModel } from './modules/documents/document-template.model.ts';
+import { AddonFavouritesModel } from './modules/clients/addon-favourites.model.ts';
 import { ClientLocationModel } from './modules/clients/client-location.model.ts';
 import { ClientModel } from './modules/clients/client.model.ts';
 import { InsurerModel } from './modules/insurers/insurer.model.ts';
@@ -21,6 +23,8 @@ const MODELS = [
   ProposalModel,
   CounterModel,
   CatalogItemModel,
+  DocumentTemplateModel,
+  AddonFavouritesModel,
 ];
 
 /**

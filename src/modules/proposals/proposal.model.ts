@@ -1,8 +1,15 @@
 import {
+  ADDON_LISTS,
+  BURGLARY_BASES,
+  EXISTING_POLICY_STATUSES,
   FIRE_GROUPS,
   FIRE_ITEM_KEYS,
   OTHER_SECTIONS,
   PROPOSAL_STAGES,
+  PROPOSAL_TYPES,
+  type AddonList,
+  type BurglaryBasis,
+  type ProposalType,
   type FireGroup,
   type FireItemKey,
   type OtherSection,
@@ -36,19 +43,99 @@ export interface ProposalInsurerDoc {
   sentBy: Types.ObjectId | null;
 }
 
+export interface AnnexureRowDoc {
+  description: string;
+  quantity: number | null;
+  dimensions: string | null;
+  makeModel: string | null;
+  serialNo: string | null;
+  year: string | null;
+  sumInsured: Types.Decimal128;
+}
+
+/** Last year's policy as copied onto a renewal (the Existing column). */
+export interface ExistingPolicyDoc {
+  source: string;
+  fetchedAt: Date;
+  insurer: string;
+  policyNumber: string;
+  product: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  sections: Array<{ code: string; sumInsured: Types.Decimal128; premium: Money }>;
+  fireLines: Array<{ group: FireGroup; sumInsured: Types.Decimal128 }>;
+  totalSumInsured: Types.Decimal128;
+  netPremium: Money;
+  gst: Money;
+  totalPremium: Money;
+}
+
+/** Renewals: the Existing column as typed on the Data Sheet (C-2), used instead of the copy. */
+export interface ExistingFiguresDoc {
+  insurer: string;
+  policyNumber: string | null;
+  fireLines: Array<{ group: FireGroup; amount: Types.Decimal128 }>;
+  /** The Fire total when no line is given. */
+  fireTotal: Money;
+  sections: Array<{
+    code: OtherSection;
+    sumInsured: Money;
+    lines: Array<{ key: string; value: Types.Decimal128 }>;
+  }>;
+}
+
+export interface CoverDoc {
+  name: string;
+  required: boolean;
+}
+
 export interface ProposalDoc {
   _id: Types.ObjectId;
   reference: string;
-  type: 'NEW';
+  type: ProposalType;
+  /** The current stage, kept for filtering: the override when set, else derived from the work. */
   stage: ProposalStage;
+  /** A stage set by the team (Quotes Received onwards, or Closed). */
+  stageOverride?: ProposalStage | null;
+  closedReason?: string | null;
   clientId: Types.ObjectId;
   ownerId: Types.ObjectId;
   /** Dates as YYYY-MM-DD (India time), never shifted by time zones. */
   dueDate: string;
   policyStart: string | null;
+  policyEnd?: string | null;
+  existingPolicy?: ExistingPolicyDoc | null;
+  existingPolicyLookup?: {
+    status: (typeof EXISTING_POLICY_STATUSES)[number];
+    message: string | null;
+    checkedAt: Date;
+  } | null;
+  /** Missing until the Data Sheet types the Existing column. */
+  existingFigures?: ExistingFiguresDoc | null;
+  /** The product chosen (C-1); missing or null follows the suggestion. */
+  product?: { code: string; reason: string | null } | null;
+  /** Add-on covers chosen from the product's lists (C-4). */
+  addons?: Array<{ list: AddonList; name: string }>;
+  /** Fire's add-on covers asked for (C-6). */
+  fireCovers?: CoverDoc[];
   locations: ProposalLocationDoc[];
   fireOption2: Array<{ group: FireGroup; amount: Money }>;
-  sections: Array<{ code: OtherSection; included: boolean; proposed1: Money; proposed2: Money }>;
+  sections: Array<{
+    code: OtherSection;
+    included: boolean;
+    proposed1: Money;
+    proposed2: Money;
+    /** The section's Data Sheet lines (SECTION_LINES); missing on older proposals. */
+    lines?: Array<{ key: string; value: Types.Decimal128 }>;
+    /** Option 2 of the lines (C-2). */
+    lines2?: Array<{ key: string; value: Types.Decimal128 }>;
+    /** Burglary and Burglary Floater: the basis (C-3). */
+    basis?: BurglaryBasis | null;
+    /** The section's add-on covers asked for (C-6). */
+    covers?: CoverDoc[];
+    /** The annexure grid (ANNEXURE_SECTIONS); missing on older proposals. */
+    annexure?: AnnexureRowDoc[];
+  }>;
   claims: Array<{
     period: string;
     policyType: string | null;
@@ -75,15 +162,128 @@ const text = { type: String, default: null };
 // `__v` on nested documents when it resets them. Requests are validated strictly before this anyway.
 const noId = { _id: false, versionKey: false as const, strict: true as const };
 
+const lineSchema = () =>
+  new Schema(
+    {
+      key: { type: String, required: true },
+      value: { type: Schema.Types.Decimal128, required: true },
+    },
+    noId,
+  );
+const coverSchema = () =>
+  new Schema(
+    { name: { type: String, required: true }, required: { type: Boolean, required: true } },
+    noId,
+  );
+
 const proposalSchema = new Schema<ProposalDoc>(
   {
     reference: { type: String, required: true },
-    type: { type: String, enum: ['NEW'], required: true, default: 'NEW' },
+    type: { type: String, enum: PROPOSAL_TYPES, required: true, default: 'NEW' },
     stage: { type: String, enum: PROPOSAL_STAGES, required: true },
+    stageOverride: { type: String, enum: [...PROPOSAL_STAGES, null], default: null },
+    closedReason: text,
     clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     dueDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
     policyStart: { type: String, default: null },
+    policyEnd: { type: String, default: null },
+    existingPolicy: {
+      type: new Schema(
+        {
+          source: { type: String, required: true },
+          fetchedAt: { type: Date, required: true },
+          insurer: { type: String, required: true },
+          policyNumber: { type: String, required: true },
+          product: text,
+          periodStart: text,
+          periodEnd: text,
+          sections: [
+            new Schema(
+              {
+                code: { type: String, required: true },
+                sumInsured: { type: Schema.Types.Decimal128, required: true },
+                premium: money,
+              },
+              noId,
+            ),
+          ],
+          fireLines: [
+            new Schema(
+              {
+                group: { type: String, enum: FIRE_GROUPS, required: true },
+                sumInsured: { type: Schema.Types.Decimal128, required: true },
+              },
+              noId,
+            ),
+          ],
+          totalSumInsured: { type: Schema.Types.Decimal128, required: true },
+          netPremium: money,
+          gst: money,
+          totalPremium: money,
+        },
+        noId,
+      ),
+      default: null,
+    },
+    existingPolicyLookup: {
+      type: new Schema(
+        {
+          status: { type: String, enum: EXISTING_POLICY_STATUSES, required: true },
+          message: text,
+          checkedAt: { type: Date, required: true },
+        },
+        noId,
+      ),
+      default: null,
+    },
+    existingFigures: {
+      type: new Schema(
+        {
+          insurer: { type: String, required: true },
+          policyNumber: text,
+          fireLines: [
+            new Schema(
+              {
+                group: { type: String, enum: FIRE_GROUPS, required: true },
+                amount: { type: Schema.Types.Decimal128, required: true },
+              },
+              noId,
+            ),
+          ],
+          fireTotal: money,
+          sections: [
+            new Schema(
+              {
+                code: { type: String, enum: OTHER_SECTIONS, required: true },
+                sumInsured: money,
+                lines: [lineSchema()],
+              },
+              noId,
+            ),
+          ],
+        },
+        noId,
+      ),
+      default: undefined,
+    },
+    product: {
+      type: new Schema({ code: { type: String, required: true }, reason: text }, noId),
+      default: undefined,
+    },
+    addons: {
+      type: [
+        new Schema(
+          {
+            list: { type: String, enum: ADDON_LISTS, required: true },
+            name: { type: String, required: true },
+          },
+          noId,
+        ),
+      ],
+      default: undefined,
+    },
+    fireCovers: { type: [coverSchema()], default: undefined },
     locations: [
       new Schema(
         {
@@ -119,6 +319,24 @@ const proposalSchema = new Schema<ProposalDoc>(
           included: { type: Boolean, required: true },
           proposed1: money,
           proposed2: money,
+          lines: [lineSchema()],
+          lines2: { type: [lineSchema()], default: undefined },
+          basis: { type: String, enum: [...BURGLARY_BASES, null], default: undefined },
+          covers: { type: [coverSchema()], default: undefined },
+          annexure: [
+            new Schema(
+              {
+                description: { type: String, required: true },
+                quantity: { type: Number, default: null },
+                dimensions: text,
+                makeModel: text,
+                serialNo: text,
+                year: text,
+                sumInsured: { type: Schema.Types.Decimal128, required: true },
+              },
+              noId,
+            ),
+          ],
         },
         noId,
       ),
@@ -169,6 +387,7 @@ const proposalSchema = new Schema<ProposalDoc>(
 proposalSchema.index({ reference: 1 }, { unique: true });
 proposalSchema.index({ clientId: 1, _id: -1 });
 proposalSchema.index({ stage: 1, _id: -1 });
+proposalSchema.index({ type: 1, _id: -1 });
 
 export const ProposalModel = model<ProposalDoc>('Proposal', proposalSchema);
 

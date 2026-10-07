@@ -83,6 +83,11 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       { name: 'Insurers', description: 'Insurer branches and the email addresses RFQs go to.' },
       { name: 'Proposals', description: 'New business, from creation to the RFQ.' },
       {
+        name: 'Document templates',
+        description:
+          'The client’s Excel formats that the RFQ (and later the QCR and Placement Slip) fill.',
+      },
+      {
         name: 'Product and cover masters',
         description:
           'Products, coverage sections, add-ons, BSUS/BLUS add-on rates, tax rates and standard notes.',

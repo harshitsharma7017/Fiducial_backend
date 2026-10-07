@@ -98,10 +98,13 @@ describe('audit vocabulary', () => {
       'CLIENT_LOCATION_UPDATED',
       'INSURER_UPDATED',
       'PROPOSAL_UPDATED',
+      'PROPOSAL_STAGE_CHANGED',
       'OCCUPANCY_UPDATED',
       'PINCODE_UPDATED',
       'MASTER_SUPERSEDED',
       'CATALOG_ITEM_UPDATED',
+      'TEMPLATE_UPLOADED',
+      'ADDON_FAVOURITES_UPDATED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual(['MASTER_ACTIVATED']);
     expect(auditActionsOfKind('SEND')).toEqual(['RFQ_SENT']);

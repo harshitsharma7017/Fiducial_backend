@@ -162,6 +162,7 @@ async function rfqSchedule(proposalId: string): Promise<string[]> {
     .send({
       dueDate: '2026-12-01',
       policyStart: null,
+      policyEnd: null,
       locations: [
         {
           locationId,

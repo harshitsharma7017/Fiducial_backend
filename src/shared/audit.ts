@@ -26,6 +26,7 @@ export const AUDIT_ACTIONS = {
   INSURER_UPDATED: 'INSURER_UPDATED',
   PROPOSAL_CREATED: 'PROPOSAL_CREATED',
   PROPOSAL_UPDATED: 'PROPOSAL_UPDATED',
+  PROPOSAL_STAGE_CHANGED: 'PROPOSAL_STAGE_CHANGED',
   RFQ_DOWNLOADED: 'RFQ_DOWNLOADED',
   RFQ_SENT: 'RFQ_SENT',
   MASTER_IMPORTED: 'MASTER_IMPORTED',
@@ -38,6 +39,8 @@ export const AUDIT_ACTIONS = {
   CATALOG_IMPORTED: 'CATALOG_IMPORTED',
   CATALOG_ITEM_CREATED: 'CATALOG_ITEM_CREATED',
   CATALOG_ITEM_UPDATED: 'CATALOG_ITEM_UPDATED',
+  TEMPLATE_UPLOADED: 'TEMPLATE_UPLOADED',
+  ADDON_FAVOURITES_UPDATED: 'ADDON_FAVOURITES_UPDATED',
 } as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -55,6 +58,8 @@ export const AUDIT_ENTITIES = {
   /** A whole product and cover master (entity id: its code, such as "addons"), for imports. */
   CATALOG: 'catalog',
   CATALOG_ITEM: 'catalog_item',
+  /** A document template (entity id: its kind, such as "RFQ"). */
+  DOCUMENT_TEMPLATE: 'document_template',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -81,6 +86,7 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   INSURER_UPDATED: 'EDIT',
   PROPOSAL_CREATED: 'CREATE',
   PROPOSAL_UPDATED: 'EDIT',
+  PROPOSAL_STAGE_CHANGED: 'EDIT',
   RFQ_DOWNLOADED: 'EXPORT',
   RFQ_SENT: 'SEND',
   MASTER_IMPORTED: 'CREATE',
@@ -93,6 +99,8 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   CATALOG_IMPORTED: 'CREATE',
   CATALOG_ITEM_CREATED: 'CREATE',
   CATALOG_ITEM_UPDATED: 'EDIT',
+  TEMPLATE_UPLOADED: 'EDIT',
+  ADDON_FAVOURITES_UPDATED: 'EDIT',
 };
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -109,6 +117,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   INSURER_UPDATED: 'Insurer edited',
   PROPOSAL_CREATED: 'Proposal created',
   PROPOSAL_UPDATED: 'Proposal edited',
+  PROPOSAL_STAGE_CHANGED: 'Proposal stage changed',
   RFQ_DOWNLOADED: 'RFQ downloaded',
   RFQ_SENT: 'RFQ sent',
   MASTER_IMPORTED: 'Master imported',
@@ -121,6 +130,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CATALOG_IMPORTED: 'Product and cover master imported',
   CATALOG_ITEM_CREATED: 'Master row added',
   CATALOG_ITEM_UPDATED: 'Master row edited',
+  TEMPLATE_UPLOADED: 'Document template uploaded',
+  ADDON_FAVOURITES_UPDATED: 'Add-on favourites changed',
 };
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
@@ -143,6 +154,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   pincode: 'Pincode',
   catalog: 'Product and cover master',
   catalog_item: 'Master row',
+  document_template: 'Document template',
 };
 
 /** The actions of one kind, for filtering the log. */

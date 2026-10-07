@@ -141,27 +141,55 @@ it fails there until the frontend is synced.
   deleted. Company and branch together are unique, ignoring case and extra spaces (`409 INSURER_EXISTS`).
 - Clients, locations and insurers are edited with `PATCH` (only the fields sent change) and never deleted.
 
-## New-business proposals (to the RFQ)
+## Cases: new business and renewals (to the RFQ)
 
-`/api/v1/proposals` serves new business from creation to the RFQ. Renewals are not served by the API yet; the web app
-still shows them from sample data.
+`/api/v1/proposals` serves every case, new business (`NEW`) and renewals (`EXISTING`), from creation to the RFQ.
+
+- **Create** (D-1): type, client, risk locations, policy period (`policyStart`, `policyEnd`; a renewal needs both,
+  new business may leave both blank for "1 year from the date of payment"), assigned staff (`ownerId`; any active
+  user who may edit proposals, from `GET /proposals/owners`; the creator by default) and the date quotes are needed
+  by. Numbered `PRP-<year>-<n>`; starts at stage 1, Draft.
+- **9 stages** on every case: Draft, Data Sheet, RFQ Sent, Quotes Received, QCR, Client Approval, Placement Slip,
+  Placed, Closed. The first three follow the Data Sheet and the RFQ; from RFQ Sent the team moves the case one stage
+  at a time (`POST /{id}/stage`, `nextStage` says which) up to Placed; a case can be closed before Placed, with a
+  reason, which locks it. Each move is audited (`PROPOSAL_STAGE_CHANGED`) and on the case's activity.
+- **Renewals** (D-2): last year's policy comes from the policy administration software's public API
+  (`src/modules/proposals/existing-policy-source.ts`, configured by `EXISTING_POLICY_API_URL`, `_KEY`,
+  `_TIMEOUT_MS` and `EXISTING_POLICY_SOURCE_NAME`). `GET /proposals/last-policy?clientId=` shows it before creating;
+  creating a renewal copies it onto the case as `existingPolicy` (insurer, policy number, period, sum insured and
+  premium per section, Fire lines, totals): the Existing column of the Data Sheet and the RFQ schedule. The other
+  sections it had start included, with last year's sum insured as Proposed 1. If the software has no policy, is down
+  or is not configured, the renewal is still created and `existingPolicyLookup` says why;
+  `POST /{id}/existing-policy` fetches it again until the RFQ is sent. Tests use a fake source; the HTTP adapter is
+  tested against a local server.
 
 - **Create** (`POST`, `proposals.create`): a client from the client master, any of its risk locations and the date
   quotes are needed by. Numbered `PRP-<year>-<n>` from a per-year counter. Starts as Draft.
-- **Data Sheet** (`PUT /{id}/data-sheet`, `proposals.edit`): saved as a whole. Per location, the 16 Fire items
-  (`FIRE_ITEMS` in `src/shared/proposals.ts`); building items are measured, priced as area × rate to the rupee
-  (half up) unless an amount is typed. Also hypothecation, stock in the open and the nine risk details. For the
+- **Data Sheet** (`PUT /{id}/data-sheet`, `proposals.edit`): saved as a whole. Per location, the client's "Fire &
+  Burglary" block (D-3): 7 numbered items with sub-items (1a–1f buildings, 5a–5d plant and machinery, 6a third-party
+  stock), worded as the client's Data Sheet (`FIRE_ITEMS` in `src/shared/proposals.ts`). Buildings are priced as
+  sq ft × rate unless an amount is typed; as in Excel, the product is kept exact (it can carry paise) and totals add
+  the exact amounts, so the rounded figures match the client's sheet for the same inputs. Hypothecation and stock in
+  open space (D-7) print on the RFQ schedule and its "fire by location" sheet, which follows the Data Sheet layout. Also hypothecation, stock in the open and the nine risk details. For the
   proposal: an optional Option 2 per Fire line, the 13 other sections (included or not, Proposed 1 and 2), up to
   three years of claims and notes. Amounts are whole rupees.
+- **Other sections** (D-4, D-5): each of the 13 can be included or marked not required. FLOP, Money, Fidelity and
+  Public Liability carry the Data Sheet's lines (`SECTION_LINES`: annual gross profit; cash in safe and in transit;
+  employees and limits; accident and aggregate limits). Plate Glass, Neon Sign, All Risk, EEI, MBD and Boiler carry
+  an annexure grid in the client's Annexure columns (`ANNEXURE_SECTIONS`, up to 200 rows). On save the rows' total
+  becomes the section's Proposed 1, and FLOP's annual gross profit becomes its own; the RFQ schedule prints the lines,
+  and an "Annexure" sheet lists every item with its total.
 - **Completeness**: every response lists in `missing` what the Data Sheet still needs before the RFQ (at least one
   location, Fire sums insured for every location, Proposed 1 for every included section). The stage is Data Sheet
   once nothing is missing.
 - **Insurers** (`PUT /{id}/insurers`, `proposals.edit`): up to five active insurers from the insurer master. One the
   RFQ was sent to cannot be taken off.
-- **RFQ** (`GET /{id}/rfq`, `proposals.export`): the workbook in the client's RFQ layout — premium details (with
-  GST formulas from `GST_RATE_PERCENT`), schedule, Fire by location, risk details and claim details. `409
+- **RFQ** (`GET /{id}/rfq?format=xlsx|pdf`, `proposals.export`): the RFQ as Excel (default) or as an A4 PDF with
+  the broker's letterhead. When the client's RFQ template is uploaded (see Document templates) the workbook is that
+  file, filled; otherwise a built-in layout (premium details, schedule, Fire by location, Annexure, risk details,
+  claim details). The `X-Document-Layout` header says which (`template` or `built-in`). `409
 DATA_SHEET_INCOMPLETE` until nothing is missing. The product (BSUS, BLUS, SFSP or PAR) is listed for the insurer
-  and chosen at the QCR.
+  and chosen at the QCR. Each download is audited with its format.
 - **Sent** (`POST /{id}/rfq/sent`, `proposals.send`): the RFQ is emailed from the user's own mailbox; this records
   for which insurers it went, who sent it and when. The proposal moves to RFQ Sent and its Data Sheet locks (`409
 PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
@@ -196,6 +224,27 @@ PROPOSAL_LOCKED`), so every insurer quotes on the same figures.
   the tax master read the rate in force on their creation date. Without any tax rate, `GST_RATE_PERCENT` is used.
 - **Until uploaded**: proposals and the RFQ fall back to the client's RFQ wording (built-in section names and order,
   the four product lines, Fire add-ons) and suggest no product.
+
+## Document templates (R-3, R-4)
+
+The document engine fills the client's own Excel templates and draws them as PDF. The app ships no template: an
+Admin uploads each one on the Document templates page (the copy in `data/client-formats/` is used only by tests).
+
+- `GET /api/v1/templates` lists the documents (RFQ, QCR, Placement Slip) and the template stored for each;
+  `GET /templates/{kind}/file` downloads it (`masters.view`). `POST /templates/{kind}?fileName=` uploads an .xlsx as
+  the request body (`masters.manage`, up to 5 MB). An RFQ template is checked first: its sheets (premium details,
+  schedule, risk details, claim details, Annexure) and the labels the filler looks for. A failed check returns the
+  problems and stores nothing. Each upload replaces the last and is audited (`TEMPLATE_UPLOADED`).
+- **Excel** (R-3): the uploaded file is filled in place with exceljs (`modules/documents/excel-template.ts`). Cells
+  are found by the labels a person sees, not by address, so moving rows in the template still works. Sheet names,
+  merged cells, formulas, column widths, print areas and the logo are kept; rows are added only where the case needs
+  them (a seventh Fire line, more annexure items or products, the standard notes), and merges and print areas move
+  with them. Excel recalculates the formulas when the file opens. The RFQ filler is
+  `modules/proposals/rfq-template.ts`.
+- **PDF** (R-4): `modules/documents/sheet-pdf.ts` draws each sheet's print area as a table with pdfmake (merges,
+  borders, fills, alignment, Indian digit grouping) on A4 portrait. The letterhead is the template's logo and the
+  broker's address; each page has a footer with the case number and "Page x of y".
+- QCR and Placement Slip templates can be uploaded and stored today; they are filled once those documents are built.
 
 ## Excel import
 

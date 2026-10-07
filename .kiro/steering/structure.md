@@ -16,7 +16,10 @@ src/
     clients/             client master (M-1) and risk locations (M-2, own collection)
     insurers/            insurer master (M-3): branches, contacts, RFQ emails
     proposals/           new business to the RFQ: Data Sheet, completeness (proposal-calc.ts, pure), insurers,
-                         RFQ workbook (rfq-workbook.ts), marking it sent; per-year reference counter
+                         RFQ workbook (rfq-workbook.ts built-in, rfq-template.ts fills the client's template,
+                         rfq-document.ts picks one and the format), marking it sent; per-year reference counter
+    documents/           document engine: uploaded templates (one per kind), excel-template.ts (find by label,
+                         insert rows keeping merges and print areas), sheet-pdf.ts (sheet to A4 PDF, letterhead)
     catalog/             product and cover masters (M-4 to M-9): one collection, a workbook of a sheet per
                          master, row edits and reorder; addon-premium.ts prices BSUS/BLUS add-ons (pure)
     imports/             Excel templates, sample rows, per-row preview and import of chosen valid rows

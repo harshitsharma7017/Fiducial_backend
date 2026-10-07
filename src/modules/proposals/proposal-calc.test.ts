@@ -10,13 +10,30 @@ const item = (key: string, values: Partial<Record<'sqFt' | 'ratePerSqFt' | 'amou
   }) as Parameters<typeof itemSumInsured>[0];
 
 describe('itemSumInsured', () => {
-  it('prices a measured item as area × rate, to the rupee', () => {
+  it('prices a measured item as area × rate, exactly, as Excel does', () => {
     expect(
       itemSumInsured(item('BUILDING_1', { sqFt: '12500.5', ratePerSqFt: '2400' })).toFixed(),
     ).toBe('30001200');
     expect(itemSumInsured(item('INTERIOR', { sqFt: '10.25', ratePerSqFt: '3' })).toFixed()).toBe(
-      '31',
+      '30.75',
     );
+  });
+
+  it('totals the exact amounts, so the rounded total matches the client’s Excel', () => {
+    // Two buildings of 10.5 sq ft at ₹3: Excel shows 32 and 32 (31.5 each) and a total of 63.
+    const totals = fireTotals(
+      [
+        {
+          name: 'Plant',
+          fire: [
+            item('BUILDING_1', { sqFt: '10.5', ratePerSqFt: '3' }),
+            item('BUILDING_2', { sqFt: '10.5', ratePerSqFt: '3' }),
+          ],
+        },
+      ],
+      new Map(),
+    );
+    expect(totals.proposed1.toFixed()).toBe('63');
   });
 
   it('uses a typed amount over area × rate', () => {

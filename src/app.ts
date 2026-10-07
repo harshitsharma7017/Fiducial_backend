@@ -16,6 +16,12 @@ import { createHealthRouter } from './modules/health/health.routes.ts';
 import { createImportsRouter } from './modules/imports/imports.routes.ts';
 import { createInsurersRouter } from './modules/insurers/insurers.routes.ts';
 import { createCatalogRouter } from './modules/catalog/catalog.routes.ts';
+import { createTemplatesRouter } from './modules/documents/templates.routes.ts';
+import {
+  httpExistingPolicySource,
+  notConfiguredSource,
+  type ExistingPolicySource,
+} from './modules/proposals/existing-policy-source.ts';
 import { createProposalsRouter } from './modules/proposals/proposals.routes.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
 import { createRatingRouter } from './modules/rating/rating.routes.ts';
@@ -24,10 +30,22 @@ import { createUsersRouter } from './modules/users/users.routes.ts';
 export interface AppDependencies {
   config: Env;
   logger: Logger;
+  /** Where renewals get last year's policy; from the config when not given (tests pass a fake). */
+  existingPolicySource?: ExistingPolicySource;
 }
 
 /** Builds the Express app without listening, so tests can drive it with Supertest. */
-export function createApp({ config, logger }: AppDependencies): Express {
+export function createApp({ config, logger, existingPolicySource }: AppDependencies): Express {
+  const policySource =
+    existingPolicySource ??
+    (config.EXISTING_POLICY_API_URL
+      ? httpExistingPolicySource({
+          baseUrl: config.EXISTING_POLICY_API_URL,
+          apiKey: config.EXISTING_POLICY_API_KEY ?? null,
+          timeoutMs: config.EXISTING_POLICY_API_TIMEOUT_MS,
+          sourceName: config.EXISTING_POLICY_SOURCE_NAME,
+        })
+      : notConfiguredSource);
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.TRUST_PROXY);
@@ -77,8 +95,12 @@ export function createApp({ config, logger }: AppDependencies): Express {
   api.use('/clients', createClientsRouter(jwt));
   api.use('/insurers', createInsurersRouter(jwt));
   api.use('/catalog', createCatalogRouter(jwt));
+  api.use('/templates', createTemplatesRouter(jwt));
   api.use('/imports', createImportsRouter(jwt));
-  api.use('/proposals', createProposalsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use(
+    '/proposals',
+    createProposalsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT, policySource }),
+  );
   api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);

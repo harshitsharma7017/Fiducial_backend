@@ -63,6 +63,14 @@ export function roundDecimalString(value: string, fractionDigits: number): strin
   return fractionDigits > 0 ? `${sign}${integer}.${fraction}` : `${sign}${integer}`;
 }
 
+/**
+ * An amount to the whole rupee, half up, as Excel shows a #,##0 cell. Sums insured priced as area
+ * × rate can carry paise; they are kept exact and only shown rounded, as in the client's sheets.
+ */
+export function wholeRupees(value: string): string {
+  return roundDecimalString(value, 0) ?? value;
+}
+
 /** Groups integer digits the Indian way: 1,36,880 and 10,00,00,000. */
 export function groupIndianDigits(integerDigits: string): string {
   if (integerDigits.length <= 3) return integerDigits;

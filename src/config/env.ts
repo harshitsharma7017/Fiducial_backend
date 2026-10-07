@@ -67,6 +67,14 @@ export const EnvSchema = z
       .trim()
       .regex(/^\d{1,2}(\.\d{1,2})?$/, 'Must be a percentage such as 18')
       .default('18'),
+    /** The policy administration software's public API, for renewals' existing policies. */
+    EXISTING_POLICY_API_URL: z
+      .url({ protocol: /^https?$/, error: 'Must be an http(s) URL' })
+      .optional(),
+    EXISTING_POLICY_API_KEY: z.string().min(1).optional(),
+    EXISTING_POLICY_API_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
+    /** How that software is named on screen, for example "PolicyDesk". */
+    EXISTING_POLICY_SOURCE_NAME: z.string().trim().min(1).max(60).default('the policy software'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.startsWith('dev-only')) {
