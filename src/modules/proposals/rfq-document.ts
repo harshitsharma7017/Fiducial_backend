@@ -120,19 +120,20 @@ export async function rfqFileFor(
 ): Promise<RfqDocument> {
   const client = await ClientModel.findById(record.client.id).lean();
   if (!client) throw notFound('The proposal’s client no longer exists');
-  const [gstRatePercent, products, sections, notes, addons] = await Promise.all([
+  const [gstRatePercent, products, sections, notes, addons, clauses] = await Promise.all([
     record.gstRatePercent ??
       taxRatePercentOn('GST', istDay(new Date(record.createdAt)), defaultGstRatePercent),
     catalogItems('products'),
     catalogItems('sections'),
     catalogItems('notes'),
     catalogItems('addons'),
+    catalogItems('clauses'),
   ]);
   const saved = edits ?? (await RfqStateModel.findOne({ proposalId: record.id }).lean())?.edits;
   return rfqDocument(
     record,
     client,
-    { gstRatePercent, products, sections, notes, addons },
+    { gstRatePercent, products, sections, notes, addons, clauses },
     format,
     saved ?? NO_RFQ_EDITS,
   );

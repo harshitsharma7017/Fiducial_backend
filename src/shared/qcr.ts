@@ -3,7 +3,7 @@ import { EmailSchema } from './auth.ts';
 import { SECTION_CODES } from './catalog.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { MAX_MAIL_RECIPIENTS, MailAttachmentFormatSchema } from './mail.ts';
-import { InsurerStatusSchema } from './proposals.ts';
+import { InsurerStatusSchema, ProposalStageSchema } from './proposals.ts';
 import { QuoteOptionSchema } from './quotes.ts';
 
 // The QCR, the quote comparison report (QC-1 to QC-6): the existing policy and up to five insurers
@@ -151,3 +151,40 @@ export const QcrSendResponseSchema = z.object({
   qcr: QcrSchema,
 });
 export type QcrSendResponse = z.infer<typeof QcrSendResponseSchema>;
+
+/** One case on the Quotes and QCR list: its insurers' answers, the lowest quote and the QCR. */
+export const QcrSummarySchema = z.object({
+  proposalId: ObjectIdSchema,
+  reference: z.string(),
+  clientName: z.string(),
+  clientCity: z.string(),
+  type: z.enum(['NEW', 'EXISTING']),
+  stage: ProposalStageSchema,
+  dueDate: z.iso.date(),
+  insurers: z.object({
+    /** Insurers that have the RFQ. */
+    asked: z.number().int(),
+    quoted: z.number().int(),
+    declined: z.number().int(),
+    /** Sent or reminded, nothing recorded yet. */
+    awaiting: z.number().int(),
+    overdue: z.number().int(),
+  }),
+  /** The lowest total of Option 1 (else the first option quoted). */
+  lowest: z
+    .object({
+      company: z.string(),
+      branch: z.string(),
+      option: QuoteOptionSchema,
+      total: z.string(),
+    })
+    .nullable(),
+  qcr: z.object({
+    status: QcrStatusSchema,
+    recommended: z.string().nullable(),
+    approvedAt: IsoDateTimeSchema.nullable(),
+    sentAt: IsoDateTimeSchema.nullable(),
+  }),
+});
+export type QcrSummary = z.infer<typeof QcrSummarySchema>;
+export const QcrSummaryListSchema = z.object({ items: z.array(QcrSummarySchema) });

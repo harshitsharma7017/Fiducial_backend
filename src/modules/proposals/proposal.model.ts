@@ -1,7 +1,6 @@
 import {
   ADDON_LISTS,
   BURGLARY_BASES,
-  EMAIL_TEMPLATE_KINDS,
   EXISTING_POLICY_STATUSES,
   FIRE_GROUPS,
   FIRE_ITEM_KEYS,
@@ -68,7 +67,7 @@ export interface ProposalInsurerDoc {
   lastMail?: {
     id: Types.ObjectId;
     /** An insurer only ever gets these two; the QCR goes to the insured. */
-    kind: Exclude<EmailTemplateKind, 'QCR'>;
+    kind: Extract<EmailTemplateKind, 'RFQ' | 'REMINDER'>;
     at: Date;
     result: MailResult;
   } | null;
@@ -417,7 +416,7 @@ const proposalSchema = new Schema<ProposalDoc>(
             type: new Schema(
               {
                 id: { type: Schema.Types.ObjectId, ref: 'MailLog', required: true },
-                kind: { type: String, enum: EMAIL_TEMPLATE_KINDS, required: true },
+                kind: { type: String, enum: ['RFQ', 'REMINDER'], required: true },
                 at: { type: Date, required: true },
                 result: { type: String, enum: MAIL_RESULTS, required: true },
               },

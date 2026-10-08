@@ -93,6 +93,8 @@ describe('audit vocabulary', () => {
       'CATALOG_ITEM_CREATED',
       'QUOTE_RECORDED',
       'QUOTE_ATTACHMENT_UPLOADED',
+      'CLIENT_APPROVAL_FILE_UPLOADED',
+      'PLACEMENT_FILE_UPLOADED',
       'RFQ_GENERATED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
@@ -111,12 +113,16 @@ describe('audit vocabulary', () => {
       'TEMPLATE_UPLOADED',
       'ADDON_FAVOURITES_UPDATED',
       'QCR_SAVED',
+      'CLIENT_APPROVAL_RECORDED',
+      'PLACEMENT_SLIP_SAVED',
+      'PLACEMENT_RECORDED',
       'RFQ_EDITED',
       'RFQ_SUBMITTED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual([
       'MASTER_ACTIVATED',
       'QCR_APPROVED',
+      'PLACEMENT_SLIP_APPROVED',
       'RFQ_APPROVED',
       'RFQ_RETURNED',
     ]);
@@ -127,8 +133,14 @@ describe('audit vocabulary', () => {
       'RFQ_EMAIL_FAILED',
       'QCR_EMAILED',
       'QCR_EMAIL_FAILED',
+      'PLACEMENT_SLIP_EMAILED',
+      'PLACEMENT_SLIP_EMAIL_FAILED',
     ]);
-    expect(auditActionsOfKind('EXPORT')).toEqual(['RFQ_DOWNLOADED', 'QCR_DOWNLOADED']);
+    expect(auditActionsOfKind('EXPORT')).toEqual([
+      'RFQ_DOWNLOADED',
+      'QCR_DOWNLOADED',
+      'PLACEMENT_SLIP_DOWNLOADED',
+    ]);
   });
 });
 

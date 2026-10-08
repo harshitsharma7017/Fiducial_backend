@@ -24,7 +24,10 @@ import {
   type ExistingPolicySource,
 } from './modules/proposals/existing-policy-source.ts';
 import { createProposalsRouter } from './modules/proposals/proposals.routes.ts';
+import { createClientApprovalRouter } from './modules/client-approval/client-approval.routes.ts';
+import { createPlacementSlipRouter } from './modules/placement-slip/placement-slip.routes.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
+import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
 import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
 import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
 import { createMailRouter } from './modules/mail/mail.routes.ts';
@@ -128,6 +131,19 @@ export function createApp({
     '/proposals',
     createQcrRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT, mailTransport: transport }),
   );
+  api.use(
+    '/proposals',
+    createClientApprovalRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }),
+  );
+  api.use(
+    '/proposals',
+    createPlacementSlipRouter({
+      ...jwt,
+      gstRatePercent: config.GST_RATE_PERCENT,
+      mailTransport: transport,
+    }),
+  );
+  api.use('/', createWorklistsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);

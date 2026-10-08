@@ -16,6 +16,7 @@ import { withTransaction } from '../../lib/db.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import type { Actor } from '../clients/clients.service.ts';
+import { checkPlacementSlipTemplate } from '../placement-slip/placement-slip-template.ts';
 import { checkQcrTemplate } from '../qcr/qcr-template.ts';
 import { checkRfqTemplate } from '../proposals/rfq-template.ts';
 import { UserModel } from '../users/user.model.ts';
@@ -51,6 +52,7 @@ async function checkTemplate(
   }
   if (kind === 'RFQ') return checkRfqTemplate(workbook);
   if (kind === 'QCR') return checkQcrTemplate(workbook);
+  if (kind === 'PLACEMENT_SLIP') return checkPlacementSlipTemplate(workbook);
   const letterhead = letterheadOf(workbook);
   return {
     ok: true,

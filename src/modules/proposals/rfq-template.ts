@@ -14,6 +14,7 @@ import {
   type AnnexureSection,
   type CatalogItem,
   type Cover,
+  sectionNamed,
   type FireGroup,
   type OtherSection,
   type ProposalRecord,
@@ -219,7 +220,7 @@ export interface FillContext {
   masters: RfqMasters;
   renewal: boolean;
   /** The document being filled: its standard notes are those marked for it. */
-  document: 'RFQ' | 'QCR';
+  document: 'RFQ' | 'QCR' | 'PLACEMENT_SLIP';
   /** The premium details heading edited on the RFQ (R-2), if any. */
   title?: string;
   existingOf: (code: string) => { sumInsured: string | null; premium: string | null } | undefined;
@@ -411,6 +412,93 @@ function scheduleBlocks(
   );
 }
 
+/**
+ * "Clauses to be attached" from the clause library (SEC-09): the active clauses marked for the
+ * document whose sections the case quotes (or with none given), grouped under their headings in
+ * the rows the template keeps for them; rows are added or hidden as needed. The Agreed Bank Clause
+ * names the hypothecation of the locations. With no clause for the document the template's own
+ * clauses stay.
+ */
+function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
+  const { record, masters, document } = context;
+  const quoted = new Set<string>([
+    'FIRE',
+    ...record.sections.filter((section) => section.included).map((section) => section.code),
+  ]);
+  const clauses = (masters.clauses ?? []).filter(
+    (clause) =>
+      clause.active &&
+      (document === 'QCR'
+        ? clause.onQcr
+        : document === 'PLACEMENT_SLIP'
+          ? clause.onPlacementSlip
+          : clause.onRfq) &&
+      (clause.sections.length === 0 ||
+        clause.sections.some((name) => {
+          const code = sectionNamed(name, masters.sections);
+          return code !== null && quoted.has(code);
+        })),
+  );
+  const title = findRow(sheet, 'Clauses to be attached');
+  if (!title || clauses.length === 0) return;
+  const end = findRow(sheet, 'Warranties', { from: title + 1, prefix: true }) ?? title + 1;
+  const printed = printColumns(sheet);
+  let free = end - title - 1;
+  // The block's merges (headings down column A, wording across) are rebuilt for the new rows.
+  for (const address of [...((sheet.model as { merges?: string[] }).merges ?? [])]) {
+    const [start = '', last = start] = address.split(':');
+    const top = Number(sheet.getCell(start).row);
+    const bottom = Number(sheet.getCell(last).row);
+    if (bottom > title && top < end) sheet.unMergeCells(address);
+  }
+  if (clauses.length > free) {
+    insertRows(sheet, title + 1 + free, clauses.length - free, title + Math.max(free, 1));
+    free = clauses.length;
+  }
+  const banks = [
+    ...new Set(
+      record.locations.flatMap((location) =>
+        location.hypothecation ? [location.hypothecation] : [],
+      ),
+    ),
+  ];
+  clauses.forEach((clause, offset) => {
+    const row = title + 1 + offset;
+    clearCells(sheet, { from: row, to: row }, { from: printed.from, to: printed.to });
+    sheet.getRow(row).hidden = false;
+    const text = /^agreed bank clause/i.test(clause.text)
+      ? `Agreed Bank Clause: ${banks.length > 0 ? banks.join('; ') : 'Not applicable'}`
+      : clause.text;
+    setValue(sheet, row, printed.from, clause.heading);
+    if (printed.to > printed.from + 1) sheet.mergeCells(row, printed.from + 1, row, printed.to);
+    setValue(sheet, row, printed.from + 1, text);
+    // The format colours some sample rows (the bank's "TBA"); every clause prints alike.
+    const wording = sheet.getCell(row, printed.from + 1);
+    restyle(wording, {
+      font: { ...wording.font, color: { argb: 'FF000000' } },
+      alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+    });
+    sheet.getRow(row).height = Math.max(15, Math.ceil(text.length / 95) * 15);
+  });
+  // Headings shared by consecutive clauses span their rows, as in the client's format.
+  let start = 0;
+  for (let offset = 1; offset <= clauses.length; offset += 1) {
+    if (clauses[offset]?.heading !== clauses[start]?.heading) {
+      if (offset - start > 1) {
+        sheet.mergeCells(title + 1 + start, printed.from, title + offset, printed.from);
+      }
+      restyle(sheet.getCell(title + 1 + start, printed.from), {
+        alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' },
+      });
+      start = offset;
+    }
+  }
+  for (let row = title + 1 + clauses.length; row < title + 1 + free; row += 1) {
+    clearCells(sheet, { from: row, to: row }, { from: printed.from, to: printed.to });
+    sheet.getRow(row).hidden = true;
+  }
+}
+
 export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   const { record, client, masters, renewal } = context;
   const existing = record.existing;
@@ -473,7 +561,11 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   // The Fire table: Existing, Option 1 and Option 2 by line.
   const header = findRow(sheet, 'S No') ?? 10;
   const existingColumn = findColumn(sheet, header, 'Existing Sum Insured') ?? 3;
-  const option1Column = findColumn(sheet, header, 'Proposed Sum Insured - Option 1') ?? 4;
+  // The placement slip has one column, for the option the client accepted.
+  const option1Column =
+    findColumn(sheet, header, 'Proposed Sum Insured - Option 1') ??
+    findColumn(sheet, header, 'Proposed Sum Insured') ??
+    4;
   const option2Column = findColumn(sheet, header, 'Proposed Sum Insured - Option 2') ?? 5;
   const lineOf = new Map(record.fire.groups.map((line) => [line.group, line]));
   const existingLine = new Map(
@@ -670,6 +762,8 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     });
   }
 
+  fillClauses(sheet, context);
+
   // Above the broker's footer: what the Data Sheet adds (hypothecation, stock in the open, its notes
   // for the insurers), then the standard notes for the document.
   const name = (location: (typeof record.locations)[number]) =>
@@ -687,7 +781,13 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     ),
     ...(record.notes ? [{ text: `Notes for the insurers: ${record.notes}` }] : []),
     ...masters.notes.filter(
-      (note) => note.active && (context.document === 'QCR' ? note.onQcr : note.onRfq),
+      (note) =>
+        note.active &&
+        (context.document === 'QCR'
+          ? note.onQcr
+          : context.document === 'PLACEMENT_SLIP'
+            ? note.onPlacementSlip
+            : note.onRfq),
     ),
   ];
   const area = printRows(sheet);

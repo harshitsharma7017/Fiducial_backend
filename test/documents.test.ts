@@ -205,7 +205,7 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     ).toEqual([
       ['RFQ', true],
       ['QCR', true],
-      ['PLACEMENT_SLIP', false],
+      ['PLACEMENT_SLIP', true],
     ]);
     const file = await binary(
       request(app).get('/api/v1/templates/RFQ/file').set(bearer(manager)),

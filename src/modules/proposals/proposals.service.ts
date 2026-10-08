@@ -3,6 +3,8 @@ import {
   AUDIT_ENTITIES,
   ERROR_CODES,
   OTHER_SECTIONS,
+  OTHER_SECTION_LABELS,
+  PROPOSAL_STAGES,
   PROPOSAL_STAGE_LABELS,
   ROLES,
   ADDON_LIST_LABELS,
@@ -13,6 +15,7 @@ import {
   hasExistingFigures,
   hasRfq,
   isAnnexureSection,
+  occupancyCoverDefaults,
   can,
   wholeRupees,
   type AuditAction,
@@ -26,6 +29,7 @@ import {
   type Paginated,
   type ProposalListQuery,
   type ProposalRecord,
+  type ProposalStage,
   type SetProposalInsurersRequest,
 } from '../../shared/index.ts';
 import { Types, type QueryFilter, type mongo } from 'mongoose';
@@ -34,6 +38,10 @@ import { Decimal, toDecimal128 } from '../../lib/decimal.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { conflict, notFound, validationError, type AppError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { ClientApprovalModel } from '../client-approval/client-approval.model.ts';
+import { PlacementSlipModel } from '../placement-slip/placement-slip.model.ts';
+import { QcrModel } from '../qcr/qcr.model.ts';
+import { QuoteModel } from '../quotes/quote.model.ts';
 import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
@@ -152,6 +160,60 @@ function sectionsFrom(snapshot: ExistingPolicyDoc | null): ProposalDoc['sections
   );
 }
 
+/**
+ * The covers a new case starts with (occupancy cover defaults master): the sections and Fire
+ * add-ons set for the occupancies of its locations (a location's own, else the client's). Sections
+ * switched off in the section master are left out. Empty when the master has no row for them.
+ */
+async function occupancyStart(clientTacCode: string, locationIds: readonly string[]) {
+  const [rows, sections, locations] = await Promise.all([
+    catalogItems('occupancy-defaults'),
+    catalogItems('sections'),
+    ClientLocationModel.find(
+      { _id: { $in: locationIds.map((id) => new Types.ObjectId(id)) } },
+      { occupancy: 1 },
+    ).lean(),
+  ]);
+  const codes = locations.length
+    ? [...new Set(locations.map((location) => location.occupancy?.tacCode ?? clientTacCode))]
+    : [clientTacCode];
+  const start = occupancyCoverDefaults(rows, codes, sections);
+  const off = new Set(sections.filter((section) => !section.active).map((section) => section.code));
+  return { ...start, sections: start.sections.filter((code) => !off.has(code)) };
+}
+
+/** The activity line for the covers a case started with, or null when it started blank. */
+function occupancyStartMessage(start: Awaited<ReturnType<typeof occupancyStart>>): string | null {
+  if (start.used.length === 0) return null;
+  const answered = (required: boolean) =>
+    start.fireCovers.filter((cover) => cover.required === required).map((cover) => cover.name);
+  const parts = [
+    start.sections.length > 0
+      ? `${start.sections.map((code) => OTHER_SECTION_LABELS[code]).join(', ')} ticked`
+      : null,
+    answered(true).length > 0 ? `Fire: ${answered(true).join(', ')} required` : null,
+    answered(false).length > 0 ? `${answered(false).join(', ')} not required` : null,
+  ].filter(Boolean);
+  const occupancies = start.used
+    .map((row) => (row.occupancy ? `${row.tacCode} ${row.occupancy}` : row.tacCode))
+    .join('; ');
+  return `Covers started from the occupancy cover defaults for ${occupancies}${parts.length ? `: ${parts.join('; ')}` : ''}`;
+}
+
+/** A renewal's sections from last year, then the occupancy's other sections ticked and blank. */
+function withStartSections(
+  sections: ProposalDoc['sections'],
+  codes: readonly OtherSection[],
+): ProposalDoc['sections'] {
+  const have = new Set(sections.map((section) => section.code));
+  return [
+    ...sections,
+    ...codes
+      .filter((code) => !have.has(code))
+      .map((code) => ({ code, included: true, proposed1: null, proposed2: null })),
+  ];
+}
+
 /** What the policy software has for a client, for the New proposal screen. Nothing is saved. */
 export async function lastPolicyOf(
   clientId: string,
@@ -222,6 +284,27 @@ export async function keepStage(
     );
   }
   return record;
+}
+
+/**
+ * Moves a case forward to a stage when the work reaches it (a quote recorded, the QCR approved,
+ * the client approval recorded, the slip sent, the policy recorded), in the caller's transaction.
+ * A case already at or past the stage, or closed, is left as it is: stages never go back.
+ */
+export async function advanceStageTo(
+  proposalId: Types.ObjectId,
+  target: ProposalStage,
+  session: mongo.ClientSession,
+): Promise<void> {
+  const doc = await ProposalModel.findById(proposalId).session(session).lean();
+  if (!doc || doc.stage === 'CLOSED') return;
+  if (PROPOSAL_STAGES.indexOf(doc.stage) >= PROPOSAL_STAGES.indexOf(target)) return;
+  const updated = await ProposalModel.findByIdAndUpdate(
+    proposalId,
+    { $set: { stageOverride: target } },
+    { returnDocument: 'after', session },
+  ).lean();
+  if (updated) await keepStage(updated, session);
 }
 
 /**
@@ -316,11 +399,17 @@ export async function createProposal(
   actor: Actor,
   options: { defaultGstRatePercent: string; policySource: ExistingPolicySource },
 ): Promise<ProposalRecord> {
-  const client = await ClientModel.findById(input.clientId, { name: 1, gstin: 1 }).lean();
+  const client = await ClientModel.findById(input.clientId, {
+    name: 1,
+    gstin: 1,
+    occupancy: 1,
+  }).lean();
   if (!client) {
     throw validationError([{ location: 'body', path: 'clientId', message: 'Choose a client' }]);
   }
   await assertClientLocations(client._id, input.locationIds, 'locationIds');
+  const start = await occupancyStart(client.occupancy.tacCode, input.locationIds);
+  const startMessage = occupancyStartMessage(start);
   const userId = new Types.ObjectId(actor.id);
   const ownerId = input.ownerId ? new Types.ObjectId(input.ownerId) : userId;
   if (input.ownerId) {
@@ -382,12 +471,16 @@ export async function createProposal(
             risk: {},
           })),
           fireOption2: [],
-          sections: sectionsFrom(snapshot),
+          sections: withStartSections(sectionsFrom(snapshot), start.sections),
+          ...(start.fireCovers.length > 0 ? { fireCovers: start.fireCovers } : {}),
           claims: [],
           notes: null,
           gstRatePercent: toDecimal128(gstRatePercent),
           insurers: [],
-          activity: [{ at: now, actorId: userId, message: created }],
+          activity: [
+            { at: now, actorId: userId, message: created },
+            ...(startMessage ? [{ at: now, actorId: userId, message: startMessage }] : []),
+          ],
           createdBy: userId,
           updatedBy: userId,
         },
@@ -801,6 +894,49 @@ export async function moveStage(
         ? `The next stage is ${PROPOSAL_STAGE_LABELS[before.nextStage]}.`
         : `The stage follows the Data Sheet and the RFQ until the RFQ is sent.`,
     );
+  }
+  // Every stage after RFQ Sent follows the work recorded on its tab.
+  if (input.stage === 'QUOTES_RECEIVED' && !(await QuoteModel.exists({ proposalId: doc._id }))) {
+    throw conflict(
+      ERROR_CODES.CONFLICT,
+      'Record an insurer’s quote on the Quotes tab; that moves the case to Quotes Received.',
+    );
+  }
+  if (
+    input.stage === 'QCR' &&
+    !(await QcrModel.exists({ proposalId: doc._id, approval: { $ne: null } }))
+  ) {
+    throw conflict(
+      ERROR_CODES.CONFLICT,
+      'Get the QCR approved on the QCR tab; that moves the case to QCR.',
+    );
+  }
+  if (
+    input.stage === 'CLIENT_APPROVAL' &&
+    !(await ClientApprovalModel.exists({ proposalId: doc._id }))
+  ) {
+    throw conflict(
+      ERROR_CODES.CONFLICT,
+      'Record the quote the client accepted on the Client approval tab; that moves the case to Client Approval.',
+    );
+  }
+  if (input.stage === 'PLACEMENT_SLIP' || input.stage === 'PLACED') {
+    const slip = await PlacementSlipModel.findOne(
+      { proposalId: doc._id },
+      { sends: 1, placed: 1 },
+    ).lean();
+    if (input.stage === 'PLACEMENT_SLIP' && !slip?.sends.some((send) => send.result !== 'FAILED')) {
+      throw conflict(
+        ERROR_CODES.CONFLICT,
+        'Send the approved placement slip to the insurer on the Placement slip tab; that moves the case to Placement Slip.',
+      );
+    }
+    if (input.stage === 'PLACED' && !slip?.placed) {
+      throw conflict(
+        ERROR_CODES.CONFLICT,
+        'Record the policy or cover note on the Placement slip tab; that moves the case to Placed.',
+      );
+    }
   }
   return saveWith(
     doc,

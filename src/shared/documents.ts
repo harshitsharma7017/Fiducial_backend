@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { IsoDateTimeSchema } from './common.ts';
 
 // Document templates (R-3, R-4): the client's own Excel formats, uploaded by an Admin and filled
-// by the document engine for the RFQ, and later the QCR and Placement Slip. The PDF is drawn
+// by the document engine for the RFQ, the QCR and the Placement Slip. The PDF is drawn
 // from the filled workbook, with the broker's letterhead (logo and address) from the template.
 
 export const DOCUMENT_KINDS = ['RFQ', 'QCR', 'PLACEMENT_SLIP'] as const;
@@ -14,7 +14,7 @@ export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
   PLACEMENT_SLIP: 'Placement Slip',
 };
 /** Which document kinds the engine fills today; the others are stored for when they are built. */
-export const FILLED_DOCUMENT_KINDS: readonly DocumentKind[] = ['RFQ', 'QCR'];
+export const FILLED_DOCUMENT_KINDS: readonly DocumentKind[] = ['RFQ', 'QCR', 'PLACEMENT_SLIP'];
 
 /** Largest template accepted, in bytes. */
 export const MAX_TEMPLATE_BYTES = 5 * 1024 * 1024;

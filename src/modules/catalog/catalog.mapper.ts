@@ -74,6 +74,8 @@ export function compareCatalogItems(master: CatalogMaster) {
           str(x.tax).localeCompare(str(y.tax)) ||
           str(y.effectiveFrom).localeCompare(str(x.effectiveFrom))
         );
+      case 'occupancy-defaults':
+        return str(x.tacCode).localeCompare(str(y.tacCode), 'en', { numeric: true });
       default:
         return num(x.order) - num(y.order) || str(x.code).localeCompare(str(y.code));
     }

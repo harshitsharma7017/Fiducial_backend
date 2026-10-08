@@ -32,6 +32,19 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKind, { subject: strin
         '{{senderName}}',
       ].join('\n'),
     },
+    PLACEMENT_SLIP: {
+      subject: 'Placement slip: {{insuredName}} ({{reference}})',
+      body: [
+        'Dear {{contactName}},',
+        '',
+        'Thank you for your quote. {{insuredName}} has accepted it for the policy period {{policyPeriod}}.',
+        '',
+        'Please find attached the placement slip, and kindly issue the policy / cover note as per the slip.',
+        '',
+        'Regards,',
+        '{{senderName}}',
+      ].join('\n'),
+    },
     REMINDER: {
       subject: 'Reminder: request for quotation: {{insuredName}} ({{reference}})',
       body: [

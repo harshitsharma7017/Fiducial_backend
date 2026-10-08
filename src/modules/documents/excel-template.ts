@@ -212,10 +212,21 @@ export function insertRows(
     .filter((range) => range.top === like && range.bottom === like)
     .map((range) => ({ left: range.left, right: range.right }));
 
+  // spliceRows moves cells, not the rows' hidden flags and heights: they are moved here.
+  const below = Array.from({ length: Math.max(sheet.rowCount - at + 1, 0) }, (_, index) => {
+    const row = sheet.getRow(at + index);
+    return { hidden: row.hidden, height: row.height };
+  });
   sheet.spliceRows(at, 0, ...Array.from({ length: count }, () => []));
+  below.forEach((props, index) => {
+    const row = sheet.getRow(at + count + index);
+    row.hidden = props.hidden;
+    if (props.height) row.height = props.height;
+  });
 
   for (let offset = 0; offset < count; offset += 1) {
     const row = sheet.getRow(at + offset);
+    row.hidden = false;
     if (height) row.height = height;
     for (const [column, style] of styles)
       row.getCell(column).style = JSON.parse(JSON.stringify(style)) as Partial<ExcelJS.Style>;

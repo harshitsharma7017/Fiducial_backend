@@ -24,6 +24,7 @@ import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
+  advanceStageTo,
   closed,
   keepStage,
   loadDoc,
@@ -45,7 +46,7 @@ import {
 const str = (value: Types.Decimal128 | null) => decimal128ToString(value);
 
 /** The type a file really is, from its first bytes (and, for a mail, its headers). */
-function sniff(data: Buffer, fileName: string): QuoteAttachmentType | null {
+export function sniff(data: Buffer, fileName: string): QuoteAttachmentType | null {
   const head = data.subarray(0, 8);
   if (head.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
   if (head.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
@@ -441,6 +442,8 @@ export async function recordQuote(
         );
       }
       await keepStage(updated, session);
+      // The first quote moves the case to Quotes Received.
+      await advanceStageTo(proposalId, 'QUOTES_RECEIVED', session);
       await writeAudit(
         {
           userId: actor.id,

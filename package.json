@@ -19,6 +19,8 @@
     "test": "vitest run",
     "seed:admin": "node --env-file-if-exists=.env src/scripts/seed-admin.ts",
     "import:masters": "node --env-file-if-exists=.env src/scripts/import-masters.ts",
+    "clean:cases": "node --env-file-if-exists=.env src/scripts/clean-case-data.ts",
+    "sync:stages": "node --env-file-if-exists=.env src/scripts/sync-stages.ts",
     "prepare": "husky"
   },
   "lint-staged": {

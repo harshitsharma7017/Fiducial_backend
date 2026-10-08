@@ -4,6 +4,7 @@ import {
   OTHER_SECTIONS,
   RISK_DETAIL_FIELDS,
   XLSX_CONTENT_TYPE,
+  catalogListSchema,
   type CatalogMaster,
 } from '../src/shared/index.ts';
 import ExcelJS from 'exceljs';
@@ -584,5 +585,174 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     expect(workbook.getWorksheet('SFSP-Addon')!.state).toBe('hidden');
     expect(workbook.getWorksheet('BSUS & BLUS-Addon')!.state).toBe('hidden');
     expect(workbook.worksheets.map((sheet) => sheet.name)).toContain('Fire-Additional Addon');
+  });
+});
+
+describe('Occupancy cover defaults: a new case starts with its occupancy’s covers', () => {
+  const HEADERS = CATALOG_SHEETS['occupancy-defaults'].columns.map((column) => column.header);
+
+  async function uploadDefaults(rows: (string | number)[][], dryRun = false) {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Occupancy cover defaults');
+    sheet.addRow(HEADERS);
+    for (const row of rows) sheet.addRow(row);
+    const response = await request(app)
+      .post(`/api/v1/catalog/import?dryRun=${dryRun}&fileName=defaults.xlsx`)
+      .set(bearer(admin))
+      .set('Content-Type', XLSX_CONTENT_TYPE)
+      .send(Buffer.from(await workbook.xlsx.writeBuffer()))
+      .expect(200);
+    return response.body as {
+      imported: boolean;
+      sheets: { master: string; present: boolean; issues: { row: number; message: string }[] }[];
+    };
+  }
+
+  async function caseWith(locationIds: string[]) {
+    const response = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager))
+      .send({
+        type: 'NEW',
+        clientId,
+        locationIds,
+        dueDate: '2026-10-20',
+        policyStart: '2026-11-01',
+        policyEnd: '2027-10-31',
+      })
+      .expect(201);
+    return response.body as {
+      sections: { code: string; included: boolean }[];
+      fire: { covers: { name: string; required: boolean | null }[] };
+      activity: { message: string }[];
+    };
+  }
+  const ticked = (body: { sections: { code: string; included: boolean }[] }) =>
+    body.sections.filter((item) => item.included).map((item) => item.code);
+
+  it('checks TAC codes against the IIB master and add-ons against Fire’s', async () => {
+    const report = await uploadDefaults(
+      [
+        [9999, '', 'Burglary', 'Earthquake', '', 'Yes'],
+        [2002, '', 'Fire; Money', '', '', 'Yes'],
+        [2075, '', 'Money; Kitchen', '', '', 'Yes'],
+        [2191, '', 'Money', 'Flood cover', '', 'Yes'],
+        [1001, '', '', 'Terrorism', 'terrorism', 'Yes'],
+      ],
+      true,
+    );
+    const sheet = report.sheets.find((item) => item.master === 'occupancy-defaults')!;
+    expect(sheet.issues.map((issue) => [issue.row, issue.message])).toEqual([
+      [2, 'TAC code 9999 is not in the active IIB occupancy master'],
+      [3, 'Fire is always quoted; list only the other sections'],
+      [
+        4,
+        '"Kitchen" is not a section. Use the names on the Coverage sections sheet, for example Burglary; Money',
+      ],
+      [
+        5,
+        'Flood cover is not among Fire’s add-on covers (Earthquake; Storm, Tempest, Flood & Inundation; Terrorism)',
+      ],
+      [6, 'Terrorism cannot be both required and not required'],
+    ]);
+    // Only that master is in the file; the others are left as they are.
+    expect(report.sheets.filter((item) => item.present).map((item) => item.master)).toEqual([
+      'occupancy-defaults',
+    ]);
+  });
+
+  it('ticks the sections and answers Fire’s add-ons on new cases only', async () => {
+    const before = await caseWith([locationId]);
+    const second = await request(app)
+      .post(`/api/v1/clients/${clientId}/locations`)
+      .set(bearer(admin))
+      .send({
+        name: 'Workshop',
+        line1: 'Plot 2',
+        line2: null,
+        city: 'Mumbai',
+        pincode: '400001',
+        occupancyCode: '2075',
+      })
+      .expect(201);
+    const report = await uploadDefaults([
+      [
+        2001,
+        '',
+        'Burglary; MECHANICAL_BREAKDOWN; money',
+        'Earthquake; terrorism',
+        'Storm, Tempest, Flood & Inundation',
+        'Yes',
+      ],
+      [2075, 'Fabrication shop', 'Boiler and Pressure Plant', '', 'Terrorism', 'Yes'],
+    ]);
+    expect(report.imported).toBe(true);
+    const saved = await request(app)
+      .get('/api/v1/catalog/occupancy-defaults')
+      .set(bearer(readOnly))
+      .expect(200);
+    // The web app reads the rows with the shared schema.
+    expect(catalogListSchema('occupancy-defaults').safeParse(saved.body).success).toBe(true);
+    expect(saved.body.items).toMatchObject([
+      {
+        tacCode: '2001',
+        occupancy: 'Abrasive Manufacturing',
+        sections: ['Burglary', 'Mechanical Breakdown', 'Money'],
+        fireRequired: ['Earthquake', 'terrorism'],
+      },
+      { tacCode: '2075', occupancy: 'Fabrication shop' },
+    ]);
+
+    // The client's occupancy (2001) at Plant 1.
+    const fresh = await caseWith([locationId]);
+    expect(ticked(fresh)).toEqual(['BURGLARY', 'MONEY', 'MECHANICAL_BREAKDOWN']);
+    expect(fresh.fire.covers).toEqual([
+      { name: 'Earthquake', required: true },
+      { name: 'Storm, Tempest, Flood & Inundation', required: false },
+      { name: 'Terrorism', required: true },
+    ]);
+    expect(fresh.activity.map((entry) => entry.message)).toContain(
+      'Covers started from the occupancy cover defaults for 2001 Abrasive Manufacturing: Burglary, Money, Mechanical Breakdown ticked; Fire: Earthquake, Terrorism required; Storm, Tempest, Flood & Inundation not required',
+    );
+
+    // With the workshop's own occupancy (2075) too: both sets of sections; Required wins.
+    const both = await caseWith([locationId, second.body.id as string]);
+    expect(ticked(both)).toEqual([
+      'BURGLARY',
+      'MONEY',
+      'MECHANICAL_BREAKDOWN',
+      'BOILER_PRESSURE_PLANT',
+    ]);
+    expect(both.fire.covers.find((cover) => cover.name === 'Terrorism')?.required).toBe(true);
+
+    // The case made before the defaults is as it was.
+    const old = await request(app)
+      .get(`/api/v1/proposals/${(before as unknown as { id: string }).id}`)
+      .set(bearer(manager))
+      .expect(200);
+    expect(ticked(old.body)).toEqual([]);
+    expect(old.body.fire.covers.every((cover: { required: null }) => cover.required === null)).toBe(
+      true,
+    );
+
+    // Switched off on screen: new cases start blank again.
+    const row = saved.body.items[0];
+    await request(app)
+      .put(`/api/v1/catalog/occupancy-defaults/${row.id}`)
+      .set(bearer(admin))
+      .send({
+        tacCode: row.tacCode,
+        occupancy: row.occupancy,
+        sections: row.sections,
+        fireRequired: row.fireRequired,
+        fireNotRequired: row.fireNotRequired,
+        active: false,
+      })
+      .expect(200);
+    const off = await caseWith([locationId]);
+    expect(ticked(off)).toEqual([]);
+    expect(off.activity).toHaveLength(1);
+
+    await uploadDefaults([]);
   });
 });

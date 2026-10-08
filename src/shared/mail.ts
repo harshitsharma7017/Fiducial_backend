@@ -15,13 +15,14 @@ import { MAX_PROPOSAL_INSURERS, ProposalRecordSchema, type ProposalRecord } from
 // preview is exactly what is sent.
 
 /** The two emails the app sends. */
-export const EMAIL_TEMPLATE_KINDS = ['RFQ', 'REMINDER', 'QCR'] as const;
+export const EMAIL_TEMPLATE_KINDS = ['RFQ', 'REMINDER', 'QCR', 'PLACEMENT_SLIP'] as const;
 export const EmailTemplateKindSchema = z.enum(EMAIL_TEMPLATE_KINDS);
 export type EmailTemplateKind = z.infer<typeof EmailTemplateKindSchema>;
 export const EMAIL_TEMPLATE_KIND_LABELS: Record<EmailTemplateKind, string> = {
   RFQ: 'RFQ email',
   REMINDER: 'Reminder email',
   QCR: 'QCR email to the insured',
+  PLACEMENT_SLIP: 'Placement slip email to the insurer',
 };
 
 export const EMAIL_SUBJECT_MAX = 200;

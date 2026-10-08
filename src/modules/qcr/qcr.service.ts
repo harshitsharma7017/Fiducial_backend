@@ -32,7 +32,13 @@ import { MailLogModel } from '../mail/mail-log.model.ts';
 import { fitsAttachmentLimit, storeAttachment } from '../mail/mail-log.service.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
-import { closed, loadDoc, recordOf, type Actor } from '../proposals/proposals.service.ts';
+import {
+  advanceStageTo,
+  closed,
+  loadDoc,
+  recordOf,
+  type Actor,
+} from '../proposals/proposals.service.ts';
 import { pdfSheets } from '../proposals/rfq-document.ts';
 import { proposalQuotes } from '../quotes/quotes.service.ts';
 import { UserModel } from '../users/user.model.ts';
@@ -298,6 +304,8 @@ export async function approveQcr(
       { $push: { activity: { at, actorId, message: 'QCR approved' } } },
       { session },
     );
+    // An approved QCR moves the case to QCR.
+    await advanceStageTo(new Types.ObjectId(id), 'QCR', session);
     await writeAudit(
       {
         userId: actor.id,
@@ -322,7 +330,7 @@ async function qcrWorkbook(
   const { record, qcr, terms } = loaded;
   const client = await ClientModel.findById(record.client.id).lean();
   if (!client) throw notFound('The proposal’s client no longer exists');
-  const [gstRatePercent, products, sections, notes, addons, template] = await Promise.all([
+  const [gstRatePercent, products, sections, notes, addons, template, clauses] = await Promise.all([
     record.gstRatePercent ??
       taxRatePercentOn('GST', istDay(new Date(record.createdAt)), defaultGstRatePercent),
     catalogItems('products'),
@@ -330,8 +338,9 @@ async function qcrWorkbook(
     catalogItems('notes'),
     catalogItems('addons'),
     templateFile('QCR'),
+    catalogItems('clauses'),
   ]);
-  const masters = { gstRatePercent, products, sections, notes, addons };
+  const masters = { gstRatePercent, products, sections, notes, addons, clauses };
   if (template) {
     const workbook = await openTemplate(template.data);
     const letterhead = letterheadOf(workbook);

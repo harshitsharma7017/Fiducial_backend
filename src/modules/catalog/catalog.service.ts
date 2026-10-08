@@ -8,13 +8,21 @@ import {
   ERROR_CODES,
   SECTION_CODES,
   catalogKeyOf,
+  fireAddonsOf,
   parseCatalogCells,
+  readSectionNames,
+  sectionNamed,
+  OTHER_SECTION_LABELS,
   taxRateOn,
+  unknownFireAddons,
   type CatalogImportReport,
   type CatalogItem,
   type CatalogMaster,
   type CatalogRows,
   type CatalogSheetReport,
+  type ClauseRow,
+  type OccupancyDefaultRow,
+  type SectionRow,
   type TaxCode,
 } from '../../shared/index.ts';
 import { Types, mongo } from 'mongoose';
@@ -23,6 +31,8 @@ import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { writeAudit, writeAudits, type AuditEntry } from '../audit/audit.service.ts';
 import type { Actor } from '../clients/clients.service.ts';
+import { MasterVersionModel } from '../masters/master-version.model.ts';
+import { OccupancyModel } from '../masters/occupancy.model.ts';
 import { CatalogItemModel } from './catalog-item.model.ts';
 import { parseCatalogWorkbook } from './catalog-workbook.ts';
 import { compareCatalogItems, toCatalogData, toCatalogItem } from './catalog.mapper.ts';
@@ -77,6 +87,137 @@ function auditView(master: CatalogMaster, item: CatalogItem) {
   };
 }
 
+/** The active IIB occupancies by TAC code, or null when no occupancy master is active. */
+async function activeOccupancies(): Promise<Map<string, string> | null> {
+  const version = await MasterVersionModel.findOne(
+    { type: 'OCCUPANCY', status: 'ACTIVE' },
+    { _id: 1 },
+  ).lean();
+  if (!version) return null;
+  const docs = await OccupancyModel.find(
+    { versionId: version._id },
+    { tacCode: 1, description: 1 },
+  ).lean();
+  return new Map(docs.map((doc) => [doc.tacCode, doc.description]));
+}
+
+/**
+ * An occupancy default checked against the other masters: its TAC code is in the active IIB
+ * master (when one is active), its sections are in the section master (kept in its wording) and
+ * its Fire add-ons are the Fire section's. A blank Occupancy is filled from the IIB master. Issues
+ * name the column's key.
+ */
+function checkOccupancyDefault(
+  row: OccupancyDefaultRow,
+  occupancies: Map<string, string> | null,
+  sections: readonly Pick<SectionRow, 'code' | 'name' | 'addons'>[],
+): { row: OccupancyDefaultRow; issues: { column: string; message: string }[] } {
+  const issues: { column: string; message: string }[] = [];
+  const description = occupancies?.get(row.tacCode);
+  if (occupancies && description === undefined) {
+    issues.push({
+      column: 'tacCode',
+      message: `TAC code ${row.tacCode} is not in the active IIB occupancy master`,
+    });
+  }
+  const named = readSectionNames(row.sections, sections);
+  if (named.fire.length > 0) {
+    issues.push({
+      column: 'sections',
+      message: 'Fire is always quoted; list only the other sections',
+    });
+  }
+  if (named.unknown.length > 0) {
+    issues.push({
+      column: 'sections',
+      message: `${named.unknown.map((name) => `"${name}"`).join(', ')} ${named.unknown.length === 1 ? 'is' : 'are'} not a section. Use the names on the Coverage sections sheet, for example Burglary; Money`,
+    });
+  }
+  const fireAddons = fireAddonsOf(sections);
+  const unknown = unknownFireAddons(row, fireAddons);
+  if (unknown.length > 0) {
+    issues.push({
+      column: unknown.some((name) => row.fireRequired.includes(name))
+        ? 'fireRequired'
+        : 'fireNotRequired',
+      message: `${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not among Fire’s add-on covers (${fireAddons.join('; ')})`,
+    });
+  }
+  return {
+    row: { ...row, occupancy: row.occupancy ?? description ?? null, sections: named.names },
+    issues,
+  };
+}
+
+/**
+ * A clause's sections checked against the section master and kept in its wording (Fire, and the
+ * built-in names where the master has none). Issues name the column's key.
+ */
+function checkClause(
+  row: ClauseRow,
+  sections: readonly Pick<SectionRow, 'code' | 'name'>[],
+): { row: ClauseRow; issues: { column: string; message: string }[] } {
+  const unknown: string[] = [];
+  const names: string[] = [];
+  for (const entry of row.sections) {
+    const code = sectionNamed(entry, sections);
+    if (!code) {
+      unknown.push(entry);
+      continue;
+    }
+    const name =
+      sections.find((section) => section.code === code)?.name ??
+      (code === 'FIRE' ? 'Fire' : OTHER_SECTION_LABELS[code]);
+    if (!names.includes(name)) names.push(name);
+  }
+  return {
+    row: { ...row, sections: names },
+    issues:
+      unknown.length > 0
+        ? [
+            {
+              column: 'sections',
+              message: `${unknown.map((name) => `"${name}"`).join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not a section. Use the names on the Coverage sections sheet, for example Fire; Burglary`,
+            },
+          ]
+        : [],
+  };
+}
+
+/** checkClause against the saved section master, for a row edited on screen. */
+async function checkedClause(row: ClauseRow): Promise<ClauseRow> {
+  const checked = checkClause(row, await catalogItems('sections'));
+  if (checked.issues.length > 0) {
+    throw validationError(
+      checked.issues.map((issue) => ({
+        location: 'body',
+        path: issue.column,
+        message: issue.message,
+      })),
+    );
+  }
+  return checked.row;
+}
+
+/** checkOccupancyDefault against the saved masters, for a row edited on screen. */
+async function checkedOccupancyDefault(row: OccupancyDefaultRow): Promise<OccupancyDefaultRow> {
+  const [occupancies, sections] = await Promise.all([
+    activeOccupancies(),
+    catalogItems('sections'),
+  ]);
+  const checked = checkOccupancyDefault(row, occupancies, sections);
+  if (checked.issues.length > 0) {
+    throw validationError(
+      checked.issues.map((issue) => ({
+        location: 'body',
+        path: issue.column,
+        message: issue.message,
+      })),
+    );
+  }
+  return checked.row;
+}
+
 function parseRow<M extends CatalogMaster>(master: M, body: unknown): CatalogRows[M] {
   const parsed = CATALOG_ROW_SCHEMAS[master].safeParse(body);
   if (!parsed.success) {
@@ -96,13 +237,17 @@ export async function createCatalogItem<M extends CatalogMaster>(
   body: unknown,
   actor: Actor,
 ): Promise<CatalogItem<M>> {
-  const row = parseRow(master, body);
+  let row = parseRow(master, body);
   if (master === 'sections') {
     throw validationError(
       [{ location: 'body', path: 'code', message: 'The 14 sections are fixed; edit them instead' }],
       'Sections cannot be added',
     );
   }
+  if (master === 'occupancy-defaults') {
+    row = (await checkedOccupancyDefault(row as OccupancyDefaultRow)) as CatalogRows[M];
+  }
+  if (master === 'clauses') row = (await checkedClause(row as ClauseRow)) as CatalogRows[M];
   const userId = new Types.ObjectId(actor.id);
   try {
     return await withTransaction(async (session) => {
@@ -141,7 +286,11 @@ export async function updateCatalogItem<M extends CatalogMaster>(
   body: unknown,
   actor: Actor,
 ): Promise<CatalogItem<M>> {
-  const row = parseRow(master, body);
+  let row = parseRow(master, body);
+  if (master === 'occupancy-defaults') {
+    row = (await checkedOccupancyDefault(row as OccupancyDefaultRow)) as CatalogRows[M];
+  }
+  if (master === 'clauses') row = (await checkedClause(row as ClauseRow)) as CatalogRows[M];
   const key = catalogKeyOf(master, row);
   try {
     return await withTransaction(async (session) => {
@@ -307,6 +456,7 @@ export async function importCatalogWorkbook(
   );
 
   const valid = new Map<CatalogMaster, object[]>();
+  const numbered = new Map<CatalogMaster, { row: number; value: object }[]>();
   const sheets: CatalogSheetReport[] = parsed.sheets.map((sheet) => {
     const spec = CATALOG_SHEETS[sheet.master];
     const header = (key: string | null) =>
@@ -333,11 +483,13 @@ export async function importCatalogWorkbook(
           sheet.rows.map((entry) => entry.cells),
         ),
       );
-    if (sheet.present)
+    if (sheet.present) {
       valid.set(
         sheet.master,
         rows.map((entry) => entry.value),
       );
+      numbered.set(sheet.master, rows);
+    }
     return {
       master: sheet.master,
       label: spec.label,
@@ -348,6 +500,55 @@ export async function importCatalogWorkbook(
       issues,
     };
   });
+
+  // Occupancy defaults name TAC codes, sections and Fire add-ons: checked against the IIB master
+  // and the section master (the one in this file when it has the sheet, else the saved one).
+  const defaults = numbered.get('occupancy-defaults');
+  const defaultsReport = sheets.find((sheet) => sheet.master === 'occupancy-defaults');
+  if (defaults && defaultsReport) {
+    const sectionsInFile = valid.get('sections') as SectionRow[] | undefined;
+    const [occupancies, sections] = await Promise.all([
+      activeOccupancies(),
+      sectionsInFile ?? catalogItems('sections'),
+    ]);
+    const spec = CATALOG_SHEETS['occupancy-defaults'];
+    const checked = defaults.map(({ row, value }) => {
+      const result = checkOccupancyDefault(value as OccupancyDefaultRow, occupancies, sections);
+      defaultsReport.issues.push(
+        ...result.issues.map((issue) => ({
+          row,
+          column: spec.columns.find((column) => column.key === issue.column)?.header ?? null,
+          message: issue.message,
+        })),
+      );
+      return result.row;
+    });
+    defaultsReport.issues.sort((a, b) => (a.row ?? 0) - (b.row ?? 0));
+    valid.set('occupancy-defaults', checked);
+  }
+
+  // Clauses name sections: checked against the section master, as above.
+  const clauses = numbered.get('clauses');
+  const clausesReport = sheets.find((sheet) => sheet.master === 'clauses');
+  if (clauses && clausesReport) {
+    const sections =
+      (valid.get('sections') as SectionRow[] | undefined) ?? (await catalogItems('sections'));
+    const spec = CATALOG_SHEETS.clauses;
+    valid.set(
+      'clauses',
+      clauses.map(({ row, value }) => {
+        const result = checkClause(value as ClauseRow, sections);
+        clausesReport.issues.push(
+          ...result.issues.map((issue) => ({
+            row,
+            column: spec.columns.find((column) => column.key === issue.column)?.header ?? null,
+            message: issue.message,
+          })),
+        );
+        return result.row;
+      }),
+    );
+  }
 
   const clean = sheets.every((sheet) => sheet.issues.length === 0);
   if (options.dryRun || !clean) {

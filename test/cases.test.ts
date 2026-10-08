@@ -316,13 +316,47 @@ describe('the 9 stages', () => {
       await request(app).get(`/api/v1/proposals/${id}`).set(bearer(manager)).expect(200)
     ).body;
     expect([record.stage, record.nextStage]).toEqual(['RFQ_SENT', 'QUOTES_RECEIVED']);
-    for (const stage of ['QUOTES_RECEIVED', 'QCR', 'CLIENT_APPROVAL', 'PLACEMENT_SLIP', 'PLACED']) {
-      await request(app)
-        .post(`/api/v1/proposals/${id}/stage`)
-        .set(bearer(placement))
-        .send({ stage })
-        .expect(200);
-    }
+    const moveTo = (stage: string) =>
+      request(app).post(`/api/v1/proposals/${id}/stage`).set(bearer(placement)).send({ stage });
+    // Each later stage needs its work (quotes, an approved QCR...), which normally moves the case
+    // itself (quotes.test.ts, qcr.test.ts); here the work is set directly.
+    await moveTo('QUOTES_RECEIVED').expect(409);
+    const { Types } = await import('mongoose');
+    const { QuoteModel } = await import('../src/modules/quotes/quote.model.ts');
+    await QuoteModel.collection.insertOne({ proposalId: new Types.ObjectId(id), version: 1 });
+    await moveTo('QUOTES_RECEIVED').expect(200);
+    await moveTo('QCR').expect(409);
+    const { QcrModel } = await import('../src/modules/qcr/qcr.model.ts');
+    await QcrModel.collection.insertOne({
+      proposalId: new Types.ObjectId(id),
+      approval: { at: new Date(), fingerprint: 'f' },
+    });
+    await moveTo('QCR').expect(200);
+    // Client Approval needs the client's acceptance, recorded on its tab (client-approval.test.ts).
+    await moveTo('CLIENT_APPROVAL').expect(409);
+    const { ClientApprovalModel } =
+      await import('../src/modules/client-approval/client-approval.model.ts');
+    await ClientApprovalModel.collection.insertOne({
+      proposalId: new Types.ObjectId(id),
+      acceptedOn: '2026-10-08',
+    });
+    await moveTo('CLIENT_APPROVAL').expect(200);
+    // Placement Slip and Placed need the slip sent and the policy recorded (placement-slip.test.ts).
+    await moveTo('PLACEMENT_SLIP').expect(409);
+    const { PlacementSlipModel } =
+      await import('../src/modules/placement-slip/placement-slip.model.ts');
+    await PlacementSlipModel.collection.insertOne({
+      proposalId: new Types.ObjectId(id),
+      sends: [{ result: 'OUTBOX' }],
+      placed: null,
+    });
+    await moveTo('PLACEMENT_SLIP').expect(200);
+    await moveTo('PLACED').expect(409);
+    await PlacementSlipModel.collection.updateOne(
+      { proposalId: new Types.ObjectId(id) },
+      { $set: { placed: { number: 'P-1' } } },
+    );
+    await moveTo('PLACED').expect(200);
     record = (await request(app).get(`/api/v1/proposals/${id}`).set(bearer(manager)).expect(200))
       .body;
     expect([record.stage, record.nextStage]).toEqual(['PLACED', null]);

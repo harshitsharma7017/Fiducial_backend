@@ -36,6 +36,8 @@ export interface RfqMasters {
   products: readonly CatalogItem<'products'>[];
   sections: readonly CatalogItem<'sections'>[];
   notes: readonly CatalogItem<'notes'>[];
+  /** The clause library; without it the template's own clauses are kept. */
+  clauses?: readonly CatalogItem<'clauses'>[];
 }
 
 const DEFAULT_PRODUCT_LINES = [

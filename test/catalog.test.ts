@@ -100,6 +100,31 @@ const SHEET_ROWS: Partial<Record<CatalogMaster, (string | number)[][]>> = {
       'Yes',
     ],
   ],
+  clauses: [
+    [
+      'REINSTATEMENT',
+      'Fire & Burglary',
+      'Reinstatement value clause',
+      'fire; BURGLARY',
+      'Yes',
+      'Yes',
+      'Yes',
+      1,
+      'Yes',
+    ],
+    [
+      'CASH_IN_TRANSIT',
+      'Money',
+      'Cash in transit: premises to bank',
+      'Money',
+      'Yes',
+      'No',
+      'Yes',
+      2,
+      'Yes',
+    ],
+  ],
+  'occupancy-defaults': [[2002, '', 'Burglary; Money', 'Earthquake', 'Terrorism', 'Yes']],
 };
 
 /** The downloaded workbook with rows filled in on the given sheets (others removed). */
@@ -266,13 +291,28 @@ describe('product and cover masters', () => {
       ['addon-rules', 2, 0],
       ['tax-rates', 1, 0],
       ['notes', 1, 0],
+      ['clauses', 2, 0],
+      ['occupancy-defaults', 1, 0],
     ]);
     expect(await list('products')).toEqual([]);
 
     const saved = await upload(file, false).expect(200);
     expect(saved.body.imported).toBe(true);
     expect((await list('sections')).map((s) => s.code)).toEqual(['FIRE', ...OTHER_SECTIONS]);
-    expect(await AuditLogModel.countDocuments({ action: 'CATALOG_IMPORTED' })).toBe(6);
+    // Clauses name sections in the section master's wording (Fire & Allied Perils, Money Insurance).
+    expect((await list('clauses')).map((c) => c.sections)).toEqual([
+      ['Fire & Allied Perils', 'Burglary'],
+      ['Money Insurance'],
+    ]);
+    // Occupancy defaults name sections in the section master's wording (Money Insurance).
+    expect(await list('occupancy-defaults')).toMatchObject([
+      {
+        tacCode: '2002',
+        occupancy: 'Aerated Water Factories',
+        sections: ['Burglary', 'Money Insurance'],
+      },
+    ]);
+    expect(await AuditLogModel.countDocuments({ action: 'CATALOG_IMPORTED' })).toBe(8);
 
     // Uploading again replaces, it does not add.
     expect((await upload(file, false).expect(200)).body.imported).toBe(true);
@@ -282,9 +322,18 @@ describe('product and cover masters', () => {
     const strip = (items: Array<Record<string, unknown>>) =>
       items.map(({ id: _id, updatedAt: _at, ...row }) => row);
     const before = await Promise.all(
-      (['products', 'sections', 'addons', 'addon-rules', 'tax-rates', 'notes'] as const).map(
-        async (master) => strip(await list(master)),
-      ),
+      (
+        [
+          'products',
+          'sections',
+          'addons',
+          'addon-rules',
+          'tax-rates',
+          'notes',
+          'clauses',
+          'occupancy-defaults',
+        ] as const
+      ).map(async (master) => strip(await list(master))),
     );
     const download = await request(app)
       .get('/api/v1/catalog/workbook')
@@ -298,9 +347,18 @@ describe('product and cover masters', () => {
       .expect(200);
     expect((await upload(download.body as Buffer, false).expect(200)).body.imported).toBe(true);
     const after = await Promise.all(
-      (['products', 'sections', 'addons', 'addon-rules', 'tax-rates', 'notes'] as const).map(
-        async (master) => strip(await list(master)),
-      ),
+      (
+        [
+          'products',
+          'sections',
+          'addons',
+          'addon-rules',
+          'tax-rates',
+          'notes',
+          'clauses',
+          'occupancy-defaults',
+        ] as const
+      ).map(async (master) => strip(await list(master))),
     );
     expect(after).toEqual(before);
   });

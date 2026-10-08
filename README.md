@@ -55,16 +55,18 @@ the command line, for operators.
 
 ## Scripts
 
-| Command                                   | Does                                                                    |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `npm run dev`                             | Runs the API with `node --watch` (Node runs the TypeScript directly)    |
-| `npm run build` / `npm start`             | Compiles to `dist/` / runs the compiled API                             |
-| `npm run lint`                            | ESLint (type-aware) and a Prettier check                                |
-| `npm run typecheck`                       | `tsc --noEmit`                                                          |
-| `npm test`                                | Vitest; integration tests use an in-memory MongoDB replica set          |
-| `npm run seed:admin`                      | Creates the first admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` |
-| `npm run import:masters -- <file> [opts]` | `--activate`, `--effective-from YYYY-MM-DD`, `--by EMAIL`, `--force`    |
-| `npm run format`                          | Prettier write                                                          |
+| Command                                   | Does                                                                                                                                                                                               |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                             | Runs the API with `node --watch` (Node runs the TypeScript directly)                                                                                                                               |
+| `npm run build` / `npm start`             | Compiles to `dist/` / runs the compiled API                                                                                                                                                        |
+| `npm run lint`                            | ESLint (type-aware) and a Prettier check                                                                                                                                                           |
+| `npm run typecheck`                       | `tsc --noEmit`                                                                                                                                                                                     |
+| `npm test`                                | Vitest; integration tests use an in-memory MongoDB replica set                                                                                                                                     |
+| `npm run seed:admin`                      | Creates the first admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`                                                                                                                            |
+| `npm run import:masters -- <file> [opts]` | `--activate`, `--effective-from YYYY-MM-DD`, `--by EMAIL`, `--force`                                                                                                                               |
+| `npm run clean:cases [-- --yes]`          | Counts, then with `--yes` deletes clients, locations, insurers, cases, quotes, QCRs, RFQ versions and the mail log; keeps users, masters, templates and the audit log                              |
+| `npm run sync:stages [-- --yes]`          | Lists, then with `--yes` moves forward the open cases whose stage is behind the work recorded on them (quotes, approved QCR, client approval, slip sent, policy recorded); never moves a case back |
+| `npm run format`                          | Prettier write                                                                                                                                                                                     |
 
 The first `npm test` downloads a MongoDB 7.0.43 binary (about 70 MB) for `mongodb-memory-server`.
 
@@ -329,19 +331,68 @@ format }`. One mail per insurer, To its chosen addresses only (its RFQ addresses
   `QCR_NOT_APPROVED`), as one mail to the chosen addresses from the QCR email template (Email templates), with the
   QCR attached; logged in the case's mail log ("The insured") and audited.
 
+## Client approval
+
+`/api/v1/proposals/{id}/client-approval` (module `src/modules/client-approval/`, contracts in
+`src/shared/client-approval.ts`).
+
+- **Read** (`GET`, `proposals.view`): the approval recorded (null until then) with the premium kept and whether the
+  accepted quote has a newer version since (`quoteCurrent`); the quotes the client can accept (each insurer and option
+  the QCR compares, totals with and without terrorism, the QCR's recommendation and lowest marked); the files
+  uploaded; the client's contacts; and `blocked`, why it cannot be recorded now.
+- **Record** (`PUT`, `proposals.edit`): an insurer and option compared in the QCR; Fire with or without terrorism when
+  it was quoted both ways; the date (not in the future); who confirmed; at least one file uploaded for it (the client's
+  mail or signed letter, `POST /{id}/client-approval/files`, typed from its content like quote attachments). 409 until
+  the QCR has gone to the insured, and once the case is placed or closed. The premium is kept as the quote stands.
+  Moves the case to Client Approval when it is before it; it can be corrected (recorded again) until the case is
+  placed. Audited (`CLIENT_APPROVAL_RECORDED`) with an activity line.
+- **Stage**: Client Approval cannot be set with `POST /{id}/stage` until the approval is recorded.
+
+## Placement slip
+
+`/api/v1/proposals/{id}/placement-slip` (module `src/modules/placement-slip/`, contracts in
+`src/shared/placement-slip.ts`).
+
+- **Read** (`GET`, `proposals.view`): built each time from the quote the client accepted (the version and premium the
+  client approval kept): the sections placed with the option's sum insured and the insurer's premium (Fire with or
+  without terrorism as accepted), net, GST and total, capacity, deductibles and conditions; the broker's remarks; the
+  approval; what still stops approval (the client approval, the client's Placement Slip format); the mails to the
+  insurer; the policy or cover note recorded.
+- **Remarks** (`PUT`, `proposals.edit`) and **approval** (`POST /approve`, `proposals.approve`): as the QCR — approval
+  is for the fingerprint seen (409 `PLACEMENT_SLIP_CHANGED`, `PLACEMENT_SLIP_INCOMPLETE`); a change afterwards voids it.
+- **Document** (`GET /document?format=xlsx|pdf`, `proposals.export`): the client's Placement Slip format (Masters →
+  Document templates) filled in place: premium details for the insurer accepted (rows added for sections the format
+  does not list, the others hidden), the schedule for the option accepted with the product placed, the agreed bank
+  from the Data Sheet's hypothecation, the insurer's conditions and deductibles, the standard notes marked for the
+  Placement Slip, and the annexure. The print areas are extended to the remarks and to the last schedule row.
+- **Send** (`POST /email`, `proposals.send`): only an approved slip unchanged since (409
+  `PLACEMENT_SLIP_NOT_APPROVED`), to the accepted insurer's chosen addresses from the Placement slip email template,
+  logged in the mail log; moves the case to Placement Slip.
+- **Placed** (`PUT /placed`, `proposals.edit`): the policy or cover note — kind, number, date, file(s) uploaded with
+  `POST /files` — once the slip has gone to the insurer; moves the case to Placed; can be corrected.
+- **Stage**: Placement Slip and Placed cannot be set with `POST /{id}/stage` until the slip is sent and the policy or
+  cover note recorded.
+
+## Lists across cases
+
+`GET /api/v1/qcrs` and `GET /api/v1/placement-slips` (module `src/modules/worklists/`, `proposals.view`) back the
+Quotes and QCR and Placement Slips pages: one row per open case, from the same QCR and placement slip its tabs show.
+
 ## Product and cover masters (M-4 to M-9)
 
-`/api/v1/catalog` holds six masters, all data, none of it in the code. Their layouts (columns, rules) are in
+`/api/v1/catalog` holds eight masters, all data, none of it in the code. Their layouts (columns, rules) are in
 `src/shared/catalog.ts`; rows are stored in the `catalog_items` collection, amounts and percentages as Decimal128.
 
-| Master (`{master}`)               | What it holds                                                                            | Used by                                                                        |
-| --------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Products (`products`)             | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive), add-on lists | Each proposal's suggested products; the RFQ's product lines; the add-on picker |
-| Coverage sections (`sections`)    | The 14 sections: name, order, on/off, schedule lines, add-on covers                      | Data Sheet and RFQ order and wording; RFQ add-on lines                         |
-| Add-on covers (`addons`)          | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit           | Searchable reference                                                           |
-| BSUS & BLUS rates (`addon-rules`) | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base         | `addon-premium.ts` (pure, not yet in a screen)                                 |
-| Tax rates (`tax-rates`)           | GST rates with effective dates                                                           | Proposals (rate kept at creation), RFQ, Fire rate check                        |
-| Standard notes (`notes`)          | NOTE and disclaimer text, which documents print it, order                                | The RFQ export (notes marked "On RFQ")                                         |
+| Master (`{master}`)                             | What it holds                                                                            | Used by                                                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Products (`products`)                           | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive), add-on lists | Each proposal's suggested products; the RFQ's product lines; the add-on picker                            |
+| Coverage sections (`sections`)                  | The 14 sections: name, order, on/off, schedule lines, add-on covers                      | Data Sheet and RFQ order and wording; RFQ add-on lines                                                    |
+| Add-on covers (`addons`)                        | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit           | Searchable reference                                                                                      |
+| BSUS & BLUS rates (`addon-rules`)               | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base         | `addon-premium.ts` (pure, not yet in a screen)                                                            |
+| Tax rates (`tax-rates`)                         | GST rates with effective dates                                                           | Proposals (rate kept at creation), RFQ, Fire rate check                                                   |
+| Standard notes (`notes`)                        | NOTE and disclaimer text, which documents print it, order                                | The RFQ export (notes marked "On RFQ")                                                                    |
+| Clauses (`clauses`)                             | The clause library: heading, wording, sections it applies to, documents, order           | "Clauses to be attached" on the RFQ, QCR and Placement Slip (the template's own clauses until one exists) |
+| Occupancy cover defaults (`occupancy-defaults`) | Per IIB TAC code: the sections to tick and the Fire add-ons Required / Not required      | New cases: the covers they start with (union over the case's occupancies)                                 |
 
 - **Workbook**: `GET /catalog/workbook` returns every master in one .xlsx (an Instructions sheet, then a sheet per master
   with drop-downs). `POST /catalog/import` checks an upload (dry run by default); with `dryRun=false`, each sheet in the
@@ -377,7 +428,7 @@ Admin uploads each one on the Document templates page (the copy in `data/client-
 - **PDF** (R-4): `modules/documents/sheet-pdf.ts` draws each sheet's print area as a table with pdfmake (merges,
   borders, fills, alignment, Indian digit grouping) on A4 portrait. The letterhead is the template's logo and the
   broker's address; each page has a footer with the case number and "Page x of y".
-- QCR and Placement Slip templates can be uploaded and stored today; they are filled once those documents are built.
+- The QCR and Placement Slip templates are filled the same way (see their sections).
 
 ## Excel import
 

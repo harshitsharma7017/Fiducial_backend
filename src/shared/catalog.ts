@@ -2,13 +2,19 @@ import { z } from 'zod';
 import { ADDON_LISTS } from './addon-lists.ts';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
 import { groupIndianDigits } from './format.ts';
-import { OTHER_SECTIONS } from './proposals.ts';
+import {
+  DEFAULT_FIRE_COVERS,
+  OTHER_SECTIONS,
+  OTHER_SECTION_LABELS,
+  type OtherSection,
+} from './proposals.ts';
 
 // Product and cover masters (M-4 to M-9): products with sum insured ranges, the 14 coverage
 // sections, the add-on lists, the BSUS/BLUS add-on limits and rates, the GST rate with effective
-// dates, and the standard notes printed on documents. All of it is data: loaded from one Excel
-// workbook (a sheet per master), downloaded back in the same layout, and edited on screen by
-// Admins. Nothing here is built into the code except the sheet layouts.
+// dates, the standard notes printed on documents, and the covers a new case starts with for each
+// occupancy. All of it is data: loaded from one Excel workbook (a sheet per master), downloaded
+// back in the same layout, and edited on screen by Admins. Nothing here is built into the code
+// except the sheet layouts.
 
 export const CATALOG_MASTERS = [
   'products',
@@ -17,6 +23,8 @@ export const CATALOG_MASTERS = [
   'addon-rules',
   'tax-rates',
   'notes',
+  'clauses',
+  'occupancy-defaults',
 ] as const;
 export const CatalogMasterSchema = z.enum(CATALOG_MASTERS);
 export type CatalogMaster = z.infer<typeof CatalogMasterSchema>;
@@ -216,6 +224,135 @@ export const NoteRowSchema = z.strictObject({
 });
 export type NoteRow = z.infer<typeof NoteRowSchema>;
 
+/** A name as compared: case, spaces and underscores ignored ("MECHANICAL_BREAKDOWN" too). */
+const nameKey = (text: string) =>
+  text
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, ' ');
+
+const SECTION_BY_NAME = new Map<string, OtherSection>(
+  OTHER_SECTIONS.flatMap((code) => [
+    [nameKey(code), code],
+    [nameKey(OTHER_SECTION_LABELS[code]), code],
+  ]),
+);
+
+type NamedSection = Pick<SectionRow, 'code' | 'name'>;
+
+/**
+ * The section other than Fire that a name stands for: its code, its built-in name, or its name in
+ * the coverage section master (Burglary, BURGLARY, "Mechanical Breakdown (MBD) ..."). Null for
+ * Fire and for names that are not a section.
+ */
+export function otherSectionNamed(
+  text: string,
+  master: readonly NamedSection[] = [],
+): OtherSection | null {
+  const key = nameKey(text);
+  const named = master.find((section) => nameKey(section.name) === key)?.code;
+  if (named) return named === 'FIRE' ? null : named;
+  return SECTION_BY_NAME.get(key) ?? null;
+}
+
+/**
+ * A row's Sections column read against the section master: the sections in the master's
+ * wording (the built-in name when the master has none), each once, and the names that are Fire
+ * or no section at all.
+ */
+export function readSectionNames(
+  names: readonly string[],
+  master: readonly NamedSection[],
+): { names: string[]; fire: string[]; unknown: string[] } {
+  const result = { names: [] as string[], fire: [] as string[], unknown: [] as string[] };
+  for (const entry of names) {
+    const code = otherSectionNamed(entry, master);
+    if (!code) {
+      const fire =
+        nameKey(entry) === 'fire' ||
+        master.some(
+          (section) => section.code === 'FIRE' && nameKey(section.name) === nameKey(entry),
+        );
+      result[fire ? 'fire' : 'unknown'].push(entry);
+      continue;
+    }
+    const name =
+      master.find((section) => section.code === code)?.name ?? OTHER_SECTION_LABELS[code];
+    if (!result.names.includes(name)) result.names.push(name);
+  }
+  return result;
+}
+
+/** The section a name stands for, Fire included (Fire, FIRE, its master name), else null. */
+export function sectionNamed(
+  text: string,
+  master: readonly NamedSection[] = [],
+): SectionCode | null {
+  const key = nameKey(text);
+  if (key === 'fire') return 'FIRE';
+  const named = master.find((section) => nameKey(section.name) === key)?.code;
+  return named ?? otherSectionNamed(text, master);
+}
+
+/** Fire's add-on covers: the section master's, else the built-in ones. */
+export function fireAddonsOf(master: readonly Pick<SectionRow, 'code' | 'addons'>[]): string[] {
+  return master.find((section) => section.code === 'FIRE')?.addons ?? [...DEFAULT_FIRE_COVERS];
+}
+
+/** Each name once, the first spelling kept. */
+const distinctNames = (entries: readonly string[]) =>
+  entries.filter(
+    (entry, index) => entries.findIndex((other) => nameKey(other) === nameKey(entry)) === index,
+  );
+
+export const OccupancyDefaultRowSchema = z
+  .strictObject({
+    tacCode: textCell(20, 'The TAC code is too long').min(1, 'Enter the TAC code'),
+    /** For reading the sheet; filled from the IIB master when left blank. */
+    occupancy: textCell(2000).nullable(),
+    /**
+     * The sections other than Fire ticked on a new case, by name. Checked against the section
+     * master when saved (catalog.service.ts).
+     */
+    sections: ListSchema.transform(distinctNames),
+    /** Fire's add-on covers marked Required on a new case. */
+    fireRequired: ListSchema.transform(distinctNames),
+    /** Fire's add-on covers marked Not required on a new case. */
+    fireNotRequired: ListSchema.transform(distinctNames),
+    active: z.boolean(),
+  })
+  .superRefine((row, context) => {
+    const notRequired = new Set(row.fireNotRequired.map(nameKey));
+    const both = row.fireRequired.filter((name) => notRequired.has(nameKey(name)));
+    if (both.length > 0) {
+      context.addIssue({
+        code: 'custom',
+        path: ['fireNotRequired'],
+        message: `${both.join(', ')} cannot be both required and not required`,
+      });
+    }
+  });
+export type OccupancyDefaultRow = z.infer<typeof OccupancyDefaultRowSchema>;
+
+/**
+ * A clause of the library (SEC-09): printed under "Clauses to be attached" on the documents marked,
+ * for cases with one of its sections (any case when none is given), grouped under its heading.
+ */
+export const ClauseRowSchema = z.strictObject({
+  code: CodeSchema,
+  /** The group printed beside it, for example "Fire & Burglary". */
+  heading: textCell(200).min(1, 'Enter the heading'),
+  text: textCell(4000).min(1, 'Enter the clause'),
+  /** Section names; checked against the section master when saved (catalog.service.ts). */
+  sections: ListSchema.transform(distinctNames),
+  onRfq: z.boolean(),
+  onQcr: z.boolean(),
+  onPlacementSlip: z.boolean(),
+  order: OrderSchema,
+  active: z.boolean(),
+});
+export type ClauseRow = z.infer<typeof ClauseRowSchema>;
+
 export const CATALOG_ROW_SCHEMAS = {
   products: ProductRowSchema,
   sections: SectionRowSchema,
@@ -223,6 +360,8 @@ export const CATALOG_ROW_SCHEMAS = {
   'addon-rules': AddonRuleRowSchema,
   'tax-rates': TaxRateRowSchema,
   notes: NoteRowSchema,
+  clauses: ClauseRowSchema,
+  'occupancy-defaults': OccupancyDefaultRowSchema,
 } as const satisfies Record<CatalogMaster, z.ZodType>;
 
 export interface CatalogRows {
@@ -232,6 +371,8 @@ export interface CatalogRows {
   'addon-rules': AddonRuleRow;
   'tax-rates': TaxRateRow;
   notes: NoteRow;
+  clauses: ClauseRow;
+  'occupancy-defaults': OccupancyDefaultRow;
 }
 export type CatalogRow = CatalogRows[CatalogMaster];
 
@@ -510,6 +651,107 @@ export const CATALOG_SHEETS: Record<CatalogMaster, CatalogSheet> = {
       { key: 'active', header: 'Active', type: 'yesno', required: true, note: YES_NO_NOTE },
     ],
   },
+  clauses: {
+    master: 'clauses',
+    label: 'Clauses',
+    sheetName: 'Clauses',
+    description:
+      'The clause library: printed under "Clauses to be attached" on the RFQ, QCR and Placement Slip, grouped by heading, for the cases with their sections.',
+    keyColumns: ['code'],
+    columns: [
+      {
+        key: 'code',
+        header: 'Code',
+        type: 'code',
+        required: true,
+        note: 'A short name, for example REINSTATEMENT_VALUE.',
+      },
+      {
+        key: 'heading',
+        header: 'Heading',
+        type: 'text',
+        required: true,
+        note: 'Printed beside the clause; clauses with the same heading are grouped. For example Fire & Burglary.',
+      },
+      { key: 'text', header: 'Clause', type: 'longtext', required: true, note: 'Printed as is.' },
+      {
+        key: 'sections',
+        header: 'Sections',
+        type: 'list',
+        required: false,
+        note: 'Printed when the case quotes one of these sections, for example Fire; Burglary. Blank: on every case. Separate with a semicolon (;).',
+      },
+      { key: 'onRfq', header: 'On RFQ', type: 'yesno', required: true, note: YES_NO_NOTE },
+      { key: 'onQcr', header: 'On QCR', type: 'yesno', required: true, note: YES_NO_NOTE },
+      {
+        key: 'onPlacementSlip',
+        header: 'On Placement Slip',
+        type: 'yesno',
+        required: true,
+        note: YES_NO_NOTE,
+      },
+      {
+        key: 'order',
+        header: 'Order',
+        type: 'integer',
+        required: true,
+        note: '1 is printed first.',
+      },
+      { key: 'active', header: 'Active', type: 'yesno', required: true, note: YES_NO_NOTE },
+    ],
+  },
+  'occupancy-defaults': {
+    master: 'occupancy-defaults',
+    label: 'Occupancy cover defaults',
+    sheetName: 'Occupancy cover defaults',
+    description:
+      'For each occupancy (IIB TAC code), the sections ticked and the Fire add-ons answered when a new case starts. The team can change any of them on the Data Sheet; cases already created are not changed.',
+    keyColumns: ['tacCode'],
+    columns: [
+      {
+        key: 'tacCode',
+        header: 'TAC code',
+        type: 'text',
+        required: true,
+        note: 'The occupancy code in the IIB master, for example 2189. One row per code.',
+      },
+      {
+        key: 'occupancy',
+        header: 'Occupancy',
+        type: 'text',
+        required: false,
+        note: 'For reading the sheet. Blank: filled from the IIB master.',
+      },
+      {
+        key: 'sections',
+        header: 'Sections to quote',
+        type: 'list',
+        required: false,
+        note: 'Ticked on a new case, besides Fire. Section names, for example Burglary; Money; Mechanical Breakdown. Separate with a semicolon (;).',
+      },
+      {
+        key: 'fireRequired',
+        header: 'Fire add-ons required',
+        type: 'list',
+        required: false,
+        note: 'Marked Required on a new case. Names from the Fire row of the Coverage sections sheet, for example Earthquake; Terrorism.',
+      },
+      {
+        key: 'fireNotRequired',
+        header: 'Fire add-ons not required',
+        type: 'list',
+        required: false,
+        note: 'Marked Not required on a new case. Fire add-ons in neither column are left for the team to answer.',
+      },
+      {
+        key: 'active',
+        header: 'Active',
+        type: 'yesno',
+        required: true,
+        note: 'No: new cases with this occupancy start with nothing ticked.',
+      },
+    ],
+  },
 };
 
 export interface CatalogCellIssue {
@@ -650,6 +892,8 @@ export const AddonItemSchema = AddonRowSchema.extend(itemMeta);
 export const AddonRuleItemSchema = AddonRuleRowSchema.safeExtend(itemMeta);
 export const TaxRateItemSchema = TaxRateRowSchema.extend(itemMeta);
 export const NoteItemSchema = NoteRowSchema.extend(itemMeta);
+export const ClauseItemSchema = ClauseRowSchema.safeExtend(itemMeta);
+export const OccupancyDefaultItemSchema = OccupancyDefaultRowSchema.safeExtend(itemMeta);
 
 export const CATALOG_ITEM_SCHEMAS = {
   products: ProductItemSchema,
@@ -658,6 +902,8 @@ export const CATALOG_ITEM_SCHEMAS = {
   'addon-rules': AddonRuleItemSchema,
   'tax-rates': TaxRateItemSchema,
   notes: NoteItemSchema,
+  clauses: ClauseItemSchema,
+  'occupancy-defaults': OccupancyDefaultItemSchema,
 } as const satisfies Record<CatalogMaster, z.ZodType>;
 
 export type CatalogItem<M extends CatalogMaster = CatalogMaster> = CatalogRows[M] & {
@@ -683,7 +929,12 @@ export const CatalogReorderRequestSchema = z.strictObject({
   ids: z.array(ObjectIdSchema).min(1).max(500),
 });
 
-export const CATALOG_REORDERABLE: readonly CatalogMaster[] = ['products', 'sections', 'notes'];
+export const CATALOG_REORDERABLE: readonly CatalogMaster[] = [
+  'products',
+  'sections',
+  'notes',
+  'clauses',
+];
 
 // Workbook upload
 
@@ -791,6 +1042,53 @@ export function taxRateOn<R extends Pick<TaxRateRow, 'tax' | 'effectiveFrom' | '
     if (!match || rate.effectiveFrom > match.effectiveFrom) match = rate;
   }
   return match;
+}
+
+/** The Fire add-ons a row names that the Fire section does not offer. */
+export function unknownFireAddons(
+  row: Pick<OccupancyDefaultRow, 'fireRequired' | 'fireNotRequired'>,
+  fireAddons: readonly string[],
+): string[] {
+  const offered = new Set(fireAddons.map(nameKey));
+  return [...row.fireRequired, ...row.fireNotRequired].filter(
+    (name) => !offered.has(nameKey(name)),
+  );
+}
+
+/**
+ * The covers a new case starts with for the occupancies of its locations: every section any of
+ * them quotes, and each Fire add-on Required when any marks it so, else Not required when any
+ * does. Inactive rows and codes without a row add nothing; sections and add-ons the section
+ * master no longer names are skipped. Fire add-ons keep the Fire section's spelling and order.
+ */
+export function occupancyCoverDefaults(
+  rows: readonly OccupancyDefaultRow[],
+  tacCodes: readonly string[],
+  master: readonly Pick<SectionRow, 'code' | 'name' | 'addons'>[],
+): {
+  used: OccupancyDefaultRow[];
+  sections: OtherSection[];
+  fireCovers: { name: string; required: boolean }[];
+} {
+  const codes = new Set(tacCodes.map((code) => code.trim().toLowerCase()));
+  const used = rows.filter((row) => row.active && codes.has(row.tacCode.trim().toLowerCase()));
+  const named = new Set(
+    used.flatMap((row) => row.sections.flatMap((name) => otherSectionNamed(name, master) ?? [])),
+  );
+  const fireAddons = fireAddonsOf(master);
+  const required = new Set(used.flatMap((row) => row.fireRequired.map(nameKey)));
+  const notRequired = new Set(used.flatMap((row) => row.fireNotRequired.map(nameKey)));
+  return {
+    used,
+    sections: OTHER_SECTIONS.filter((code) => named.has(code)),
+    fireCovers: fireAddons.flatMap((name): { name: string; required: boolean }[] =>
+      required.has(nameKey(name))
+        ? [{ name, required: true }]
+        : notRequired.has(nameKey(name))
+          ? [{ name, required: false }]
+          : [],
+    ),
+  };
 }
 
 /** The rate formula of a BSUS/BLUS add-on in words, for the screen and checks. */
