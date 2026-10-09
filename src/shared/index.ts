@@ -29,7 +29,6 @@ export * from './proposals.ts';
 export * from './qcr.ts';
 export * from './quotes.ts';
 export * from './rfq.ts';
-export * from './rating.ts';
 export * from './risk-types.ts';
 export * from './roles.ts';
 export * from './users.ts';

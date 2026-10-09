@@ -7,7 +7,7 @@ Slip.
 This repository holds the **foundation**: authentication, role-based permissions, user admin, an append-only audit log with a read API, IIB
 occupancy and pincode masters with a validated import, the client master with any number of risk locations per
 client, the insurer master with the email addresses RFQs go to, the policy and cover masters (policies, coverage
-sections, add-ons, BSUS/BLUS add-on rates, GST rates, standard notes), the Fire rating check, and new-business
+sections, add-ons, BSUS/BLUS add-on rates, GST rates, standard notes), and new-business
 proposals from creation to the RFQ (Data Sheet, RFQ workbook, insurers, emailing it or marking it sent), insurer
 statuses with reminders and responses, and a mail log per case. The web app lives in the separate
 **Fiducial_frontend** repository and calls this API through its own server-side routes.
@@ -38,7 +38,7 @@ Then start the web app from Fiducial_frontend, sign in at http://localhost:3000 
 the app: **Masters › Import data**.
 
 1. **IIB master** (occupancy codes and pincodes): upload the client's IIB workbook, preview its validation report,
-   **Save as new version**, then **Activate**. Lookups, client and location forms and the Fire rate check read the
+   **Save as new version**, then **Activate**. Lookups and client and location forms read the
    active version.
 2. **Clients**, then **Risk locations**, then **Insurers**: download each template, fill it in, preview and import.
 
@@ -78,7 +78,7 @@ src/
   config/               Zod-validated environment
   lib/                  logger, errors, decimal helpers, db, OpenAPI registry
   middleware/           request id, auth, permissions, validation, error handling
-  modules/              auth, users, audit, masters (with import/), clients, insurers, imports, rating, health,
+  modules/              auth, users, audit, masters (with import/), clients, insurers, imports, health,
                         proposals, documents, catalog, email-templates, mail (transport, mail log)
   scripts/              seed-admin.ts, import-masters.ts
   shared/               API contracts (Zod schemas, enums, formatters), copied to the frontend
@@ -103,7 +103,7 @@ it fails there until the frontend is synced.
   fields are rejected, and request values never reach a Mongo filter unparsed.
 - **Errors** always have the shape `{ message, code, details? }`; every response has an `X-Request-Id`.
 - **Master data is versioned.** Imports create DRAFT versions; activation supersedes the previous version in one
-  transaction. Lookups and ratings read only the ACTIVE version, and each rating returns the versions and values used.
+  transaction. Lookups read only the ACTIVE version.
 - **Audit**: sign-ins (success and failure), sign-outs, user creates and edits, client, risk location and insurer
   creates and edits, master imports, activations and the versions they supersede are written to the append-only `audit_logs` collection, in the same transaction as the
   change. Each entry keeps the record's fields before and after, so `GET /api/v1/audit` (Admin) can show who changed
@@ -116,7 +116,7 @@ it fails there until the frontend is synced.
   | Permission                                                      | Admin | Approver | Relationship Manager | Underwriting / Placement | Read-only |
   | --------------------------------------------------------------- | ----- | -------- | -------------------- | ------------------------ | --------- |
   | `proposals.view`, `clients.view`, `masters.view`                | yes   | yes      | yes                  | yes                      | yes       |
-  | `rating.use`, `proposals.export`                                | yes   | yes      | yes                  | yes                      |           |
+  | `proposals.export`                                              | yes   | yes      | yes                  | yes                      |           |
   | `proposals.edit`, `proposals.send`                              | yes   |          | yes                  | yes                      |           |
   | `proposals.create`, `clients.manage`                            | yes   |          | yes                  |                          |           |
   | `proposals.approve`                                             | yes   | yes      |                      |                          |           |
@@ -407,7 +407,7 @@ downloaded before the rename) is read the same. The RFQ, QCR and placement slip 
 | Coverage sections (`sections`)                  | The 14 sections: name, order, on/off, schedule lines, add-on covers                      | Data Sheet and RFQ order and wording; RFQ add-on lines                                                    |
 | Add-on covers (`addons`)                        | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit           | Searchable reference                                                                                      |
 | BSUS & BLUS rates (`addon-rules`)               | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base         | `addon-premium.ts` (pure, not yet in a screen)                                                            |
-| Tax rates (`tax-rates`)                         | GST rates with effective dates                                                           | Proposals (rate kept at creation), RFQ, Fire rate check                                                   |
+| Tax rates (`tax-rates`)                         | GST rates with effective dates                                                           | Proposals (rate kept at creation), RFQ                                                                    |
 | Standard notes (`notes`)                        | NOTE and disclaimer text, which documents print it, order                                | The RFQ export (notes marked "On RFQ")                                                                    |
 | Clauses (`clauses`)                             | The clause library: heading, wording, sections it applies to, documents, order           | "Clauses to be attached" on the RFQ, QCR and Placement Slip (the template's own clauses until one exists) |
 | Occupancy cover defaults (`occupancy-defaults`) | Per IIB TAC code: the sections to tick and the Fire add-ons Required / Not required      | New cases: the covers they start with (union over the case's occupancies)                                 |

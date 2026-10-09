@@ -354,7 +354,7 @@ documentRoute({
   summary: 'Correct an occupancy in the active master',
   description:
     'Needs masters.manage (Admin). Send every editable field (blank values as null). The ' +
-    'change applies at once to lookups and the Fire rate check, and is audited with each ' +
+    'change applies at once to lookups and the forms, and is audited with each ' +
     "field's old and new value.",
   request: {
     params: TacCodeParamsSchema,

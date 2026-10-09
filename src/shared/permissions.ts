@@ -18,7 +18,6 @@ export const PERMISSIONS = [
   'clients.manage',
   'masters.view',
   'masters.manage',
-  'rating.use',
   'users.manage',
   'settings.view',
   'audit.view',
@@ -42,7 +41,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.export',
     'clients.view',
     'masters.view',
-    'rating.use',
   ],
   ACCOUNT_MANAGER: [
     'proposals.view',
@@ -53,7 +51,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'clients.view',
     'clients.manage',
     'masters.view',
-    'rating.use',
   ],
   PLACEMENT_EXEC: [
     'proposals.view',
@@ -62,7 +59,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.export',
     'clients.view',
     'masters.view',
-    'rating.use',
   ],
   READ_ONLY: ['proposals.view', 'clients.view', 'masters.view'],
 };

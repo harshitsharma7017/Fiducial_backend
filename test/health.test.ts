@@ -107,7 +107,6 @@ describe('API documentation', () => {
         'POST /api/v1/insurers',
         'GET /api/v1/insurers/{id}',
         'PATCH /api/v1/insurers/{id}',
-        'POST /api/v1/rating/fire',
         'GET /api/v1/proposals',
         'POST /api/v1/proposals',
         'GET /api/v1/proposals/{id}',

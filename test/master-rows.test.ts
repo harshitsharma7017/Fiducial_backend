@@ -68,7 +68,7 @@ describe('pincode list', () => {
 });
 
 describe('editing the active masters', () => {
-  it('corrects an occupancy, which rating uses at once, and audits each change', async () => {
+  it('corrects an occupancy, which lookups use at once, and audits each change', async () => {
     const response = await request(app)
       .patch('/api/v1/masters/occupancies/2001')
       .set(bearer(admin))
@@ -85,12 +85,11 @@ describe('editing the active masters', () => {
       minEqRates: { zone3: null },
     });
 
-    const rating = await request(app)
-      .post('/api/v1/rating/fire')
+    const lookup = await request(app)
+      .get('/api/v1/masters/occupancies/2001')
       .set(bearer(admin))
-      .send({ occupancyCode: '2001', pincode: '110001', sumInsured: '100000000' })
       .expect(200);
-    expect(JSON.stringify(rating.body)).toContain('0.75');
+    expect(lookup.body.iibRate).toBe('0.75');
 
     const audit = await AuditLogModel.findOne({ action: 'OCCUPANCY_UPDATED' }).lean();
     expect(audit?.before).toMatchObject({ tacCode: '2001', iibRate: '0.69' });

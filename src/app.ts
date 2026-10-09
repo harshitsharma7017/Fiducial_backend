@@ -33,7 +33,6 @@ import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
 import { createMailRouter } from './modules/mail/mail.routes.ts';
 import { transportFromEnv, type MailTransport } from './modules/mail/transport.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
-import { createRatingRouter } from './modules/rating/rating.routes.ts';
 import { createUsersRouter } from './modules/users/users.routes.ts';
 
 export interface AppDependencies {
@@ -145,7 +144,6 @@ export function createApp({
     }),
   );
   api.use('/', createWorklistsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
-  api.use('/rating', createRatingRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);
 

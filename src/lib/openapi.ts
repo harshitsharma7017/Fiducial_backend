@@ -69,7 +69,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       version: API_VERSION,
       description:
         'Foundation API: authentication, users, IIB occupancy and pincode masters, clients ' +
-        'with their risk locations, the insurer master, the Fire rating check and the audit log. Money and rates are decimal strings; rates are per ' +
+        'with their risk locations, the insurer master, proposals from Data Sheet to placement and the audit log. Money and rates are decimal strings; rates are per ' +
         'mille. Each route needs one permission; src/shared/permissions.ts maps roles to ' +
         'permissions.',
     },
@@ -96,7 +96,6 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
         name: 'Imports',
         description: 'Excel templates and bulk import of clients, locations and insurers.',
       },
-      { name: 'Rating' },
       { name: 'Audit', description: 'Admin only. Append-only: entries are never changed.' },
     ],
   });

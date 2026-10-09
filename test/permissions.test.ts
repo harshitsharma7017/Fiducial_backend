@@ -89,15 +89,6 @@ const ENDPOINTS: Endpoint[] = [
         .set(bearer(token)),
   },
   {
-    name: 'POST /rating/fire',
-    permission: 'rating.use',
-    call: (token) =>
-      request(app)
-        .post('/api/v1/rating/fire')
-        .set(bearer(token))
-        .send({ occupancyCode: '2001', pincode: '400001', sumInsured: '100000000' }),
-  },
-  {
     name: 'GET /clients',
     permission: 'clients.view',
     call: (token) => request(app).get('/api/v1/clients').set(bearer(token)),

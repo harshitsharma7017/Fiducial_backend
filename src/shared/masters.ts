@@ -288,3 +288,13 @@ export type PincodeListQuery = z.infer<typeof PincodeListQuerySchema>;
 
 export const PincodeListResponseSchema = paginatedSchema(PincodeRecordSchema);
 export type PincodeListResponse = z.infer<typeof PincodeListResponseSchema>;
+
+/** The master version a value was read from. */
+export const MasterVersionRefSchema = z.object({
+  id: ObjectIdSchema,
+  type: MasterTypeSchema,
+  sourceFileName: z.string(),
+  effectiveFrom: IsoDateTimeSchema.nullable(),
+  activatedAt: IsoDateTimeSchema.nullable(),
+});
+export type MasterVersionRef = z.infer<typeof MasterVersionRefSchema>;

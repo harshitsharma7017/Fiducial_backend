@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LoginRequestSchema } from './auth.ts';
 import { OccupancySearchQuerySchema } from './masters.ts';
-import { FireRatingRequestSchema, SumInsuredSchema } from './rating.ts';
 import { CreateUserRequestSchema, UpdateUserRequestSchema } from './users.ts';
 
 describe('LoginRequestSchema', () => {
@@ -50,37 +49,6 @@ describe('UpdateUserRequestSchema', () => {
   it('requires at least one field', () => {
     expect(UpdateUserRequestSchema.safeParse({}).success).toBe(false);
     expect(UpdateUserRequestSchema.safeParse({ active: false }).success).toBe(true);
-  });
-});
-
-describe('SumInsuredSchema', () => {
-  it.each(['100000000', '1.5', '25000000.75'])('accepts %s', (value) => {
-    expect(SumInsuredSchema.safeParse(value).success).toBe(true);
-  });
-
-  it.each(['0', '0.00', '-1', '1e8', '10,00,000', '1.234', ''])('rejects %s', (value) => {
-    expect(SumInsuredSchema.safeParse(value).success).toBe(false);
-  });
-});
-
-describe('FireRatingRequestSchema', () => {
-  it('rejects numbers for money so no floats are accepted', () => {
-    const result = FireRatingRequestSchema.safeParse({
-      occupancyCode: '2001',
-      pincode: '400001',
-      sumInsured: 100000000,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts an optional terrorism rate', () => {
-    const result = FireRatingRequestSchema.safeParse({
-      occupancyCode: '1001_2',
-      pincode: '400001',
-      sumInsured: '100000000',
-      terrorismRate: '0.05',
-    });
-    expect(result.success).toBe(true);
   });
 });
 
