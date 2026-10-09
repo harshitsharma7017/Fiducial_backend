@@ -130,6 +130,8 @@ export interface ProposalDoc {
   /** A stage set by the team (Quotes Received onwards, or Closed). */
   stageOverride?: ProposalStage | null;
   closedReason?: string | null;
+  /** Moved to the Deleted bin (kept, hidden everywhere until restored); null when live. */
+  deleted?: { at: Date; by: Types.ObjectId } | null;
   clientId: Types.ObjectId;
   ownerId: Types.ObjectId;
   /** Dates as YYYY-MM-DD (India time), never shifted by time zones. */
@@ -215,6 +217,16 @@ const proposalSchema = new Schema<ProposalDoc>(
     stage: { type: String, enum: PROPOSAL_STAGES, required: true },
     stageOverride: { type: String, enum: [...PROPOSAL_STAGES, null], default: null },
     closedReason: text,
+    deleted: {
+      type: new Schema(
+        {
+          at: { type: Date, required: true },
+          by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        },
+        noId,
+      ),
+      default: null,
+    },
     clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     dueDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
@@ -455,6 +467,21 @@ proposalSchema.index({ reference: 1 }, { unique: true });
 proposalSchema.index({ clientId: 1, _id: -1 });
 proposalSchema.index({ stage: 1, _id: -1 });
 proposalSchema.index({ type: 1, _id: -1 });
+
+// Cases in the Deleted bin are left out of every query (lists, worklists, the case and all its
+// work) unless the query names `deleted` itself, as the bin and the audit log do.
+proposalSchema.pre(
+  ['find', 'findOne', 'findOneAndUpdate', 'updateOne', 'updateMany', 'countDocuments', 'distinct'],
+  function () {
+    if (!('deleted' in this.getFilter())) void this.where({ deleted: null });
+  },
+);
+proposalSchema.pre('aggregate', function () {
+  const first = this.pipeline()[0] as { $match?: Record<string, unknown> } | undefined;
+  if (!first?.$match || !('deleted' in first.$match)) {
+    this.pipeline().unshift({ $match: { deleted: null } });
+  }
+});
 
 export const ProposalModel = model<ProposalDoc>('Proposal', proposalSchema);
 

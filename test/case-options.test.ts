@@ -554,8 +554,8 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     expect(schedule.getCell(rowOf('Terrorism'), 4).value).toBe('Not required');
     expect(schedule.getCell(rowOf('Storm, Tempest, Flood & Inundation'), 4).value).toBeNull();
 
-    // C-1: only the chosen product is shown.
-    const product = rowOf('Product to be choosen', 1);
+    // C-1: only the chosen policy is shown, under the label Policy.
+    const product = rowOf('Policy', 1);
     expect(schedule.getCell(product, 2).value).toBe(
       'Above ₹5 Cr sum insured: Property All Risk (PAR)',
     );

@@ -11,6 +11,7 @@ const EXPECTED: Record<Permission, readonly Role[]> = {
   'proposals.approve': ['ADMIN', 'MANAGER'],
   'proposals.send': ['ADMIN', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC'],
   'proposals.export': ['ADMIN', 'MANAGER', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC'],
+  'proposals.delete': ['ADMIN'],
   'clients.view': ['ADMIN', 'MANAGER', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC', 'READ_ONLY'],
   'clients.manage': ['ADMIN', 'ACCOUNT_MANAGER'],
   'masters.view': ['ADMIN', 'MANAGER', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC', 'READ_ONLY'],

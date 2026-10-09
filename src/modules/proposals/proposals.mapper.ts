@@ -66,6 +66,7 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
       ...doc.insurers.flatMap((i) => (i.sentBy ? [key(i.sentBy)] : [])),
       ...doc.insurers.flatMap((i) => (i.response ? [key(i.response.by)] : [])),
       ...doc.activity.flatMap((a) => (a.actorId ? [key(a.actorId)] : [])),
+      ...(doc.deleted ? [key(doc.deleted.by)] : []),
     ]),
   );
   const [clients, locations, insurers, users, products, sections] = await Promise.all([
@@ -336,6 +337,9 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     stage,
     nextStage: nextStageOf(stage),
     closedReason: doc.closedReason ?? null,
+    deleted: doc.deleted
+      ? { at: doc.deleted.at.toISOString(), by: userName(doc.deleted.by) }
+      : null,
     client: {
       id: key(doc.clientId),
       name: client?.name ?? 'Unknown client',

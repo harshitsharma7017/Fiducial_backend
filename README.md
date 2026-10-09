@@ -6,7 +6,7 @@ Slip.
 
 This repository holds the **foundation**: authentication, role-based permissions, user admin, an append-only audit log with a read API, IIB
 occupancy and pincode masters with a validated import, the client master with any number of risk locations per
-client, the insurer master with the email addresses RFQs go to, the product and cover masters (products, coverage
+client, the insurer master with the email addresses RFQs go to, the policy and cover masters (policies, coverage
 sections, add-ons, BSUS/BLUS add-on rates, GST rates, standard notes), the Fire rating check, and new-business
 proposals from creation to the RFQ (Data Sheet, RFQ workbook, insurers, emailing it or marking it sent), insurer
 statuses with reminders and responses, and a mail log per case. The web app lives in the separate
@@ -181,8 +181,23 @@ it fails there until the frontend is synced.
   Public Liability carry the Data Sheet's lines (`SECTION_LINES`: annual gross profit; cash in safe and in transit;
   employees and limits; accident and aggregate limits). Plate Glass, Neon Sign, All Risk, EEI, MBD and Boiler carry
   an annexure grid in the client's Annexure columns (`ANNEXURE_SECTIONS`, up to 200 rows). On save the rows' total
-  becomes the section's Proposed 1, and FLOP's annual gross profit becomes its own; the RFQ schedule prints the lines,
+  becomes the section's Proposed 1, and so do the lines a section's sum insured is made of, once entered
+  (`SUM_INSURED_LINES`): FLOP's annual gross profit, Money's cash in safe + single carrying limit (and Option 2 from its
+  Option 2 lines), Fidelity's limit per policy period and Public Liability's aggregate limit; the RFQ schedule prints the lines,
   and an "Annexure" sheet lists every item with its total.
+- **Deleted bin** (`DELETE /{id}` and `POST /{id}/restore`, `proposals.delete`, Admins only): deleting moves a case to
+  the bin (`deleted: { at, by }`); nothing is erased. The case model leaves binned cases out of every query unless the
+  query names `deleted` (`proposal.model.ts`), so lists, worklists and dashboards drop them, and `liveCaseOnly()`
+  answers 404 on every `/proposals/{id}/…` route (quotes, QCR, approval, slip, mail) except restore. `GET /?deleted=true`
+  lists the bin. Both moves are in the case's activity and the audit log (`PROPOSAL_DELETED`, `PROPOSAL_RESTORED`).
+- **Data Sheet import** (DS-08, `POST /{id}/data-sheet/import?fileName=`, `proposals.edit`, body the .xlsx, up to
+  5 MB): reads the client's own Data Sheet workbook (`data/client-formats/Fiducial_Property_data sheet.xlsx` format)
+  and returns the values, without saving (`src/modules/proposals/data-sheet-import.ts`). Each sheet titled "DATA SHEET
+  FOR PROPERTY INSURANCE" is one location: its Fire lines (sq ft × rate for buildings), hypothecation, stock in the
+  open and the 14 risk features folded into the nine risk details, with the case location it most likely is (by name
+  or address, else by order). The other sections' lines and the Annexure sheet's rows come back by section. Doubts
+  (paise rounded, another insured's name or GSTIN, more sheets than locations) come back as `warnings`. A closed or
+  locked case is refused (409); a workbook with no Data Sheet is a 400.
 - **Completeness**: every response lists in `missing` what the Data Sheet still needs before the RFQ (at least one
   location, Fire sums insured for every location, Proposed 1 for every included section). The stage is Data Sheet
   once nothing is missing.
@@ -378,14 +393,17 @@ format }`. One mail per insurer, To its chosen addresses only (its RFQ addresses
 `GET /api/v1/qcrs` and `GET /api/v1/placement-slips` (module `src/modules/worklists/`, `proposals.view`) back the
 Quotes and QCR and Placement Slips pages: one row per open case, from the same QCR and placement slip its tabs show.
 
-## Product and cover masters (M-4 to M-9)
+## Policy and cover masters (M-4 to M-9)
 
 `/api/v1/catalog` holds eight masters, all data, none of it in the code. Their layouts (columns, rules) are in
-`src/shared/catalog.ts`; rows are stored in the `catalog_items` collection, amounts and percentages as Decimal128.
+`src/shared/catalog.ts`; rows are stored in the `catalog_items` collection, amounts and percentages as Decimal128. Screens, sheets and documents call the
+`products` master **Policies**; its workbook sheet is "Policies", and a sheet still named "Products" (a workbook
+downloaded before the rename) is read the same. The RFQ, QCR and placement slip print the client template's
+"Product to be choosen" row as "Policy to be chosen", or "Policy" once one is chosen.
 
 | Master (`{master}`)                             | What it holds                                                                            | Used by                                                                                                   |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Products (`products`)                           | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive), add-on lists | Each proposal's suggested products; the RFQ's product lines; the add-on picker                            |
+| Policies (`products`)                           | BSUS, BLUS, SFSP, PAR: sum insured above (exclusive) and up to (inclusive), add-on lists | Each proposal's suggested policies; the RFQ's policy lines; the add-on picker                             |
 | Coverage sections (`sections`)                  | The 14 sections: name, order, on/off, schedule lines, add-on covers                      | Data Sheet and RFQ order and wording; RFQ add-on lines                                                    |
 | Add-on covers (`addons`)                        | The Fire additional, PAR, SFSP and BSUS & BLUS lists; BSUS/BLUS type and limit           | Searchable reference                                                                                      |
 | BSUS & BLUS rates (`addon-rules`)               | The 15 paid add-ons: limit and cap per scheme, calculation, rate factor and base         | `addon-premium.ts` (pure, not yet in a screen)                                                            |

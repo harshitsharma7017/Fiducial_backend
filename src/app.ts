@@ -23,7 +23,7 @@ import {
   notConfiguredSource,
   type ExistingPolicySource,
 } from './modules/proposals/existing-policy-source.ts';
-import { createProposalsRouter } from './modules/proposals/proposals.routes.ts';
+import { createProposalsRouter, liveCaseOnly } from './modules/proposals/proposals.routes.ts';
 import { createClientApprovalRouter } from './modules/client-approval/client-approval.routes.ts';
 import { createPlacementSlipRouter } from './modules/placement-slip/placement-slip.routes.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
@@ -116,6 +116,7 @@ export function createApp({
   api.use('/email-templates', createEmailTemplatesRouter(jwt));
   api.use('/imports', createImportsRouter(jwt));
   api.use('/mail', createMailRouter({ ...jwt, transport }));
+  api.use('/proposals/:id', liveCaseOnly());
   api.use(
     '/proposals',
     createProposalsRouter({

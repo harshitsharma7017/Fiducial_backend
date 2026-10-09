@@ -34,7 +34,7 @@ import {
 const actorOf = (req: Request): Actor => ({ id: currentUser(req).id, requestId: req.requestId });
 
 const UploadSchema = z.instanceof(Buffer, {
-  error: 'Upload the product and cover masters workbook (.xlsx) as the request body',
+  error: 'Upload the policy and cover masters workbook (.xlsx) as the request body',
 });
 /** A row's columns; each master's own schema checks them in the service. */
 const RowBodySchema = z.record(z.string(), z.unknown());
@@ -53,7 +53,7 @@ export function createCatalogRouter(options: { jwtSecret: string }): Router {
     res.setHeader('Content-Type', XLSX_CONTENT_TYPE);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="Product-and-cover-masters-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      `attachment; filename="Policy-and-cover-masters-${new Date().toISOString().slice(0, 10)}.xlsx"`,
     );
     res.send(file);
   });
@@ -149,18 +149,18 @@ const xlsx = {
 documentRoute({
   method: 'get',
   path: '/api/v1/catalog/workbook',
-  tags: ['Product and cover masters'],
-  summary: 'Download the product and cover masters workbook',
+  tags: ['Policy and cover masters'],
+  summary: 'Download the policy and cover masters workbook',
   description:
-    'Needs masters.view. An Instructions sheet and one sheet per master (Products, Coverage sections, Add-on covers, BSUS BLUS add-on rates, Tax rates, Standard notes) with the saved rows, to edit and upload back. Empty masters have their headers only.',
+    'Needs masters.view. An Instructions sheet and one sheet per master (Policies, Coverage sections, Add-on covers, BSUS BLUS add-on rates, Tax rates, Standard notes) with the saved rows, to edit and upload back. Empty masters have their headers only.',
   responses: { 200: { description: 'The workbook', ...xlsx }, ...errorResponses(401, 403) },
 });
 
 documentRoute({
   method: 'post',
   path: '/api/v1/catalog/import',
-  tags: ['Product and cover masters'],
-  summary: 'Preview or import the product and cover masters workbook',
+  tags: ['Policy and cover masters'],
+  summary: 'Preview or import the policy and cover masters workbook',
   description:
     'Needs masters.manage. The .xlsx as the request body. Each master sheet in the file replaces that master as a whole; masters without a sheet stay as they are. dryRun=true (default) only checks. With dryRun=false the sheets are saved in one transaction when every sheet passes, with one audit entry per master.',
   request: { query: CatalogImportQuerySchema, body: xlsx },
@@ -173,13 +173,13 @@ documentRoute({
 documentRoute({
   method: 'get',
   path: '/api/v1/catalog/products/suggest',
-  tags: ['Product and cover masters'],
-  summary: 'Suggest products for a sum insured',
+  tags: ['Policy and cover masters'],
+  summary: 'Suggest policies for a sum insured',
   description:
-    'Needs masters.view. The active products whose range holds the sum insured (above the lower limit, up to and including the upper), in their order.',
+    'Needs masters.view. The active policies whose range holds the sum insured (above the lower limit, up to and including the upper), in their order.',
   request: { query: ProductSuggestionQuerySchema },
   responses: {
-    200: { description: 'The products', ...json(ProductSuggestionSchema) },
+    200: { description: 'The policies', ...json(ProductSuggestionSchema) },
     ...errorResponses(400, 401, 403),
   },
 });
@@ -187,7 +187,7 @@ documentRoute({
 documentRoute({
   method: 'get',
   path: '/api/v1/catalog/{master}',
-  tags: ['Product and cover masters'],
+  tags: ['Policy and cover masters'],
   summary: 'List a master',
   description:
     'Needs masters.view. Every row in display order. master is products, sections, addons, addon-rules, tax-rates or notes. q keeps the rows whose text holds every word.',
@@ -201,7 +201,7 @@ documentRoute({
 documentRoute({
   method: 'post',
   path: '/api/v1/catalog/{master}',
-  tags: ['Product and cover masters'],
+  tags: ['Policy and cover masters'],
   summary: 'Add a row to a master',
   description:
     'Needs masters.manage. The row’s columns as in src/shared/catalog.ts. Sections cannot be added (the 14 are fixed). 409 CATALOG_ITEM_EXISTS for a duplicate. Audited.',
@@ -215,10 +215,10 @@ documentRoute({
 documentRoute({
   method: 'put',
   path: '/api/v1/catalog/{master}/order',
-  tags: ['Product and cover masters'],
+  tags: ['Policy and cover masters'],
   summary: 'Reorder a master',
   description:
-    'Needs masters.manage. Products, sections and notes: every row id in the new order. Fire stays the first section. Audited.',
+    'Needs masters.manage. Policies, sections and notes: every row id in the new order. Fire stays the first section. Audited.',
   request: { params: CatalogMasterParamsSchema, body: json(CatalogReorderRequestSchema) },
   responses: {
     200: { description: 'The rows', ...json(CatalogListResponseSchema) },
@@ -229,7 +229,7 @@ documentRoute({
 documentRoute({
   method: 'put',
   path: '/api/v1/catalog/{master}/{id}',
-  tags: ['Product and cover masters'],
+  tags: ['Policy and cover masters'],
   summary: 'Edit a master row',
   description:
     'Needs masters.manage. Replaces the row’s columns. A section keeps its code. Audited with old and new values.',

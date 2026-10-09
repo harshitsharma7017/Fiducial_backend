@@ -238,7 +238,8 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(schedule.getCell('F6').value).toBeNull();
     const premium = filled.getWorksheet('premium details')!;
     expect(premium.getCell('A1').value).toBe('RFQ FOR NEW BUSINESS 2026-27');
-    expect(premium.getCell('D14').value).toBe(600000);
+    // Money's sum insured is its cash in safe + single carrying limit (here the safe alone).
+    expect(premium.getCell('D14').value).toBe(100000);
     expect(premium.getCell('C24').value).toMatchObject({ formula: 'C23*0.18' });
     const risk = filled.getWorksheet('risk details')!;
     expect(risk.getCell('D2').value).toBe('Plant 1');

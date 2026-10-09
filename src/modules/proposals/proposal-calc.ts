@@ -4,6 +4,8 @@ import {
   FIRE_ITEMS,
   OTHER_SECTION_LABELS,
   PROPOSAL_STAGES,
+  SECTION_LINES,
+  SUM_INSURED_LINES,
   isAnnexureSection,
   type BurglaryBasis,
   type FireGroup,
@@ -120,6 +122,15 @@ export interface SheetValues {
   } | null;
 }
 
+/** The lines a section's sum insured is made of, by their Data Sheet labels. */
+function sumInsuredLineLabels(code: OtherSection): string {
+  const lines: readonly { key: string; label: string }[] =
+    SECTION_LINES[code as keyof typeof SECTION_LINES] ?? [];
+  return (SUM_INSURED_LINES[code] ?? [])
+    .map((key) => lines.find((line) => line.key === key)?.label ?? key)
+    .join(' or ');
+}
+
 /** What the Data Sheet still needs before an RFQ can go out; empty when it is complete. */
 export function missingForRfq(sheet: SheetValues): string[] {
   const missing: string[] = [];
@@ -143,14 +154,16 @@ export function missingForRfq(sheet: SheetValues): string[] {
           ? `${name}: add its annexure items, or leave the section out.`
           : section.code === 'BURGLARY' && section.basis
             ? `${name}: its sum insured is the Fire contents (all items but buildings); enter them, or leave the section out.`
-            : `${name}: enter the Proposed 1 sum insured, or leave the section out.`,
+            : SUM_INSURED_LINES[section.code]
+              ? `${name}: enter ${sumInsuredLineLabels(section.code)}, or leave the section out.`
+              : `${name}: enter the Proposed 1 sum insured, or leave the section out.`,
       );
     }
   }
   // A product outside the suggestion needs the reason (the ranges may change after it was chosen).
   if (sheet.product?.source === 'OVERRIDE' && !sheet.product.reason) {
     missing.push(
-      `Product: ${sheet.product.name} is not suggested for this Fire sum insured; give the reason or choose a suggested product.`,
+      `Policy: ${sheet.product.name} is not suggested for this Fire sum insured; give the reason or choose a suggested policy.`,
     );
   }
   return missing;

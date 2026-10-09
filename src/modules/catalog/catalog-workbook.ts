@@ -55,7 +55,7 @@ function cellValue(column: CatalogColumn, text: string): string | number | null 
 function addInstructions(workbook: ExcelJS.Workbook) {
   const sheet = workbook.addWorksheet(INSTRUCTIONS_SHEET);
   sheet.columns = [{ width: 30 }, { width: 12 }, { width: 100 }];
-  sheet.addRow(['Product and cover masters']).font = { bold: true, size: 14 };
+  sheet.addRow(['Policy and cover masters']).font = { bold: true, size: 14 };
   for (const line of [
     'One sheet per master. Edit the rows, keep the headers in row 1, and upload the file on the Import data page.',
     'Each sheet in the file replaces that master as a whole; a sheet left out of the file leaves its master as it is.',
@@ -245,7 +245,12 @@ export async function parseCatalogWorkbook(data: Buffer): Promise<ParsedCatalogW
     workbook.worksheets.map((sheet) => [sheet.name.trim().toLowerCase(), sheet]),
   );
   const sheets = CATALOG_MASTERS.map((master) =>
-    readSheet(byName.get(CATALOG_SHEETS[master].sheetName.toLowerCase()), master),
+    readSheet(
+      [CATALOG_SHEETS[master].sheetName, ...(CATALOG_SHEETS[master].formerSheetNames ?? [])]
+        .map((name) => byName.get(name.toLowerCase()))
+        .find(Boolean),
+      master,
+    ),
   );
   if (!sheets.some((sheet) => sheet.present)) {
     return {

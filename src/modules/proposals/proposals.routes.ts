@@ -1,6 +1,9 @@
 import {
   CreateProposalRequestSchema,
+  DataSheetImportQuerySchema,
+  DataSheetImportSchema,
   DataSheetInputSchema,
+  MAX_DATA_SHEET_BYTES,
   DocumentFormatQuerySchema,
   PDF_CONTENT_TYPE,
   ExistingPolicyLookupSchema,
@@ -27,15 +30,19 @@ import {
   ProposalRecordSchema,
   SetProposalInsurersRequestSchema,
   XLSX_CONTENT_TYPE,
+  can,
 } from '../../shared/index.ts';
-import { Router, type Request } from 'express';
+import express, { Router, type Request, type RequestHandler } from 'express';
+import { Types } from 'mongoose';
 import { z } from 'zod';
+import { forbidden, notFound } from '../../lib/errors.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import {
   createProposal,
+  deleteProposal,
   getProposal,
   lastPolicyOf,
   listOwners,
@@ -44,7 +51,9 @@ import {
   listProposals,
   markRfqSent,
   proposalForRfq,
+  restoreProposal,
   setInsurers,
+  readDataSheetImport,
   updateDataSheet,
   type Actor,
 } from './proposals.service.ts';
@@ -54,6 +63,7 @@ import { writeAudit } from '../audit/audit.service.ts';
 import { caseMailAttachment, getCaseMail, listCaseMails } from '../mail/mail-log.service.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { recordResponse } from './insurer-status.ts';
+import { ProposalModel } from './proposal.model.ts';
 import { previewMails, sendReminder, sendRfq, type MailDeps } from './rfq-mail.service.ts';
 
 function actorOf(req: Request): Actor {
@@ -83,7 +93,9 @@ export function createProposalsRouter(options: {
   router.get(
     '/',
     requirePermission('proposals.view'),
-    route({ query: ProposalListQuerySchema }, async ({ query }, _req, res) => {
+    route({ query: ProposalListQuerySchema }, async ({ query }, req, res) => {
+      // The Deleted bin is for those who may delete.
+      if (query.deleted && !can(currentUser(req).roles, 'proposals.delete')) throw forbidden();
       res.json(await listProposals(query));
     }),
   );
@@ -137,10 +149,45 @@ export function createProposalsRouter(options: {
   );
 
   router.post(
+    '/:id/data-sheet/import',
+    requirePermission('proposals.edit'),
+    express.raw({
+      type: [XLSX_CONTENT_TYPE, 'application/octet-stream'],
+      limit: MAX_DATA_SHEET_BYTES,
+    }),
+    route(
+      {
+        params: ProposalIdParamsSchema,
+        query: DataSheetImportQuerySchema,
+        body: z.instanceof(Buffer, { error: 'Upload the Data Sheet workbook as the request body' }),
+      },
+      async ({ params, body }, _req, res) => {
+        res.json(await readDataSheetImport(params.id, body));
+      },
+    ),
+  );
+
+  router.post(
     '/:id/existing-policy',
     requirePermission('proposals.edit'),
     route({ params: ProposalIdParamsSchema }, async ({ params }, req, res) => {
       res.json(await refreshExistingPolicy(params.id, actorOf(req), options.policySource));
+    }),
+  );
+
+  router.delete(
+    '/:id',
+    requirePermission('proposals.delete'),
+    route({ params: ProposalIdParamsSchema }, async ({ params }, req, res) => {
+      res.json(await deleteProposal(params.id, actorOf(req)));
+    }),
+  );
+
+  router.post(
+    '/:id/restore',
+    requirePermission('proposals.delete'),
+    route({ params: ProposalIdParamsSchema }, async ({ params }, req, res) => {
+      res.json(await restoreProposal(params.id, actorOf(req)));
     }),
   );
 
@@ -282,6 +329,23 @@ export function createProposalsRouter(options: {
   return router;
 }
 
+/**
+ * A case in the Deleted bin answers "not found" on every /proposals/{id}/… route, whichever module
+ * serves it (quotes, QCR, approval, slip, mail), except its restore. Mounted before those routers.
+ */
+export function liveCaseOnly(): RequestHandler {
+  return (req, _res, next) => {
+    const id = req.params.id;
+    if (typeof id !== 'string' || !/^[0-9a-f]{24}$/i.test(id) || req.path === '/restore') {
+      next();
+      return;
+    }
+    ProposalModel.exists({ _id: new Types.ObjectId(id), deleted: { $ne: null } })
+      .then((deleted) => next(deleted ? notFound('Proposal not found') : undefined))
+      .catch(next);
+  };
+}
+
 const json = (schema: z.ZodType) => ({ content: { 'application/json': { schema } } });
 
 documentRoute({
@@ -289,7 +353,8 @@ documentRoute({
   path: '/api/v1/proposals',
   tags: ['Proposals'],
   summary: 'List new-business proposals',
-  description: 'Needs proposals.view. Newest first; cursor pagination.',
+  description:
+    'Needs proposals.view. Newest first; cursor pagination. deleted=true lists the Deleted bin instead (needs proposals.delete).',
   request: { query: ProposalListQuerySchema },
   responses: {
     200: { description: 'A page of proposals', ...json(ProposalListResponseSchema) },
@@ -336,6 +401,25 @@ documentRoute({
   responses: {
     200: { description: 'The proposal', ...json(ProposalRecordSchema) },
     ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/data-sheet/import',
+  tags: ['Proposals'],
+  summary: 'Read the client’s Data Sheet workbook',
+  description: `Needs proposals.edit. The workbook (.xlsx, up to ${MAX_DATA_SHEET_BYTES / 1024 / 1024} MB) is the request body, in the client’s Data Sheet format: each "DATA SHEET FOR PROPERTY INSURANCE" sheet is one location (Fire lines with sq ft × rate, hypothecation, stock in the open, risk features), with the other sections and the Annexure for the case. Answers what it read, the location each sheet most likely is, and warnings; nothing is saved (the web app fills the Data Sheet form, to be saved there). 400 for a file that is not such a workbook; 409 PROPOSAL_LOCKED once the RFQ has been sent.`,
+  request: {
+    params: ProposalIdParamsSchema,
+    query: DataSheetImportQuerySchema,
+    body: {
+      content: { 'application/octet-stream': { schema: z.string().meta({ format: 'binary' }) } },
+    },
+  },
+  responses: {
+    200: { description: 'What the workbook holds', ...json(DataSheetImportSchema) },
+    ...errorResponses(400, 401, 403, 404, 409, 413),
   },
 });
 
@@ -424,6 +508,33 @@ documentRoute({
   responses: {
     200: { description: 'The proposal', ...json(ProposalRecordSchema) },
     ...errorResponses(400, 401, 403, 404, 409),
+  },
+});
+
+documentRoute({
+  method: 'delete',
+  path: '/api/v1/proposals/{id}',
+  tags: ['Proposals'],
+  summary: 'Move a case to the Deleted bin',
+  description:
+    'Needs proposals.delete (Admins). The case is kept with all its work but left out of every list, worklist and action until restored. Audited.',
+  request: { params: ProposalIdParamsSchema },
+  responses: {
+    200: { description: 'The case, now deleted', ...json(ProposalRecordSchema) },
+    ...errorResponses(400, 401, 403, 404),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/restore',
+  tags: ['Proposals'],
+  summary: 'Restore a case from the Deleted bin',
+  description: 'Needs proposals.delete (Admins). The case comes back as it was. Audited.',
+  request: { params: ProposalIdParamsSchema },
+  responses: {
+    200: { description: 'The case, restored', ...json(ProposalRecordSchema) },
+    ...errorResponses(400, 401, 403, 404),
   },
 });
 

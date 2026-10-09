@@ -278,9 +278,32 @@ export type SectionWithLines = keyof typeof SECTION_LINES;
 export const SECTION_LINE_KEYS = Object.values(SECTION_LINES).flatMap((lines) =>
   lines.map((line) => line.key),
 ) as [string, ...string[]];
-/** The section whose sum insured is one of its lines (FLOP: the annual gross profit). */
-export const SUM_INSURED_LINE: Partial<Record<OtherSection, string>> = {
-  FIRE_LOSS_OF_PROFIT: 'annualGrossProfit',
+/**
+ * The lines a section's sum insured is made of, added up, once any is entered: FLOP its annual
+ * gross profit; Money the cash in safe and the single carrying limit (the most lost at once);
+ * Fidelity the limit per policy period; Public Liability the aggregate limit.
+ */
+export const SUM_INSURED_LINES: Partial<Record<OtherSection, readonly string[]>> = {
+  FIRE_LOSS_OF_PROFIT: ['annualGrossProfit'],
+  MONEY: ['cashInSafe', 'cashInTransitSingle'],
+  FIDELITY_GUARANTEE: ['limitPerPeriod'],
+  PUBLIC_LIABILITY: ['aggregateLimit'],
+};
+/**
+ * The sections whose sum insured is one line on its own: that line's Existing and Option 2 are
+ * the section's own. With several lines (Money) each keeps its columns, and Option 2 adds up too.
+ */
+export const SUM_INSURED_LINE: Partial<Record<OtherSection, string>> = Object.fromEntries(
+  Object.entries(SUM_INSURED_LINES).flatMap(([code, keys]) =>
+    keys.length === 1 ? [[code, keys[0]]] : [],
+  ),
+);
+/** How a sum insured taken from the lines is described next to it. */
+export const SUM_INSURED_FROM: Partial<Record<OtherSection, string>> = {
+  FIRE_LOSS_OF_PROFIT: 'Annual Gross Profit',
+  MONEY: 'Cash in safe + single carrying limit',
+  FIDELITY_GUARANTEE: 'Limit per policy period',
+  PUBLIC_LIABILITY: 'Aggregate limit',
 };
 
 /** The annexure grids (D-5), with the client's Annexure sheet columns. Sum Insured is always last. */
@@ -557,7 +580,7 @@ const LineValues = z
 const ProductCodeSchema = z
   .string()
   .trim()
-  .regex(/^[A-Z][A-Z0-9_]{1,39}$/, 'Choose a product');
+  .regex(/^[A-Z][A-Z0-9_]{1,39}$/, 'Choose a policy');
 
 export const LocationDataInputSchema = z.strictObject({
   locationId: ObjectIdSchema,
@@ -683,7 +706,7 @@ export const DataSheetInputSchema = z
       context.addIssue({
         code: 'custom',
         path: ['product', 'code'],
-        message: 'Choose the product the reason is for',
+        message: 'Choose the policy the reason is for',
       });
     }
     // Typed Existing figures need the policy they come from.
@@ -946,6 +969,8 @@ export const ProposalRecordSchema = z.object({
   nextStage: ProposalStageSchema.nullable(),
   /** Why the case was closed. */
   closedReason: z.string().nullable(),
+  /** In the Deleted bin since, and by whom; null for a live case. */
+  deleted: z.object({ at: IsoDateTimeSchema, by: z.string() }).nullable(),
   client: z.object({
     id: ObjectIdSchema,
     name: z.string(),
@@ -1081,6 +1106,11 @@ export const ProposalListQuerySchema = z.strictObject({
   type: ProposalTypeSchema.optional(),
   stage: ProposalStageSchema.optional(),
   clientId: ObjectIdSchema.optional(),
+  /** true: the cases in the Deleted bin instead (needs proposals.delete). */
+  deleted: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
   limit: LimitSchema,
   cursor: CursorSchema.optional(),
 });

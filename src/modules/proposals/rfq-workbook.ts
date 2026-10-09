@@ -327,7 +327,7 @@ export function schedule(
       ? products.map((product) => `${productRangeText(product)} sum insured: ${product.name}`)
       : DEFAULT_PRODUCT_LINES;
   productLines.forEach((line, index) => {
-    sheet.addRow([index === 0 ? (decided ? 'Product' : 'Product to be chosen') : null, line]);
+    sheet.addRow([index === 0 ? (decided ? 'Policy' : 'Policy to be chosen') : null, line]);
   });
   if (record.addons.length > 0) {
     sheet.addRow(['Additional Addon cover', 'Details as per attached list of addons']);

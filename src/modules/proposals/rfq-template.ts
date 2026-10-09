@@ -646,7 +646,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     );
 
   // Fire's add-on covers asked for (C-6), above the products.
-  const productRow = findRow(sheet, 'Product to be', { prefix: true });
+  // The client's templates say "Product to be choosen"; the row is printed as the policy.
+  const productRow =
+    findRow(sheet, 'Policy to be', { prefix: true }) ??
+    findRow(sheet, 'Product to be', { prefix: true });
   const fireTotalRow = totalRowOf();
   writeCovers(
     sheet,
@@ -687,6 +690,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       }
       rows = 1;
     }
+    setValue(sheet, productRow, 1, decided ? 'Policy' : 'Policy to be chosen');
     if (products.length > rows) {
       insertRows(sheet, productRow + rows - 1, products.length - rows, productRow + rows - 1);
       rows = products.length;

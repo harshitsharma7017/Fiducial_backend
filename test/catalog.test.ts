@@ -363,6 +363,17 @@ describe('product and cover masters', () => {
     expect(after).toEqual(before);
   });
 
+  it('still reads the policy sheet of a workbook downloaded when it was named Products', async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await workbookWith({ products: SHEET_ROWS.products })) as never);
+    workbook.getWorksheet('Policies')!.name = 'Products';
+    const preview = await upload(Buffer.from(await workbook.xlsx.writeBuffer()), true).expect(200);
+    expect(preview.body.fileErrors).toEqual([]);
+    expect(
+      preview.body.sheets.find((sheet: { master: string }) => sheet.master === 'products'),
+    ).toMatchObject({ rows: 4, issues: [] });
+  });
+
   it('saves nothing while any sheet has a problem', async () => {
     const file = await workbookWith({
       sections: [['FIRE', 'Fire', 1, 'No', '', '']],
@@ -526,7 +537,7 @@ describe('product and cover masters', () => {
     expect(lines).toContain('Money Insurance | Not required');
     expect(
       lines.some((line) =>
-        line.startsWith('Product to be chosen | Up to ₹5 Cr sum insured: Bharat Sookshma'),
+        line.startsWith('Policy to be chosen | Up to ₹5 Cr sum insured: Bharat Sookshma'),
       ),
     ).toBe(true);
   });

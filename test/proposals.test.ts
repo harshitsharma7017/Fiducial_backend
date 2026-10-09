@@ -209,7 +209,7 @@ describe('new-business proposals', () => {
       .expect(200);
     expect(partial.body.stage).toBe('DRAFT');
     expect(partial.body.missing).toEqual([
-      'Money: enter the Proposed 1 sum insured, or leave the section out.',
+      'Money: enter Cash in safe / counter or Cash in transit - Single carrying limit, or leave the section out.',
     ]);
     expect(partial.body.locations[0].fire).toEqual([
       { key: 'BUILDING_1', sqFt: '1000', ratePerSqFt: '2000', amount: null, sumInsured: '2000000' },
@@ -515,8 +515,9 @@ describe('new-business proposals', () => {
     expect(section('FIRE_LOSS_OF_PROFIT').proposed1).toBe('8000000');
     expect(section('PLATE_GLASS').proposed1).toBe('200000');
     expect(section('EEI').proposed1).toBe('1250000');
+    // Money's sum insured is the cash in safe + single carrying limit, not the 600000 typed.
     expect(section('MONEY')).toMatchObject({
-      proposed1: '600000',
+      proposed1: '300000',
       lines: {
         cashInSafe: '100000',
         cashInTransitSingle: '200000',
@@ -590,7 +591,7 @@ describe('new-business proposals', () => {
     const schedule = values('schedule');
     expect(schedule).toContainEqual([1, 'Cash in safe / counter', 100000]);
     expect(schedule).toContainEqual([3, 'Cash in transit - Annual carrying limit', 5000000]);
-    expect(schedule).toContainEqual([4, 'Sum insured', 600000]);
+    expect(schedule).toContainEqual([4, 'Sum insured', 300000]);
     expect(schedule).toContainEqual([1, 'Annual Gross Profit', 8000000]);
     expect(schedule).toContainEqual([1, 'As per Annexure (2 items)', 200000]);
     expect(JSON.stringify(schedule)).not.toContain('No of Employees');
@@ -606,6 +607,67 @@ describe('new-business proposals', () => {
     expect(annexure).toContainEqual([1, 'Showroom front glass', 4, '3 x 2 x 0.01 m', 150000]);
     expect(annexure).toContainEqual([null, 'Total', null, null, 200000]);
     expect(annexure).toContainEqual([1, 'CNC controller', 'Fanuc 0i-MF', 'F-77', '2021', 1250000]);
+  });
+
+  it('D-4: Money, Fidelity and Public Liability take their sum insured from their lines', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [
+            {
+              code: 'MONEY',
+              included: true,
+              proposed1: '',
+              proposed2: '',
+              lines: {
+                cashInSafe: '200000',
+                cashInTransitSingle: '500000',
+                cashInTransitAnnual: '12000000',
+              },
+              lines2: { cashInSafe: '300000' },
+            },
+            {
+              code: 'FIDELITY_GUARANTEE',
+              included: true,
+              proposed1: '',
+              proposed2: '9',
+              lines: { employees: '450', limitPerEmployee: '500000', limitPerPeriod: '5000000' },
+            },
+            {
+              code: 'PUBLIC_LIABILITY',
+              included: true,
+              proposed1: '',
+              proposed2: '',
+              lines: { anyOneAccident: '10000000', aggregateLimit: '20000000' },
+            },
+          ],
+          fireOption2: [],
+        }),
+      )
+      .expect(200);
+    const section = (code: string) =>
+      saved.body.sections.find((s: { code: string }) => s.code === code) as {
+        proposed1: string | null;
+        proposed2: string | null;
+      };
+    // Money: cash in safe + single carrying limit, in both options; Option 2's lines add up too.
+    expect(section('MONEY')).toMatchObject({ proposed1: '700000', proposed2: '300000' });
+    // One line is the sum insured on its own; its Option 2 is the section's.
+    expect(section('FIDELITY_GUARANTEE')).toMatchObject({ proposed1: '5000000', proposed2: '9' });
+    expect(section('PUBLIC_LIABILITY').proposed1).toBe('20000000');
+    expect(saved.body.missing).toEqual([]);
   });
 
   it('chooses insurers, marks the RFQ sent, and locks the Data Sheet', async () => {

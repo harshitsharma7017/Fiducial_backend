@@ -13,6 +13,7 @@ export * from './client-approval.ts';
 export * from './clients.ts';
 export * from './common.ts';
 export * from './contacts.ts';
+export * from './data-sheet-import.ts';
 export * from './documents.ts';
 export * from './errors.ts';
 export * from './format.ts';

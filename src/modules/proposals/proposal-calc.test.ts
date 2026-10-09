@@ -105,7 +105,7 @@ describe('missingForRfq and stageOf', () => {
       }),
     ).toEqual([
       'Enter the Fire sums insured for Godown.',
-      'Money: enter the Proposed 1 sum insured, or leave the section out.',
+      'Money: enter Cash in safe / counter or Cash in transit - Single carrying limit, or leave the section out.',
     ]);
   });
 

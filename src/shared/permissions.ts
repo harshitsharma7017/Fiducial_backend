@@ -12,6 +12,8 @@ export const PERMISSIONS = [
   'proposals.approve',
   'proposals.send',
   'proposals.export',
+  /** Move a case to the Deleted bin, restore it, and see the bin. Admins only. */
+  'proposals.delete',
   'clients.view',
   'clients.manage',
   'masters.view',

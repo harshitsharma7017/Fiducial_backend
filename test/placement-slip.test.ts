@@ -488,8 +488,10 @@ describe('Placement slip', () => {
     // Fire was accepted without terrorism.
     const fireTerrorism = rowOf(schedule, 'Terrorism', 2);
     expect(text(schedule, fireTerrorism, 3)).toBe('Not required');
-    // The product placed, not the range offered on the RFQ.
-    const product = rowOf(schedule, 'Product to be');
+    // The policy placed, not the range offered on the RFQ.
+    const product = Array.from({ length: schedule.rowCount }, (_, i) => i + 1).find(
+      (row) => text(schedule, row, 1) === 'Policy',
+    )!;
     expect(text(schedule, product, 2)).toBe(
       'Above ₹5 Cr and up to ₹50 Cr sum insured: Bharat Laghu Udyam Suraksha (BLUS)',
     );

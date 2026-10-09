@@ -8,7 +8,7 @@ import {
   PROPOSAL_STAGE_LABELS,
   ROLES,
   ADDON_LIST_LABELS,
-  SUM_INSURED_LINE,
+  SUM_INSURED_LINES,
   formatDate,
   formatRupeesShort,
   hasBasis,
@@ -24,6 +24,7 @@ import {
   type MoveProposalStageRequest,
   type OtherSection,
   type ProposalOwnersResponse,
+  type DataSheetImport,
   type DataSheetInput,
   type MarkRfqSentRequest,
   type Paginated,
@@ -49,6 +50,7 @@ import { InsurerModel } from '../insurers/insurer.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import type { ExistingPolicyResult, ExistingPolicySource } from './existing-policy-source.ts';
 import { approvedRfq } from '../rfq/rfq-approval.ts';
+import { readDataSheetWorkbook } from './data-sheet-import.ts';
 import { loadContext, toProposalAuditView, toProposalRecord } from './proposals.mapper.ts';
 import {
   CounterModel,
@@ -377,6 +379,8 @@ export async function listProposals(query: ProposalListQuery): Promise<Paginated
   if (query.stage) filter.stage = query.stage;
   if (query.clientId) filter.clientId = new Types.ObjectId(query.clientId);
   if (query.cursor) filter._id = { $lt: new Types.ObjectId(query.cursor) };
+  // Live cases unless the Deleted bin is asked for (the model leaves the bin out by default).
+  if (query.deleted) filter.deleted = { $ne: null };
   const docs = await ProposalModel.find(filter)
     .sort({ _id: -1 })
     .limit(query.limit + 1)
@@ -392,6 +396,41 @@ export async function listProposals(query: ProposalListQuery): Promise<Paginated
 
 export async function getProposal(id: string): Promise<ProposalRecord> {
   return recordOf(await loadDoc(id));
+}
+
+/**
+ * Moves a case to the Deleted bin: it is kept, with all its quotes, QCR, approvals and slip, but
+ * left out of every list and refused by every action until an Admin restores it. Audited.
+ */
+export async function deleteProposal(id: string, actor: Actor): Promise<ProposalRecord> {
+  const doc = await loadDoc(id);
+  return saveWith(
+    doc,
+    { deleted: { at: new Date(), by: new Types.ObjectId(actor.id) } },
+    'Moved to the Deleted bin',
+    AUDIT_ACTIONS.PROPOSAL_DELETED,
+    actor,
+    await recordOf(doc),
+    { guard: { deleted: null } },
+  );
+}
+
+/** Takes a case out of the Deleted bin, as it was. Audited. */
+export async function restoreProposal(id: string, actor: Actor): Promise<ProposalRecord> {
+  const doc = await ProposalModel.findOne({
+    _id: new Types.ObjectId(id),
+    deleted: { $ne: null },
+  }).lean();
+  if (!doc) throw notFound('No case with this id is in the Deleted bin');
+  return saveWith(
+    doc,
+    { deleted: null },
+    'Restored from the Deleted bin',
+    AUDIT_ACTIONS.PROPOSAL_RESTORED,
+    actor,
+    await recordOf(doc),
+    { guard: { deleted: { $ne: null } } },
+  );
 }
 
 export async function createProposal(
@@ -505,6 +544,20 @@ export async function createProposal(
   });
 }
 
+/** The total of the lines a section's sum insured is made of (SUM_INSURED_LINES); null: none entered. */
+function sumOfLines(
+  code: OtherSection,
+  lines: Partial<Record<string, string | null | undefined>>,
+): string | null {
+  const values = (SUM_INSURED_LINES[code] ?? []).flatMap((key) => {
+    const value = lines[key];
+    return value === null || value === undefined ? [] : [value];
+  });
+  return values.length > 0
+    ? values.reduce((total, value) => total.plus(value), new Decimal(0)).toFixed()
+    : null;
+}
+
 const lineEntries = (values: Partial<Record<string, string | null | undefined>>) =>
   Object.entries(values).flatMap(([key, value]) =>
     value === null || value === undefined ? [] : [{ key, value: toDecimal128(value) }],
@@ -568,7 +621,7 @@ async function checkProductAndAddons(input: DataSheetInput, preview: ProposalRec
       issues.push({
         location: 'body',
         path: 'product.code',
-        message: 'Choose an active product from the product master',
+        message: 'Choose an active policy from the policy master',
       });
     } else if (preview.product?.source === 'OVERRIDE' && !input.product.reason) {
       issues.push({
@@ -586,7 +639,7 @@ async function checkProductAndAddons(input: DataSheetInput, preview: ProposalRec
         .filter((addon) => addon.active)
         .map((addon) => `${addon.list}|${addon.name.toLowerCase()}`),
     );
-    const product = preview.product?.code ?? 'no product';
+    const product = preview.product?.code ?? 'no policy';
     for (const [index, addon] of input.addons.entries()) {
       if (!lists.has(addon.list)) {
         issues.push({
@@ -607,6 +660,21 @@ async function checkProductAndAddons(input: DataSheetInput, preview: ProposalRec
 }
 
 /** Replaces the Data Sheet. Not allowed once the RFQ has gone to an insurer. */
+/**
+ * Reads the client's Data Sheet workbook for a case (DS-08): the values to fill its Data Sheet
+ * form, with warnings. Nothing is saved; a locked or closed case refuses it.
+ */
+export async function readDataSheetImport(id: string, data: Buffer): Promise<DataSheetImport> {
+  const doc = await loadDoc(id);
+  if (doc.stage === 'CLOSED') throw closed();
+  if (doc.insurers.some((insurer) => hasRfq(insurer.status))) throw locked();
+  const result = await readDataSheetWorkbook(data, await recordOf(doc));
+  if (!result.ok) {
+    throw validationError([{ location: 'body', path: 'file', message: result.message }]);
+  }
+  return result.value;
+}
+
 export async function updateDataSheet(
   id: string,
   input: DataSheetInput,
@@ -647,19 +715,23 @@ export async function updateDataSheet(
     product: input.product.code ? { code: input.product.code, reason: input.product.reason } : null,
     addons: input.addons,
     sections: input.sections.map((section) => {
-      // D-5: an annexure's rows give the section its sum insured; FLOP's is its gross profit.
+      // D-5: an annexure's rows give the section its sum insured; so do the lines it is made of
+      // (FLOP's gross profit, Money's safe and single carrying, Fidelity's and PL's limits).
       const rows = isAnnexureSection(section.code) ? section.annexure : [];
-      const sumLine = SUM_INSURED_LINE[section.code];
-      const fromLines = sumLine ? (section.lines[sumLine] ?? null) : null;
       const proposed1 =
         rows.length > 0
           ? rows.reduce((total, row) => total.plus(row.sumInsured), new Decimal(0)).toFixed()
-          : (fromLines ?? section.proposed1);
+          : (sumOfLines(section.code, section.lines) ?? section.proposed1);
+      // Several lines (Money) add up in Option 2 too; a single line's Option 2 is the section's.
+      const proposed2 =
+        (SUM_INSURED_LINES[section.code]?.length ?? 0) > 1
+          ? (sumOfLines(section.code, section.lines2) ?? section.proposed2)
+          : section.proposed2;
       return {
         code: section.code,
         included: section.included,
         proposed1: money(proposed1),
-        proposed2: money(section.proposed2),
+        proposed2: money(proposed2),
         lines: lineEntries(section.lines),
         lines2: lineEntries(section.lines2),
         basis: hasBasis(section.code) ? section.basis : null,

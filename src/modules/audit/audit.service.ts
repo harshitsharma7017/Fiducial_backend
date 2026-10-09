@@ -109,7 +109,15 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
         { tacCode: 1, description: 1 },
       ).lean(),
       PincodeModel.find({ _id: { $in: [...pincodeIds] } }, { pincode: 1, district: 1 }).lean(),
-      ProposalModel.find({ _id: { $in: [...proposalIds] } }, { reference: 1, clientId: 1 }).lean(),
+      // Cases in the Deleted bin keep their names in the log.
+      Promise.all(
+        [null, { $ne: null }].map((deleted) =>
+          ProposalModel.find(
+            { _id: { $in: [...proposalIds] }, deleted },
+            { reference: 1, clientId: 1 },
+          ).lean(),
+        ),
+      ).then((found) => found.flat()),
     ]);
   // A location is labelled with its client's name, so those clients are read too.
   for (const location of locations) clientIds.add(location.clientId.toHexString());

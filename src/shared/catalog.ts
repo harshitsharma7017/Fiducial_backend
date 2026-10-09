@@ -91,6 +91,8 @@ export interface CatalogSheet {
   /** Screen and sheet title. */
   label: string;
   sheetName: string;
+  /** Earlier names of the sheet, still read from workbooks downloaded before a rename. */
+  formerSheetNames?: readonly string[];
   description: string;
   columns: readonly CatalogColumn[];
   /** The columns that name a row; two rows may not share them. */
@@ -117,7 +119,7 @@ const ListSchema = z.array(textCell(300).min(1)).max(50, 'At most 50 entries');
 export const ProductRowSchema = z
   .strictObject({
     code: CodeSchema,
-    name: textCell(200).min(1, 'Enter the product name'),
+    name: textCell(200).min(1, 'Enter the policy name'),
     /** Suggested when the sum insured is above this (exclusive). Null: from zero. */
     aboveSi: RupeesSchema.nullable(),
     /** Suggested up to and including this. Null: no upper limit. */
@@ -381,8 +383,9 @@ const YES_NO_NOTE = 'Yes or No.';
 export const CATALOG_SHEETS: Record<CatalogMaster, CatalogSheet> = {
   products: {
     master: 'products',
-    label: 'Products',
-    sheetName: 'Products',
+    label: 'Policies',
+    sheetName: 'Policies',
+    formerSheetNames: ['Products'],
     description:
       'The policies a proposal can be placed under, with the sum insured range in which each is suggested.',
     keyColumns: ['code'],
@@ -418,7 +421,7 @@ export const CATALOG_SHEETS: Record<CatalogMaster, CatalogSheet> = {
         type: 'list',
         options: ADDON_LISTS,
         required: false,
-        note: `The add-on lists a case under this product picks from: ${ADDON_LISTS.join(', ')}. Separate with a semicolon (;). Blank: the list named like the product.`,
+        note: `The add-on lists a case under this policy picks from: ${ADDON_LISTS.join(', ')}. Separate with a semicolon (;). Blank: the list named like the policy.`,
       },
     ],
   },

@@ -104,6 +104,8 @@ describe('audit vocabulary', () => {
       'INSURER_UPDATED',
       'PROPOSAL_UPDATED',
       'PROPOSAL_STAGE_CHANGED',
+      'PROPOSAL_DELETED',
+      'PROPOSAL_RESTORED',
       'INSURER_RESPONSE_RECORDED',
       'EMAIL_TEMPLATE_UPDATED',
       'OCCUPANCY_UPDATED',
