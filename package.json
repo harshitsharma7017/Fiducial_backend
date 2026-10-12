@@ -22,6 +22,9 @@
     "import:masters": "node --env-file-if-exists=.env src/scripts/import-masters.ts",
     "import:masters:prod": "node --env-file-if-exists=.env dist/scripts/import-masters.js",
     "clean:cases": "node --env-file-if-exists=.env src/scripts/clean-case-data.ts",
+    "clean:cases:prod": "node --env-file-if-exists=.env dist/scripts/clean-case-data.js",
+    "db:drop": "node --env-file-if-exists=.env src/scripts/drop-db.ts",
+    "db:drop:prod": "node --env-file-if-exists=.env dist/scripts/drop-db.js",
     "sync:stages": "node --env-file-if-exists=.env src/scripts/sync-stages.ts",
     "prepare": "husky"
   },
