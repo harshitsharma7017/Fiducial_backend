@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "npm@11.6.2",
   "engines": {
-    "node": ">=24.11.0"
+    "node": ">=20.12.0"
   },
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env src/server.ts",
@@ -18,7 +18,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "seed:admin": "node --env-file-if-exists=.env src/scripts/seed-admin.ts",
+    "seed:admin:prod": "node --env-file-if-exists=.env dist/scripts/seed-admin.js",
     "import:masters": "node --env-file-if-exists=.env src/scripts/import-masters.ts",
+    "import:masters:prod": "node --env-file-if-exists=.env dist/scripts/import-masters.js",
     "clean:cases": "node --env-file-if-exists=.env src/scripts/clean-case-data.ts",
     "sync:stages": "node --env-file-if-exists=.env src/scripts/sync-stages.ts",
     "prepare": "husky"
