@@ -7,6 +7,16 @@ import { MailLogModel } from './modules/mail/mail-log.model.ts';
 import { AddonFavouritesModel } from './modules/clients/addon-favourites.model.ts';
 import { ClientLocationModel } from './modules/clients/client-location.model.ts';
 import { ClientModel } from './modules/clients/client.model.ts';
+import { GhiCaseModel } from './modules/ghi/ghi-case.model.ts';
+import { GhiCensusImportModel, GhiMemberModel } from './modules/ghi/ghi-census.model.ts';
+import {
+  GhiDispatchModel,
+  GhiFileModel,
+  GhiPaymentModel,
+  GhiQcrModel,
+  GhiQuoteModel,
+  GhiRfqModel,
+} from './modules/ghi/ghi-workflow.model.ts';
 import { InsurerModel } from './modules/insurers/insurer.model.ts';
 import { CounterModel, ProposalModel } from './modules/proposals/proposal.model.ts';
 import { MasterVersionModel } from './modules/masters/master-version.model.ts';
@@ -39,6 +49,16 @@ const MODELS = [
   QcrModel,
   RfqStateModel,
   RfqVersionModel,
+  // Group health (GHI): new collections only; nothing above changes.
+  GhiCaseModel,
+  GhiMemberModel,
+  GhiCensusImportModel,
+  GhiRfqModel,
+  GhiQuoteModel,
+  GhiQcrModel,
+  GhiPaymentModel,
+  GhiFileModel,
+  GhiDispatchModel,
 ];
 
 /**

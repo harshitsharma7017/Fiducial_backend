@@ -17,6 +17,8 @@ import { createImportsRouter } from './modules/imports/imports.routes.ts';
 import { createInsurersRouter } from './modules/insurers/insurers.routes.ts';
 import { createCatalogRouter } from './modules/catalog/catalog.routes.ts';
 import { createTemplatesRouter } from './modules/documents/templates.routes.ts';
+import { createGhiRouter } from './modules/ghi/ghi.routes.ts';
+import { createGhiWorkflowRouter } from './modules/ghi/ghi-workflow.routes.ts';
 import { createEmailTemplatesRouter } from './modules/email-templates/email-templates.routes.ts';
 import {
   httpExistingPolicySource,
@@ -143,6 +145,9 @@ export function createApp({
       mailTransport: transport,
     }),
   );
+  // Group health (GHI): its own cases and routes beside Property's proposals.
+  api.use('/ghi', createGhiRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use('/ghi', createGhiWorkflowRouter({ ...jwt, mailTransport: transport }));
   api.use('/', createWorklistsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);

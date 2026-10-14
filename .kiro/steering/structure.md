@@ -32,6 +32,10 @@ src/
                          mail_attachments models, the mail log reads, GET /mail/status
     catalog/             product and cover masters (M-4 to M-9): one collection, a workbook of a sheet per
                          master, row edits and reorder; addon-premium.ts prices BSUS/BLUS add-ons (pure)
+    ghi/                 group health insurance (G1 to G7), beside Property: cases and Data Sheet, census
+                         (census-rules.ts and census-summary.ts, pure), census template and import, RFQ versions
+                         and mails, quotes and QCR (ghi-quote-calc.ts, pure), final QCR, payments, placement slip,
+                         policy; documents described once (ghi-sheet.ts) for Excel, PDF and preview
     imports/             Excel templates, sample rows, per-row preview and import of chosen valid rows
     rating/              calculateFire() (pure), extension points, POST /rating/fire
     health/

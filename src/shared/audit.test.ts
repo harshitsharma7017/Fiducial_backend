@@ -96,6 +96,14 @@ describe('audit vocabulary', () => {
       'CLIENT_APPROVAL_FILE_UPLOADED',
       'PLACEMENT_FILE_UPLOADED',
       'RFQ_GENERATED',
+      'GHI_CASE_CREATED',
+      'GHI_MEMBER_CREATED',
+      'GHI_CENSUS_UPLOADED',
+      'GHI_CENSUS_IMPORTED',
+      'GHI_RFQ_GENERATED',
+      'GHI_QUOTE_SAVED',
+      'GHI_PAYMENT_RECORDED',
+      'GHI_FILE_UPLOADED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -120,6 +128,24 @@ describe('audit vocabulary', () => {
       'PLACEMENT_RECORDED',
       'RFQ_EDITED',
       'RFQ_SUBMITTED',
+      'GHI_CASE_UPDATED',
+      'GHI_CASE_CLOSED',
+      'GHI_REQUIREMENTS_SAVED',
+      'GHI_MEMBER_UPDATED',
+      'GHI_MEMBER_DELETED',
+      'GHI_CENSUS_ROW_CORRECTED',
+      'GHI_CENSUS_IMPORT_DISCARDED',
+      'GHI_INSURERS_UPDATED',
+      'GHI_RFQ_SUBMITTED',
+      'GHI_INSURER_DECLINED',
+      'GHI_QUOTE_FINALIZED',
+      'GHI_QUOTE_DELETED',
+      'GHI_QCR_SAVED',
+      'GHI_QCR_SUBMITTED',
+      'GHI_CLIENT_DECISION_RECORDED',
+      'GHI_FINAL_QCR_RECORDED',
+      'GHI_PAYMENT_UPDATED',
+      'GHI_POLICY_RECORDED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual([
       'MASTER_ACTIVATED',
@@ -127,6 +153,10 @@ describe('audit vocabulary', () => {
       'PLACEMENT_SLIP_APPROVED',
       'RFQ_APPROVED',
       'RFQ_RETURNED',
+      'GHI_RFQ_APPROVED',
+      'GHI_RFQ_RETURNED',
+      'GHI_QCR_APPROVED',
+      'GHI_QCR_REJECTED',
     ]);
     expect(auditActionsOfKind('SEND')).toEqual([
       'RFQ_SENT',
@@ -137,11 +167,19 @@ describe('audit vocabulary', () => {
       'QCR_EMAIL_FAILED',
       'PLACEMENT_SLIP_EMAILED',
       'PLACEMENT_SLIP_EMAIL_FAILED',
+      'GHI_RFQ_EMAILED',
+      'GHI_RFQ_EMAIL_FAILED',
+      'GHI_RFQ_MARKED_SENT',
+      'GHI_QCR_EMAILED',
+      'GHI_QCR_EMAIL_FAILED',
     ]);
     expect(auditActionsOfKind('EXPORT')).toEqual([
       'RFQ_DOWNLOADED',
       'QCR_DOWNLOADED',
       'PLACEMENT_SLIP_DOWNLOADED',
+      'GHI_RFQ_DOWNLOADED',
+      'GHI_QCR_DOWNLOADED',
+      'GHI_PLACEMENT_SLIP_DOWNLOADED',
     ]);
   });
 });

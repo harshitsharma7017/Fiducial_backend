@@ -146,6 +146,63 @@ and Open Questions).
 - Clients, risk locations and insurers are never deleted. Insurers can be deactivated; clients and locations cannot
   until the client confirms how records referenced by proposals should be retired.
 
+## Group health insurance (GHI, G1 to G7)
+
+Built beside Property, in its own collections (`ghi_cases`, `ghi_members`, `ghi_census_imports`, `ghi_rfqs`,
+`ghi_quotes`, `ghi_qcrs`, `ghi_payments`, `ghi_files`, `ghi_dispatches`) and routes (`/api/v1/ghi`). No Property
+collection, route or screen changed behaviour; the only Property-side UI change is the "Line of business" choice on
+New proposal, which links to the GHI form. Collections and indexes are created at startup by `ensureIndexes()`; no
+existing data is migrated.
+
+### To be confirmed (GHI)
+
+| ID     | Item                                                                                                                                        | Effect until answered                                                                                                                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GHI-01 | Eligibility age limits per relationship (employee, spouse, children, parents)                                                               | Configurable per case on the Data Sheet; blank (no limit) by default. Nothing is assumed.                                                                                                                     |
+| GHI-02 | Endorsements: adding or removing members, or changing terms, after the RFQ has gone out or the policy is issued                             | Not built. The Data Sheet and census lock once the RFQ goes to an insurer (as Property's Data Sheet does); the screen says changes after that are endorsements.                                               |
+| GHI-03 | Who approves the GHI RFQ and QCR                                                                                                            | `proposals.approve` (Approvers and Admins), as on Property (Q12). An approver may approve work they submitted.                                                                                                |
+| GHI-04 | Whether the placement slip may be issued before the full premium is received (part payment, credit, CD account)                             | The case moves to Placement Slip, and the slip and policy can be recorded, only when RECEIVED payments cover the final total premium.                                                                         |
+| GHI-05 | Client's GHI formats (RFQ, QCR, placement slip) and the GHI email wording                                                                   | Built-in layouts (Excel and A4 PDF through the document engine, with the RFQ template's letterhead when uploaded). Mails reuse the Admin-edited RFQ and QCR email templates.                                  |
+| GHI-06 | Should dependants' sums insured be allowed to differ from the employee's in a family floater; may individual cover mix sums within a family | Floater: a dependant's sum insured must be blank or the employee's. Individual: each member gives one of the offered sums insured.                                                                            |
+| GHI-07 | Waiting-period terms to compare (which waivers map to which waiting periods)                                                                | Initial 30-day ↔ initial days; two-year exclusions ↔ specific diseases months; pre-existing ↔ pre-existing months; 9-month maternity ↔ maternity months. First-year exclusions are compared as a yes/no only. |
+| GHI-08 | Payment statuses and modes                                                                                                                  | Pending, Received, Failed/bounced; Cheque, NEFT, RTGS, IMPS, UPI, DD, Other.                                                                                                                                  |
+
+### Decisions taken (please confirm)
+
+- Permissions reuse the proposal permissions: view `proposals.view`, create `proposals.create`, Data Sheet, census,
+  quotes, QCR drafts, client decision, final QCR, payments and policy `proposals.edit`, approvals `proposals.approve`,
+  mails `proposals.send`, downloads `proposals.export`. Every case record, member, quote, QCR, payment and file is read
+  through its own case id, so an id from one case never opens another case's record.
+- Stages follow the work: New/Renewal → Data Sheet (first save) → RFQ (first version generated) → QCR (first final
+  quote) → Approval (QCR submitted) → Final QCR (client accepted) → Payment (final terms recorded) → Placement Slip
+  (premium covered). A rejected QCR, or a client's rejection, sends the case back to QCR. Recording the policy marks
+  it placed. A case can be closed with a reason until placed.
+- Ages are completed years on one reference date per case: the Data Sheet's, else the policy start, else the day the
+  case was created. Age bands 0–18, 19–35, 36–45, 46–55, 56–65, 66+.
+- Total sum insured: family floater adds each employee's (family) sum insured; individual adds every member's.
+- Census rules: one employee row and one spouse per employee ID; at most three children (fewer if the Data Sheet
+  says so); father, mother, father-in-law, mother-in-law at most once each and never parents mixed with in-laws; a
+  dependant needs its employee's row; a father / father-in-law cannot be Female and a mother / mother-in-law cannot
+  be Male; exact duplicates (relationship, name, date of birth) are refused. The date of joining is checked (not
+  before the date of birth) on the employee's row only, as HR files repeat it on dependants' rows. Two-digit years
+  are refused rather than guessed; dates are read day first.
+- Import: every row is checked first with its Excel row number, field and message; rows can be corrected on screen;
+  the import policy is chosen explicitly (all rows valid, or valid rows only) and runs in one transaction, checked
+  again against the census at that moment. The same census content cannot be imported twice into a case (the
+  fingerprint is of the rows, so re-saving the file in Excel does not get round it); rows already in the census are
+  flagged as duplicates. At most 10,000 rows per file.
+- Quotes: GST at the case's rate (from the tax master when the case was created, 18% by default) on the base premium,
+  rounded half up to the paisa; total = base + GST; decimal arithmetic on the server only. A draft can change; a
+  recorded quote never does; a revision is a new version and needs its reason. The QCR compares each insurer's latest
+  recorded quote (at most five); the lowest total is marked whatever its deviations, which are listed beside it.
+  Maternity not covered at all counts as a deviation on each requested maternity limit.
+- An RFQ or QCR is reported as sent only when the mail transport accepted it (the development outbox says "kept in the
+  outbox, not delivered"). A failed mail leaves the insurer Not sent. "Sent outside the app" is recorded as such.
+- The final QCR is a new quote version (kind FINAL_AGREED) for the insurer the client chose; the earlier quotes and the
+  accepted QCR are unchanged. Final terms cannot change once premium has been received against them.
+- The policy record links the company (client), case, insurer, accepted QCR, final quote and a snapshot of the census
+  (employees, lives, total sum insured, census revision) with the policy copy and renewal date.
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

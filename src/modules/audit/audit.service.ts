@@ -13,6 +13,7 @@ import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { validationError } from '../../lib/errors.ts';
 import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel } from '../clients/client.model.ts';
+import { GhiCaseModel } from '../ghi/ghi-case.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { MasterVersionModel } from '../masters/master-version.model.ts';
 import { OccupancyModel } from '../masters/occupancy.model.ts';
@@ -170,6 +171,18 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
       recordKey(AUDIT_ENTITIES.PINCODE, pincode._id.toHexString()),
       `${pincode.pincode} · ${pincode.district}`,
     );
+  }
+  // Group health cases are labelled by their reference.
+  const ghiIds = docs.flatMap((doc) =>
+    doc.entity === AUDIT_ENTITIES.GHI_CASE && doc.entityId && OBJECT_ID.test(doc.entityId)
+      ? [new Types.ObjectId(doc.entityId)]
+      : [],
+  );
+  if (ghiIds.length > 0) {
+    const cases = await GhiCaseModel.find({ _id: { $in: ghiIds } }, { reference: 1 }).lean();
+    for (const ghiCase of cases) {
+      labels.set(recordKey(AUDIT_ENTITIES.GHI_CASE, ghiCase._id.toHexString()), ghiCase.reference);
+    }
   }
   return { actors, labels };
 }

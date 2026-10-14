@@ -78,7 +78,11 @@ insurer with the RFQ attached and a quote due date; reminders; insurer statuses 
 Declined, No response; Overdue shown after the due date); a mail log per case. Mail is `outbox` in development and
 `off` in production until SMTP is configured (Q14).
 
-Not built yet: quotes, QCR, placement slips, other documents.
+Group health (G1 to G7): a second line of business with its own cases (`/api/v1/ghi`): Data Sheet, employee census
+with Excel import and family rules, census summary, RFQ, quotes and QCR, final QCR, payment, placement slip and
+policy. See docs/OPEN_ITEMS.md (Group health) for its decisions and open questions.
+
+Not built yet: other documents; GHI endorsements.
 
 ## Rules
 
