@@ -104,6 +104,10 @@ describe('audit vocabulary', () => {
       'GHI_QUOTE_SAVED',
       'GHI_PAYMENT_RECORDED',
       'GHI_FILE_UPLOADED',
+      'CLAIM_CREATED',
+      'CLAIM_SUBMITTED_BY_EMPLOYEE',
+      'CLAIM_DOCUMENT_UPLOADED',
+      'CLAIM_LINK_CREATED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -146,6 +150,13 @@ describe('audit vocabulary', () => {
       'GHI_FINAL_QCR_RECORDED',
       'GHI_PAYMENT_UPDATED',
       'GHI_POLICY_RECORDED',
+      'CLAIM_UPDATED',
+      'CLAIM_STATUS_CHANGED',
+      'CLAIM_ASSIGNED',
+      'CLAIM_REMARK_ADDED',
+      'CLAIM_LINK_REVOKED',
+      'CLAIM_EMAIL_TEMPLATE_UPDATED',
+      'CLAIM_HR_CONTACT_UPDATED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual([
       'MASTER_ACTIVATED',
@@ -172,6 +183,9 @@ describe('audit vocabulary', () => {
       'GHI_RFQ_MARKED_SENT',
       'GHI_QCR_EMAILED',
       'GHI_QCR_EMAIL_FAILED',
+      'CLAIM_EMAIL_SENT',
+      'CLAIM_EMAIL_FAILED',
+      'CLAIM_EMAIL_RETRIED',
     ]);
     expect(auditActionsOfKind('EXPORT')).toEqual([
       'RFQ_DOWNLOADED',
@@ -180,6 +194,7 @@ describe('audit vocabulary', () => {
       'GHI_RFQ_DOWNLOADED',
       'GHI_QCR_DOWNLOADED',
       'GHI_PLACEMENT_SLIP_DOWNLOADED',
+      'CLAIM_DOCUMENT_DOWNLOADED',
     ]);
   });
 });

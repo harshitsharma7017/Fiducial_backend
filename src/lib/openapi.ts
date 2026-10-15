@@ -83,6 +83,11 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       { name: 'Insurers', description: 'Insurer branches and the email addresses RFQs go to.' },
       { name: 'Proposals', description: 'New business, from creation to the RFQ.' },
       {
+        name: 'Claims',
+        description:
+          'Group health claims: board, table, details, documents, moves with remarks, emails and the public employee submission link.',
+      },
+      {
         name: 'Group health',
         description:
           'Group health insurance (GHI) cases: Data Sheet, census, RFQ, quotes, QCR, final QCR, payment, placement slip and policy.',

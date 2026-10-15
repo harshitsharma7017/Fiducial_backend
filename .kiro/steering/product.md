@@ -82,7 +82,11 @@ Group health (G1 to G7): a second line of business with its own cases (`/api/v1/
 with Excel import and family rules, census summary, RFQ, quotes and QCR, final QCR, payment, placement slip and
 policy. See docs/OPEN_ITEMS.md (Group health) for its decisions and open questions.
 
-Not built yet: other documents; GHI endorsements.
+Claims (C1 to C4): group health claims on placed GHI policies: a board of four statuses moved with remarks, a table,
+creation by staff or by employees through a secure link, documents, emails to the claimant and HR at each move
+(editable templates, retries), and an append-only timeline. See docs/OPEN_ITEMS.md (Group health claims).
+
+Not built yet: other documents; GHI endorsements; further claim statuses.
 
 ## Rules
 

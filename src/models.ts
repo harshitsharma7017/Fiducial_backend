@@ -1,4 +1,15 @@
 import { AuditLogModel } from './modules/audit/audit.model.ts';
+import {
+  ClaimEventModel,
+  ClaimFileModel,
+  ClaimModel,
+  ClaimNotificationModel,
+} from './modules/claims/claim.model.ts';
+import {
+  ClaimEmailTemplateModel,
+  ClaimHrContactModel,
+  ClaimLinkModel,
+} from './modules/claims/claim-settings.model.ts';
 import { CatalogItemModel } from './modules/catalog/catalog-item.model.ts';
 import { DocumentTemplateModel } from './modules/documents/document-template.model.ts';
 import { EmailTemplateModel } from './modules/email-templates/email-template.model.ts';
@@ -59,6 +70,14 @@ const MODELS = [
   GhiPaymentModel,
   GhiFileModel,
   GhiDispatchModel,
+  // Group health claims: new collections only.
+  ClaimModel,
+  ClaimFileModel,
+  ClaimEventModel,
+  ClaimNotificationModel,
+  ClaimLinkModel,
+  ClaimEmailTemplateModel,
+  ClaimHrContactModel,
 ];
 
 /**

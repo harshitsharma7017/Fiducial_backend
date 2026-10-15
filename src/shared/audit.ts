@@ -107,6 +107,21 @@ export const AUDIT_ACTIONS = {
   GHI_PLACEMENT_SLIP_DOWNLOADED: 'GHI_PLACEMENT_SLIP_DOWNLOADED',
   GHI_POLICY_RECORDED: 'GHI_POLICY_RECORDED',
   GHI_FILE_UPLOADED: 'GHI_FILE_UPLOADED',
+  CLAIM_CREATED: 'CLAIM_CREATED',
+  CLAIM_SUBMITTED_BY_EMPLOYEE: 'CLAIM_SUBMITTED_BY_EMPLOYEE',
+  CLAIM_UPDATED: 'CLAIM_UPDATED',
+  CLAIM_STATUS_CHANGED: 'CLAIM_STATUS_CHANGED',
+  CLAIM_ASSIGNED: 'CLAIM_ASSIGNED',
+  CLAIM_REMARK_ADDED: 'CLAIM_REMARK_ADDED',
+  CLAIM_DOCUMENT_UPLOADED: 'CLAIM_DOCUMENT_UPLOADED',
+  CLAIM_DOCUMENT_DOWNLOADED: 'CLAIM_DOCUMENT_DOWNLOADED',
+  CLAIM_EMAIL_SENT: 'CLAIM_EMAIL_SENT',
+  CLAIM_EMAIL_FAILED: 'CLAIM_EMAIL_FAILED',
+  CLAIM_EMAIL_RETRIED: 'CLAIM_EMAIL_RETRIED',
+  CLAIM_LINK_CREATED: 'CLAIM_LINK_CREATED',
+  CLAIM_LINK_REVOKED: 'CLAIM_LINK_REVOKED',
+  CLAIM_EMAIL_TEMPLATE_UPDATED: 'CLAIM_EMAIL_TEMPLATE_UPDATED',
+  CLAIM_HR_CONTACT_UPDATED: 'CLAIM_HR_CONTACT_UPDATED',
 } as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -130,6 +145,8 @@ export const AUDIT_ENTITIES = {
   EMAIL_TEMPLATE: 'email_template',
   /** A group health (GHI) case; its census, quotes and payments are audited against it. */
   GHI_CASE: 'ghi_case',
+  /** A group health claim; its documents, moves and mails are audited against it. */
+  CLAIM: 'claim',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -237,6 +254,21 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   GHI_PLACEMENT_SLIP_DOWNLOADED: 'EXPORT',
   GHI_POLICY_RECORDED: 'EDIT',
   GHI_FILE_UPLOADED: 'CREATE',
+  CLAIM_CREATED: 'CREATE',
+  CLAIM_SUBMITTED_BY_EMPLOYEE: 'CREATE',
+  CLAIM_UPDATED: 'EDIT',
+  CLAIM_STATUS_CHANGED: 'EDIT',
+  CLAIM_ASSIGNED: 'EDIT',
+  CLAIM_REMARK_ADDED: 'EDIT',
+  CLAIM_DOCUMENT_UPLOADED: 'CREATE',
+  CLAIM_DOCUMENT_DOWNLOADED: 'EXPORT',
+  CLAIM_EMAIL_SENT: 'SEND',
+  CLAIM_EMAIL_FAILED: 'SEND',
+  CLAIM_EMAIL_RETRIED: 'SEND',
+  CLAIM_LINK_CREATED: 'CREATE',
+  CLAIM_LINK_REVOKED: 'EDIT',
+  CLAIM_EMAIL_TEMPLATE_UPDATED: 'EDIT',
+  CLAIM_HR_CONTACT_UPDATED: 'EDIT',
 };
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -334,6 +366,21 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   GHI_PLACEMENT_SLIP_DOWNLOADED: 'Group health placement slip downloaded',
   GHI_POLICY_RECORDED: 'Group health policy recorded',
   GHI_FILE_UPLOADED: 'Group health file uploaded',
+  CLAIM_CREATED: 'Claim created',
+  CLAIM_SUBMITTED_BY_EMPLOYEE: 'Claim submitted by the employee',
+  CLAIM_UPDATED: 'Claim edited',
+  CLAIM_STATUS_CHANGED: 'Claim moved',
+  CLAIM_ASSIGNED: 'Claim assigned',
+  CLAIM_REMARK_ADDED: 'Claim remark added',
+  CLAIM_DOCUMENT_UPLOADED: 'Claim document uploaded',
+  CLAIM_DOCUMENT_DOWNLOADED: 'Claim document opened',
+  CLAIM_EMAIL_SENT: 'Claim email sent',
+  CLAIM_EMAIL_FAILED: 'Claim email failed',
+  CLAIM_EMAIL_RETRIED: 'Claim email retried',
+  CLAIM_LINK_CREATED: 'Claim submission link created',
+  CLAIM_LINK_REVOKED: 'Claim submission link revoked',
+  CLAIM_EMAIL_TEMPLATE_UPDATED: 'Claim email template edited',
+  CLAIM_HR_CONTACT_UPDATED: 'Claim HR contact changed',
 };
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
@@ -359,6 +406,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   document_template: 'Document template',
   email_template: 'Email template',
   ghi_case: 'Group health case',
+  claim: 'Claim',
 };
 
 /** The actions of one kind, for filtering the log. */

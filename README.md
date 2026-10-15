@@ -121,6 +121,9 @@ it fails there until the frontend is synced.
   | `proposals.create`, `clients.manage`                            | yes   |          | yes                  |                          |           |
   | `proposals.approve`                                             | yes   | yes      |                      |                          |           |
   | `masters.manage`, `users.manage`, `settings.view`, `audit.view` | yes   |          |                      |                          |           |
+  | `claims.view`                                                   | yes   | yes      | yes                  | yes                      |           |
+  | `claims.process` (moves only claims assigned to the user)       | yes   |          | yes                  | yes                      |           |
+  | `claims.admin` (any claim, reassign, templates, HR contacts)    | yes   |          |                      |                          |           |
 
   The role codes are `ADMIN`, `MANAGER` (Approver), `ACCOUNT_MANAGER` (Relationship Manager), `PLACEMENT_EXEC`
   (Underwriting / Placement) and `READ_ONLY`. A user with several roles holds the union. The proposals API uses

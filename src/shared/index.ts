@@ -10,6 +10,7 @@ export * from './audit.ts';
 export * from './auth.ts';
 export * from './catalog.ts';
 export * from './client-approval.ts';
+export * from './claims.ts';
 export * from './clients.ts';
 export * from './common.ts';
 export * from './contacts.ts';

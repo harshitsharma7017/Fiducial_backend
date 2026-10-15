@@ -13,6 +13,9 @@ src/
     audit/               append-only audit model, writeAudit() and GET /audit (field-level changes)
     masters/             versions, occupancies, pincodes; import/ parses and validates the IIB workbook and
                          writes it back out (iib-export.ts); upload and download in master-workbook.service.ts
+    claims/              group health claims (C1 to C4): claims, documents, append-only events, status moves
+                         with remarks, email outbox and worker (claim-notifications.ts), templates, HR contacts,
+                         employee submission links (public routes in claim-links.routes.ts)
     clients/             client master (M-1) and risk locations (M-2, own collection)
     insurers/            insurer master (M-3): branches, contacts, RFQ emails
     proposals/           new business to the RFQ: Data Sheet, completeness (proposal-calc.ts, pure), insurers,

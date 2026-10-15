@@ -203,6 +203,51 @@ existing data is migrated.
 - The policy record links the company (client), case, insurer, accepted QCR, final quote and a snapshot of the census
   (employees, lives, total sum insured, census revision) with the policy copy and renewal date.
 
+## Group health claims (C1 to C4)
+
+Built beside GHI and Property in new collections only (`claims`, `claim_files`, `claim_events` — append-only,
+`claim_notifications`, `claim_links`, `claim_email_templates`, `claim_hr_contacts`), routes `/api/v1/claims` (staff)
+and `/api/v1/claim-links` (the employee's link, no sign-in), and three new permissions (`claims.view`,
+`claims.process`, `claims.admin`). No existing permission was changed. A background worker started by `server.ts`
+sends queued claim emails and retries failed ones every 30 seconds.
+
+### To be confirmed (claims)
+
+| ID     | Item                                                                                                    | Effect until answered                                                                                                                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLM-01 | Who processes claims and who administers them                                                           | `claims.process`: Relationship Managers and Underwriting / Placement; they move only the claims assigned to them. `claims.admin`: Admins (any claim, reassign, templates, HR contacts). Approvers view only. Read-only users see no claims (medical data). |
+| CLM-02 | Further statuses (Rejected, Settled / Paid, Query raised) and backward moves                            | Not built. Only Form → Submitted → Investigation → Approved, one step forward. Adding a status means adding it to `CLAIM_STATUSES` and `CLAIM_TRANSITIONS` in `src/shared/claims.ts`; its email templates follow.                                          |
+| CLM-03 | Documents required before Submitted                                                                     | Medical bills, discharge summary and ID proof, one of each (`REQUIRED_CLAIM_DOCUMENTS`).                                                                                                                                                                   |
+| CLM-04 | Discharge date of a cashless claim                                                                      | A cashless claim may give a future (expected) discharge date; a reimbursement claim may not. Admission must be within the policy period and not in the future.                                                                                             |
+| CLM-05 | Whether the amount claimed must be checked against the member's sum insured or the corporate buffer     | Not checked: the amount must be above 0 only.                                                                                                                                                                                                              |
+| CLM-06 | Submission link defaults: how long it stays valid, how many claims it allows, and whether it is emailed | Staff choose 1–30 days (7 by default) and 1–10 claims (1 by default) and copy the link themselves; it is not emailed by the app. The employee can add documents while the claim is in Form only.                                                           |
+| CLM-07 | Delivery confirmation                                                                                   | Emails show "Accepted by the mail server"; delivery to the inbox is not confirmed, as the SMTP transport gives no delivery receipts. Bounces are not read.                                                                                                 |
+| CLM-08 | Wording of the claim emails                                                                             | Neutral default wording per status, for the claimant and for HR; Admins edit it (Claims → Emails and HR).                                                                                                                                                  |
+| CLM-09 | Where the HR contact comes from                                                                         | Set per company on Claims → Emails and HR (name, email, on/off), off until set. Not taken from the GHI Data Sheet's HR contact automatically.                                                                                                              |
+| CLM-10 | Retention of medical documents                                                                          | Kept with the claim indefinitely, in the database like other case files; nothing is deleted.                                                                                                                                                               |
+
+### Decisions taken (please confirm)
+
+- Claims are made on placed GHI policies only (the policy recorded on the GHI case, case not closed). The patient
+  must be the employee (their Self census row) or one of their dependants in that policy's census; the company must
+  be the policy's. All checked on the server for staff and for the link.
+- A move needs a remark, the status the user saw (a stale board gets a 409, never a double move), the move allowed
+  by `CLAIM_TRANSITIONS`, and the user to be the assignee or an Admin. Refused moves save nothing and email no one.
+- The move, its timeline event and the emails it owes are written in one transaction; the emails are sent after the
+  commit (outbox pattern). A failed email never undoes the move. Each email is tried up to three times automatically
+  (after 1 and 5 minutes), then stays Failed with a Retry button; mail turned off fails at once without retries. Every
+  try is a timeline event (append-only) and an audit entry. One email per move and address (unique index), and a
+  send is taken atomically, so retries and parallel workers never email twice; a crash mid-send is retried after 10
+  minutes, which can repeat an email the server had already accepted (at least once).
+- The link's token is 32 random bytes, shown once, stored only as its SHA-256 hash, carried after `#` in the address
+  and in the `X-Claim-Link-Token` header (never in a URL path or query, so not in server logs). Public endpoints are
+  rate-limited per IP. The link can read its own policy and family, submit claims into Form, and add documents to its
+  own claims while in Form; nothing else.
+- Documents: PDF, PNG or JPEG (checked by content, not name), up to 10 MB, at most 30 per claim, served with
+  `Cache-Control: no-store`; each opening is audited (`CLAIM_DOCUMENT_DOWNLOADED`). Audit snapshots of claims carry
+  no patient names or dates of birth.
+- New claims made by staff are assigned to their creator; claims from a link to the staff member who issued it.
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

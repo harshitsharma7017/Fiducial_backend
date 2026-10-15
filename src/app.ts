@@ -11,6 +11,8 @@ import { notFound } from './middleware/not-found.ts';
 import { requestId } from './middleware/request-id.ts';
 import { createAuditRouter } from './modules/audit/audit.routes.ts';
 import { createAuthRouter } from './modules/auth/auth.routes.ts';
+import { createClaimLinksRouter } from './modules/claims/claim-links.routes.ts';
+import { createClaimsRouter } from './modules/claims/claims.routes.ts';
 import { createClientsRouter } from './modules/clients/clients.routes.ts';
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import { createImportsRouter } from './modules/imports/imports.routes.ts';
@@ -148,6 +150,9 @@ export function createApp({
   // Group health (GHI): its own cases and routes beside Property's proposals.
   api.use('/ghi', createGhiRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/ghi', createGhiWorkflowRouter({ ...jwt, mailTransport: transport }));
+  // Group health claims: staff routes, and the public side of employee submission links.
+  api.use('/claims', createClaimsRouter({ ...jwt, mailTransport: transport, logger }));
+  api.use('/claim-links', createClaimLinksRouter());
   api.use('/', createWorklistsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/audit', createAuditRouter(jwt));
   app.use('/api/v1', api);

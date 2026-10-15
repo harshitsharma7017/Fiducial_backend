@@ -21,6 +21,12 @@ export const PERMISSIONS = [
   'users.manage',
   'settings.view',
   'audit.view',
+  /** Group health claims: see the board, claims, their documents and timeline. */
+  'claims.view',
+  /** Create claims, issue employee submission links, and work the claims assigned to you. */
+  'claims.process',
+  /** Move or reassign any claim, edit the claim email templates and HR contacts. */
+  'claims.admin',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -30,7 +36,8 @@ export type Permission = (typeof PERMISSIONS)[number];
  * and quotes, Approvers sign off, Admins run users and masters, Read-only users only view. The
  * Relationship Manager owns the client, so clients.manage goes to them; the insurer master is
  * master data (masters.manage). Who approves RFQs and placements, and who else may edit clients,
- * is still to be confirmed by the client (document 06, Q12; see docs/OPEN_ITEMS.md). ADMIN holds
+ * is still to be confirmed by the client (document 06, Q12; see docs/OPEN_ITEMS.md). Claims hold
+ * medical information, so Read-only users do not see them; who processes claims is CLM-01 there. ADMIN holds
  * every permission; a user with several roles holds the union.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -41,6 +48,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.export',
     'clients.view',
     'masters.view',
+    'claims.view',
   ],
   ACCOUNT_MANAGER: [
     'proposals.view',
@@ -51,6 +59,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'clients.view',
     'clients.manage',
     'masters.view',
+    'claims.view',
+    'claims.process',
   ],
   PLACEMENT_EXEC: [
     'proposals.view',
@@ -59,6 +69,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'proposals.export',
     'clients.view',
     'masters.view',
+    'claims.view',
+    'claims.process',
   ],
   READ_ONLY: ['proposals.view', 'clients.view', 'masters.view'],
 };

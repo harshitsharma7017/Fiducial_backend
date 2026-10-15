@@ -19,6 +19,9 @@ const EXPECTED: Record<Permission, readonly Role[]> = {
   'users.manage': ['ADMIN'],
   'settings.view': ['ADMIN'],
   'audit.view': ['ADMIN'],
+  'claims.view': ['ADMIN', 'MANAGER', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC'],
+  'claims.process': ['ADMIN', 'ACCOUNT_MANAGER', 'PLACEMENT_EXEC'],
+  'claims.admin': ['ADMIN'],
 };
 
 describe('ROLE_PERMISSIONS', () => {

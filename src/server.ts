@@ -3,7 +3,10 @@ import { ConfigError, loadEnv, type Env } from './config/env.ts';
 import { connectDatabase, disconnectDatabase } from './lib/db.ts';
 import { createLogger } from './lib/logger.ts';
 import { ensureIndexes } from './models.ts';
+import { ensureClaimEmailTemplates } from './modules/claims/claim-templates.service.ts';
+import { startClaimNotificationWorker } from './modules/claims/claim-notifications.ts';
 import { ensureEmailTemplates } from './modules/email-templates/email-templates.service.ts';
+import { transportFromEnv } from './modules/mail/transport.ts';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -31,12 +34,16 @@ try {
   await connectDatabase(config.MONGODB_URI);
   await ensureIndexes();
   await ensureEmailTemplates();
+  await ensureClaimEmailTemplates();
 } catch (error) {
   logger.fatal({ err: error }, 'Could not connect to MongoDB');
   process.exit(1);
 }
 
-const app = createApp({ config, logger });
+const mailTransport = transportFromEnv(config, logger);
+const app = createApp({ config, logger, mailTransport });
+// Sends queued claim emails and retries failed ones in the background (C3).
+const stopClaimWorker = startClaimNotificationWorker({ transport: mailTransport, logger });
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT, env: config.NODE_ENV }, 'API listening');
 });
@@ -47,6 +54,7 @@ function shutdown(signal: NodeJS.Signals): void {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info({ signal }, 'Shutting down');
+  stopClaimWorker();
 
   const forceExit = setTimeout(() => {
     logger.error('Shutdown timed out; exiting');
