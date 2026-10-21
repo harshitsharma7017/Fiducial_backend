@@ -68,8 +68,9 @@ export const FIRE_GROUPS = [
 export type FireGroup = (typeof FIRE_GROUPS)[number];
 export const FIRE_GROUP_LABELS: Record<FireGroup, string> = {
   BUILDING:
-    'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False ceiling and Interiors',
-  FFF: 'Furniture, Fixtures and Fittings',
+    'All Building & all type of civil structures Including Plinth & Foundation, Compound wall and False ceiling',
+  // D2: Interior moved out of Building into this line.
+  FFF: 'Furniture, Fixtures and Fittings & Interiors',
   OFFICE_EQUIPMENT:
     'Office equipments and all communication systems like computer systems, computer peripherals, telephones, etc.',
   ELECTRICAL:
@@ -86,30 +87,21 @@ export const FIRE_GROUP_LABELS: Record<FireGroup, string> = {
  * Rate / sq ft columns.
  */
 export const FIRE_ITEMS = [
-  {
-    key: 'BUILDING_1',
-    group: 'BUILDING',
-    number: '1a',
-    label: 'Building 1 (if applicable)',
-    measured: true,
-  },
-  {
-    key: 'BUILDING_2',
-    group: 'BUILDING',
-    number: '1b',
-    label: 'Building 2 (if applicable)',
-    measured: true,
-  },
-  { key: 'COMPOUND_WALL', group: 'BUILDING', number: '1c', label: 'Compound wall', measured: true },
-  { key: 'FALSE_CEILING', group: 'BUILDING', number: '1d', label: 'False ceiling', measured: true },
+  // D1: Building 1 / Building 2 are no longer fixed items. Buildings are a dynamic list on each
+  // location (see BuildingInputSchema / location.buildings), all in the BUILDING group. The other
+  // building civil-structure sub-items stay fixed below.
+  { key: 'COMPOUND_WALL', group: 'BUILDING', number: '1a', label: 'Compound wall', measured: true },
+  { key: 'FALSE_CEILING', group: 'BUILDING', number: '1b', label: 'False ceiling', measured: true },
   {
     key: 'PLINTH_FOUNDATION',
     group: 'BUILDING',
-    number: '1e',
+    number: '1c',
     label: 'Plinth & Foundation',
     measured: true,
   },
-  { key: 'INTERIOR', group: 'BUILDING', number: '1f', label: 'Interior', measured: true },
+  // D2: Interior moved from the Building group to Furniture, Fixtures and Fittings & Interiors.
+  // Its key is unchanged so legacy values are preserved; only its group/number/label change.
+  { key: 'INTERIOR', group: 'FFF', number: '2a', label: 'Interiors', measured: true },
   {
     key: 'FFF',
     group: 'FFF',
@@ -502,6 +494,24 @@ export const FireItemInputSchema = z.strictObject({
   amount: OptionalRupees,
 });
 
+/**
+ * D1: a building on a location. The client's Data Sheet lists each building with its name or
+ * number, area (Sq. Feet), rate (Rate / sq ft) and sum insured. Any number of buildings is
+ * allowed (the old sheet fixed two). Every building sits in the Fire BUILDING line; its sum
+ * insured is the typed amount, or area × rate (exact) when the amount is blank, like a measured
+ * Fire item. A building with nothing filled in is dropped on save.
+ */
+export const MAX_BUILDINGS = 50;
+export const BuildingInputSchema = z.strictObject({
+  /** The building's name or number, as the client numbers them (Building 1, Shed A, …). */
+  name: OptionalText(120),
+  sqFt: Area,
+  ratePerSqFt: OptionalRupees,
+  /** Typed amount. Blank means area × rate. */
+  amount: OptionalRupees,
+});
+export type BuildingInput = z.infer<typeof BuildingInputSchema>;
+
 const RiskDetailsInputSchema = z.strictObject(
   Object.fromEntries(RISK_DETAIL_FIELDS.map((field) => [field.key, OptionalText(300)])) as Record<
     RiskDetailKey,
@@ -584,6 +594,8 @@ const ProductCodeSchema = z
 
 export const LocationDataInputSchema = z.strictObject({
   locationId: ObjectIdSchema,
+  /** D1: the location's buildings (any number), all in the Fire BUILDING line. */
+  buildings: z.array(BuildingInputSchema).max(MAX_BUILDINGS).default([]),
   fire: z.array(FireItemInputSchema).max(FIRE_ITEMS.length),
   hypothecation: OptionalText(300),
   openStock: OptionalText(300),
@@ -890,6 +902,18 @@ const FireItemSchema = z.object({
   sumInsured: z.string(),
 });
 
+/** D1: a building on a location, with its own sum insured; part of the Fire BUILDING line. */
+const BuildingSchema = z.object({
+  name: z.string().nullable(),
+  sqFt: z.string().nullable(),
+  ratePerSqFt: z.string().nullable(),
+  /** As typed. */
+  amount: z.string().nullable(),
+  /** The amount used: typed, or area × rate (exact). */
+  sumInsured: z.string(),
+});
+export type Building = z.infer<typeof BuildingSchema>;
+
 export const ProposalLocationSchema = z.object({
   locationId: ObjectIdSchema,
   /** The risk location as it is now in the client master. Null if it no longer exists. */
@@ -903,6 +927,9 @@ export const ProposalLocationSchema = z.object({
       occupancy: OccupancyRefSchema,
     })
     .nullable(),
+  /** D1: the location's buildings and their total sum insured. */
+  buildings: z.array(BuildingSchema),
+  buildingsTotal: z.string(),
   fire: z.array(FireItemSchema),
   fireTotal: z.string(),
   hypothecation: z.string().nullable(),

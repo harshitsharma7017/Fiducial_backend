@@ -98,8 +98,9 @@ const dataSheet = (overrides: Record<string, unknown> = {}) => ({
   locations: [
     {
       locationId: plant1,
+      // D1: the building is a dynamic entry, priced area × rate.
+      buildings: [{ name: 'Building 1', sqFt: '1000', ratePerSqFt: '2000', amount: '' }],
       fire: [
-        { key: 'BUILDING_1', sqFt: '1000', ratePerSqFt: '2000', amount: '' },
         { key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '500000' },
         { key: 'FFF', sqFt: '', ratePerSqFt: '', amount: '' },
       ],
@@ -212,10 +213,20 @@ describe('new-business proposals', () => {
       'Money: enter Cash in safe / counter or Cash in transit - Single carrying limit, or leave the section out.',
     ]);
     expect(partial.body.locations[0].fire).toEqual([
-      { key: 'BUILDING_1', sqFt: '1000', ratePerSqFt: '2000', amount: null, sumInsured: '2000000' },
       { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '500000', sumInsured: '500000' },
     ]);
+    // D1: the building is in its own list, priced area × rate.
+    expect(partial.body.locations[0].buildings).toEqual([
+      {
+        name: 'Building 1',
+        sqFt: '1000',
+        ratePerSqFt: '2000',
+        amount: null,
+        sumInsured: '2000000',
+      },
+    ]);
     expect(partial.body.locations[0]).toMatchObject({
+      buildingsTotal: '2000000',
       fireTotal: '2500000',
       hypothecation: 'Bank of Example',
     });
@@ -336,10 +347,12 @@ describe('new-business proposals', () => {
           locations: [
             {
               locationId: plant1,
+              // D1: two buildings, each 10.5 sq ft at ₹3 (₹31.50): Excel shows 32 each, 63 total.
+              buildings: [
+                { name: 'Building 1', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
+                { name: 'Building 2', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
+              ],
               fire: [
-                // 10.5 sq ft at ₹3 is ₹31.50: Excel shows 32 for each and 63 in total.
-                { key: 'BUILDING_1', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
-                { key: 'BUILDING_2', sqFt: '10.5', ratePerSqFt: '3', amount: '' },
                 { key: 'GENSET', sqFt: '', ratePerSqFt: '', amount: '1000' },
                 { key: 'TRANSFORMER', sqFt: '', ratePerSqFt: '', amount: '2000' },
                 { key: 'STOCKS_THIRD_PARTY', sqFt: '', ratePerSqFt: '', amount: '500' },
@@ -355,9 +368,9 @@ describe('new-business proposals', () => {
       )
       .expect(200);
     const location = saved.body.locations[0];
-    expect(location.fire.find((i: { key: string }) => i.key === 'BUILDING_1').sumInsured).toBe(
-      '31.5',
-    );
+    // D1: the building's exact sum insured is 31.5; the two buildings total 63.
+    expect(location.buildings[0].sumInsured).toBe('31.5');
+    expect(location.buildingsTotal).toBe('63');
     expect(location.fireTotal).toBe('3563');
 
     const response = await request(app)
@@ -377,13 +390,15 @@ describe('new-business proposals', () => {
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
     const find = (label: string) => rows.find((row) => row[1] === label);
-    expect(find('Building 1 (if applicable)')).toEqual([
-      'a',
-      'Building 1 (if applicable)',
-      10.5,
-      3,
-      31.5,
-    ]);
+    // D1: each building is a row under the Building heading (no S No), priced area × rate.
+    expect(find('Building 1')).toEqual([undefined, 'Building 1', 10.5, 3, 31.5]);
+    expect(find('Building 2')).toEqual([undefined, 'Building 2', 10.5, 3, 31.5]);
+    // The Building heading's subtotal is both buildings: 63.
+    expect(
+      find(
+        'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
+      )?.[4],
+    ).toBe(63);
     expect(find('All types of Plant and Machinery and all its accessories')?.slice(0, 1)).toEqual([
       '5',
     ]);
@@ -394,30 +409,10 @@ describe('new-business proposals', () => {
     expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
       'Steel coils in the yard',
     );
-    // Seven items in the client's numbering, with their sub-items.
+    // D1/D2: the Building heading, then its two buildings (no S No) and civil-structure sub-items
+    // (a, b, c); Interiors (2a) now sits under Furniture (2); then 3, 4, 5…
     expect(rows.map((row) => row[0]).filter((n) => typeof n === 'string' && n.length <= 2)).toEqual(
-      [
-        '1',
-        'a',
-        'b',
-        'c',
-        'd',
-        'e',
-        'f',
-        '2',
-        '3',
-        '4',
-        '5',
-        'a',
-        'b',
-        'c',
-        'd',
-        '6',
-        'a',
-        '7',
-        '1',
-        '2',
-      ],
+      ['1', 'a', 'b', 'c', 'a', '2', '3', '4', '5', 'a', 'b', 'c', 'd', '6', 'a', '7', '1', '2'],
     );
     const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
     expect(schedule).toContain('Plant 1: State Bank of India, Pune');
@@ -792,3 +787,198 @@ describe('new-business proposals', () => {
     await create(readOnly).expect(403);
   });
 });
+
+// D1 (multiple buildings) and D2 (Interior moved to Furniture, Fixtures and Fittings & Interiors).
+describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
+  it('D1: any number of buildings, priced amount or area × rate, in the Building line', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              buildings: [
+                // Three buildings: a typed amount, an area × rate, and a named shed.
+                { name: 'Main block', sqFt: '', ratePerSqFt: '', amount: '5000000' },
+                { name: 'Warehouse', sqFt: '2000', ratePerSqFt: '1500', amount: '' },
+                { name: 'Shed A', sqFt: '', ratePerSqFt: '', amount: '250000' },
+              ],
+              fire: [
+                { key: 'COMPOUND_WALL', sqFt: '', ratePerSqFt: '', amount: '100000' },
+                { key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' },
+              ],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [
+            { code: 'BURGLARY', included: true, proposed1: '', proposed2: '', basis: 'FULL' },
+          ],
+          fireOption2: [],
+        }),
+      )
+      .expect(200);
+    const location = saved.body.locations[0];
+    // Each building keeps its own sum insured; the warehouse is 2000 × 1500 = 3,000,000.
+    expect(
+      location.buildings.map((b: { name: string; sumInsured: string }) => [b.name, b.sumInsured]),
+    ).toEqual([
+      ['Main block', '5000000'],
+      ['Warehouse', '3000000'],
+      ['Shed A', '250000'],
+    ]);
+    // Buildings total 8,250,000; with the compound wall the Building line is 8,350,000.
+    expect(location.buildingsTotal).toBe('8250000');
+    const building = saved.body.fire.groups.find((g: { group: string }) => g.group === 'BUILDING');
+    expect(building.proposed1).toBe('8350000');
+    // D1: Burglary (the Fire contents) excludes every building and the compound wall.
+    const burglary = saved.body.sections.find((s: { code: string }) => s.code === 'BURGLARY');
+    expect(burglary.proposed1).toBe('1000000');
+    // The location's Fire total includes buildings.
+    expect(location.fireTotal).toBe('9350000');
+  });
+
+  it('D2: Interiors sit in Furniture, Fixtures and Fittings & Interiors, and count as contents', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              buildings: [{ name: 'Building 1', sqFt: '', ratePerSqFt: '', amount: '4000000' }],
+              fire: [
+                { key: 'INTERIOR', sqFt: '', ratePerSqFt: '', amount: '600000' },
+                { key: 'FFF', sqFt: '', ratePerSqFt: '', amount: '400000' },
+                { key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' },
+              ],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [
+            { code: 'BURGLARY', included: true, proposed1: '', proposed2: '', basis: 'FULL' },
+          ],
+          fireOption2: [],
+        }),
+      )
+      .expect(200);
+    const line = (group: string) =>
+      saved.body.fire.groups.find((g: { group: string }) => g.group === group);
+    // D2: Interiors (600000) + Furniture (400000) are in the FFF line, not Building.
+    expect(line('FFF').proposed1).toBe('1000000');
+    expect(line('BUILDING').proposed1).toBe('4000000');
+    // D2: Interiors count as Burglary contents (all but buildings): 1,000,000 + 1,000,000.
+    const burglary = saved.body.sections.find((s: { code: string }) => s.code === 'BURGLARY');
+    expect(burglary.proposed1).toBe('2000000');
+    // No double count: the Fire total is 4,000,000 + 1,000,000 + 1,000,000.
+    expect(saved.body.fire.proposed1).toBe('6000000');
+  });
+
+  it('D1: legacy BUILDING_1/BUILDING_2 cases load as buildings and migrate on the next save', async () => {
+    // A case stored before D1, with the old fixed building fire items. Inserted raw to keep the
+    // legacy keys the current schema no longer allows.
+    const { Types } = await import('mongoose');
+    const { ProposalModel } = await import('../src/modules/proposals/proposal.model.ts');
+    const d = (value: string) => Types.Decimal128.fromString(value);
+    const now = new Date();
+    const inserted = await ProposalModel.collection.insertOne({
+      reference: `LEGACY-${randomSuffix()}`,
+      type: 'NEW',
+      stage: 'DATA_SHEET',
+      stageOverride: null,
+      clientId: new Types.ObjectId(clientId),
+      ownerId: new Types.ObjectId((await tokenFor(app, ['ACCOUNT_MANAGER'])).user.id),
+      dueDate: '2026-11-20',
+      policyStart: null,
+      policyEnd: null,
+      locations: [
+        {
+          locationId: new Types.ObjectId(plant1),
+          fire: [
+            { key: 'BUILDING_1', sqFt: d('1000'), ratePerSqFt: d('2000'), amount: null },
+            { key: 'BUILDING_2', sqFt: null, ratePerSqFt: null, amount: d('500000') },
+            { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: d('300000') },
+          ],
+          hypothecation: null,
+          openStock: null,
+          risk: {},
+        },
+      ],
+      fireOption2: [],
+      sections: [],
+      claims: [],
+      notes: null,
+      insurers: [],
+      activity: [],
+      createdBy: new Types.ObjectId((await tokenFor(app, ['ADMIN'])).user.id),
+      updatedBy: new Types.ObjectId((await tokenFor(app, ['ADMIN'])).user.id),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const id = inserted.insertedId.toString();
+
+    // The legacy case loads: the two building fire items appear as buildings, nothing lost.
+    const read = await request(app).get(`/api/v1/proposals/${id}`).set(bearer(manager)).expect(200);
+    const location = read.body.locations[0];
+    expect(
+      location.buildings.map((b: { name: string; sumInsured: string }) => [b.name, b.sumInsured]),
+    ).toEqual([
+      ['Building 1', '2000000'],
+      ['Building 2', '500000'],
+    ]);
+    // The legacy building keys are not left among the Fire items.
+    expect(location.fire.map((item: { key: string }) => item.key)).toEqual(['STOCKS']);
+    expect(location.buildingsTotal).toBe('2500000');
+    expect(
+      read.body.fire.groups.find((g: { group: string }) => g.group === 'BUILDING').proposed1,
+    ).toBe('2500000');
+
+    // Saving the Data Sheet rewrites the buildings list and drops the legacy keys from storage.
+    await request(app)
+      .put(`/api/v1/proposals/${id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              buildings: location.buildings.map((b: { name: string }) => ({
+                name: b.name,
+                sqFt: null,
+                ratePerSqFt: null,
+                amount: b.name === 'Building 1' ? '2000000' : '500000',
+              })),
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '300000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [],
+          fireOption2: [],
+        }),
+      )
+      .expect(200);
+    const stored = await ProposalModel.collection.findOne({ _id: inserted.insertedId });
+    const firstLocation = (stored as unknown as { locations: { fire: { key: string }[] }[] })
+      .locations[0];
+    expect(firstLocation?.fire.map((item) => item.key)).toEqual(['STOCKS']);
+    const readAgain = await request(app)
+      .get(`/api/v1/proposals/${id}`)
+      .set(bearer(manager))
+      .expect(200);
+    expect(readAgain.body.locations[0].buildingsTotal).toBe('2500000');
+  });
+});
+
+function randomSuffix(): string {
+  return Math.random().toString(36).slice(2, 10).toUpperCase();
+}

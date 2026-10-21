@@ -29,6 +29,17 @@ export const DataSheetImportSchema = z.object({
       riskLocation: Text,
       /** The case location it most likely is (by name or address, else by order); null: none. */
       suggestedLocationId: ObjectIdSchema.nullable(),
+      /** D1: the buildings read from the sheet (its "Building 1", "Building 2", … rows). */
+      buildings: z
+        .array(
+          z.object({
+            name: Text,
+            sqFt: Text,
+            ratePerSqFt: Text,
+            amount: Text,
+          }),
+        )
+        .default([]),
       fire: z.array(
         z.object({
           key: z.enum(FIRE_ITEM_KEYS),

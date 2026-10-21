@@ -453,13 +453,30 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       const heading = FIRE_ITEM_HEADINGS[item.group];
       if (heading && !headed.has(item.group)) {
         headed.add(item.group);
-        const subtotal = FIRE_ITEMS.filter((other) => other.group === item.group)
+        // D1: the Building heading's subtotal is its civil-structure sub-items plus the buildings.
+        const itemsSubtotal = FIRE_ITEMS.filter((other) => other.group === item.group)
           .map((other) => saved.get(other.key)?.sumInsured ?? '0')
           .reduce((total, value) => total + Number(value), 0);
+        const buildingsSubtotal = item.group === 'BUILDING' ? Number(location.buildingsTotal) : 0;
+        const subtotal = itemsSubtotal + buildingsSubtotal;
         const row = sheet.addRow([heading.number, heading.label, null, null, subtotal || null]);
         row.font = { bold: true };
         row.getCell(2).alignment = { wrapText: true };
         money(row, [5]);
+        // D1: list each building under the Building heading, with its area, rate and sum insured.
+        if (item.group === 'BUILDING') {
+          location.buildings.forEach((building, index) => {
+            const buildingRow = sheet.addRow([
+              null,
+              building.name ?? `Building ${index + 1}`,
+              building.sqFt == null ? null : Number(building.sqFt),
+              amount(building.ratePerSqFt),
+              amount(building.sumInsured) || null,
+            ]);
+            buildingRow.getCell(2).alignment = { wrapText: true, indent: 2 };
+            money(buildingRow, [4, 5]);
+          });
+        }
       }
       const values = saved.get(item.key);
       const sub = heading !== undefined || item.number.length > 1;

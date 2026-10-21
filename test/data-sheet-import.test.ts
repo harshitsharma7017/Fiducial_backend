@@ -148,8 +148,11 @@ describe('DS-08: reading the client’s Data Sheet workbook', () => {
       hypothecation: 'State Bank of India, Fort',
       openStock: null,
     });
+    // D1: a "Building …" row is read as a building, not a fixed Fire item.
+    expect(location.buildings).toEqual([
+      { name: 'Building 1 (if applicable)', sqFt: '40000', ratePerSqFt: '2500', amount: null },
+    ]);
     expect(location.fire).toEqual([
-      { key: 'BUILDING_1', sqFt: '40000', ratePerSqFt: '2500', amount: null },
       { key: 'FFF', sqFt: null, ratePerSqFt: null, amount: '500000' },
       { key: 'OTHER_MACHINERY', sqFt: null, ratePerSqFt: null, amount: '150000000' },
       { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '60000001' },

@@ -189,12 +189,23 @@ function sheet(
     locations: [
       {
         locationId,
-        fire: Object.entries(fire).map(([key, amount]) => ({
-          key,
-          sqFt: null,
-          ratePerSqFt: null,
-          amount,
-        })),
+        // D1: a "BUILDING_n" key is routed to the buildings list; other keys stay Fire items.
+        buildings: Object.entries(fire)
+          .filter(([key]) => key.startsWith('BUILDING_'))
+          .map(([key, amount]) => ({
+            name: key === 'BUILDING_1' ? 'Building 1' : 'Building 2',
+            sqFt: null,
+            ratePerSqFt: null,
+            amount,
+          })),
+        fire: Object.entries(fire)
+          .filter(([key]) => !key.startsWith('BUILDING_'))
+          .map(([key, amount]) => ({
+            key,
+            sqFt: null,
+            ratePerSqFt: null,
+            amount,
+          })),
         hypothecation: null,
         openStock: null,
         risk: Object.fromEntries(RISK_DETAIL_FIELDS.map((field) => [field.key, 'Yes'])),

@@ -34,8 +34,19 @@ export interface FireItemDoc {
   amount: Money;
 }
 
+/** D1: a building on a location, part of the Fire BUILDING line. */
+export interface BuildingDoc {
+  name: string | null;
+  sqFt: Money;
+  ratePerSqFt: Money;
+  /** As typed; null means area × rate. */
+  amount: Money;
+}
+
 export interface ProposalLocationDoc {
   locationId: Types.ObjectId;
+  /** D1: the location's buildings (any number); missing on proposals saved before D1. */
+  buildings?: BuildingDoc[];
   fire: FireItemDoc[];
   hypothecation: string | null;
   openStock: string | null;
@@ -337,9 +348,20 @@ const proposalSchema = new Schema<ProposalDoc>(
       new Schema(
         {
           locationId: { type: Schema.Types.ObjectId, ref: 'ClientLocation', required: true },
+          // D1: buildings as a dynamic list. Missing on proposals saved before D1 and on legacy
+          // cases whose buildings are still the old BUILDING_1/BUILDING_2 fire items (the mapper
+          // reads those into buildings; they are rewritten here on the next Data Sheet save).
+          buildings: {
+            type: [
+              new Schema({ name: text, sqFt: money, ratePerSqFt: money, amount: money }, noId),
+            ],
+            default: undefined,
+          },
           fire: [
             new Schema(
               {
+                // Legacy BUILDING_1/BUILDING_2 keys are read tolerantly (lean reads in the mapper)
+                // and are never written back: updateDataSheet sends only current FIRE_ITEM_KEYS.
                 key: { type: String, enum: FIRE_ITEM_KEYS, required: true },
                 sqFt: money,
                 ratePerSqFt: money,

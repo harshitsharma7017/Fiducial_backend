@@ -32,6 +32,8 @@ import { InsurerModel, type InsurerDoc } from '../insurers/insurer.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import { Decimal } from '../../lib/decimal.ts';
 import {
+  buildingSumInsured,
+  buildingsTotal,
   contentsTotals,
   fireTotals,
   itemSumInsured,
@@ -40,6 +42,7 @@ import {
   onBasis,
   stageOf,
   sumOf,
+  type BuildingValues,
   type FireItemValues,
 } from './proposal-calc.ts';
 import type { CoverDoc, ProposalDoc } from './proposal.model.ts';
@@ -198,13 +201,46 @@ function existingColumn(doc: ProposalDoc) {
   };
 }
 
+/** D1: the legacy building fire-item keys that are now read into the buildings list. */
+const LEGACY_BUILDING_KEYS = new Set(['BUILDING_1', 'BUILDING_2']);
+
+/** Current Fire items only: legacy BUILDING_1/BUILDING_2 are folded into buildings (D1). */
 function fireValues(doc: ProposalDoc['locations'][number]): FireItemValues[] {
-  return doc.fire.map((item) => ({
-    key: item.key,
-    sqFt: str(item.sqFt),
-    ratePerSqFt: str(item.ratePerSqFt),
-    amount: str(item.amount),
+  return doc.fire
+    .filter((item) => !LEGACY_BUILDING_KEYS.has(item.key))
+    .map((item) => ({
+      key: item.key,
+      sqFt: str(item.sqFt),
+      ratePerSqFt: str(item.ratePerSqFt),
+      amount: str(item.amount),
+    }));
+}
+
+/**
+ * D1: a location's buildings. The stored buildings list, plus any legacy BUILDING_1/BUILDING_2
+ * fire items that predate D1 — so old cases load with their buildings intact. The next Data Sheet
+ * save rewrites them as buildings, dropping the legacy keys.
+ */
+function buildingValues(
+  doc: ProposalDoc['locations'][number],
+): (BuildingValues & { name: string | null })[] {
+  const stored = (doc.buildings ?? []).map((building) => ({
+    name: building.name,
+    sqFt: str(building.sqFt),
+    ratePerSqFt: str(building.ratePerSqFt),
+    amount: str(building.amount),
   }));
+  const legacy = doc.fire
+    // Stored legacy docs may still carry BUILDING_1/BUILDING_2 keys (read tolerantly via lean).
+    .filter((item) => LEGACY_BUILDING_KEYS.has(item.key as string))
+    .map((item) => ({
+      // Number the legacy buildings as the old sheet did.
+      name: (item.key as string) === 'BUILDING_1' ? 'Building 1' : 'Building 2',
+      sqFt: str(item.sqFt),
+      ratePerSqFt: str(item.ratePerSqFt),
+      amount: str(item.amount),
+    }));
+  return [...stored, ...legacy];
 }
 
 /** The API view of a proposal, with live client, location and insurer details. */
@@ -219,9 +255,15 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   const locations = doc.locations.map((entry) => {
     const location = context.locations.get(key(entry.locationId));
     const fire = fireValues(entry);
+    const buildings = buildingValues(entry);
+    // D1: buildings add to the location's Fire total alongside the fixed items.
+    const fireTotal = sumOf(fire.map(itemSumInsured)).plus(
+      buildingsTotal({ name: location?.name ?? '', fire, buildings }),
+    );
     return {
       entry,
       name: location?.name ?? 'Removed location',
+      buildings,
       fire,
       record: {
         locationId: key(entry.locationId),
@@ -235,8 +277,16 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
                 occupancy: location.occupancy ?? client.occupancy,
               }
             : null,
+        buildings: buildings.map((building) => ({
+          name: building.name,
+          sqFt: building.sqFt,
+          ratePerSqFt: building.ratePerSqFt,
+          amount: building.amount,
+          sumInsured: buildingSumInsured(building).toFixed(),
+        })),
+        buildingsTotal: sumOf(buildings.map(buildingSumInsured)).toFixed(),
         fire: fire.map((item) => ({ ...item, sumInsured: itemSumInsured(item).toFixed() })),
-        fireTotal: sumOf(fire.map(itemSumInsured)).toFixed(),
+        fireTotal: fireTotal.toFixed(),
         hypothecation: entry.hypothecation,
         openStock: entry.openStock,
         risk: Object.fromEntries(
@@ -517,7 +567,13 @@ export function toProposalAuditView(record: ProposalRecord) {
       ? `${record.product.code} (${record.product.source.toLowerCase()})${record.product.reason ? `: ${record.product.reason}` : ''}`
       : null,
     addons: record.addons.map((addon) => `${addon.list}: ${addon.name}`),
-    locations: record.locations.map((l) => `${l.location?.name ?? l.locationId}: ${l.fireTotal}`),
+    locations: record.locations.map(
+      (l) =>
+        `${l.location?.name ?? l.locationId}: ${l.fireTotal}` +
+        (l.buildings.length > 0
+          ? ` (${l.buildings.length} buildings, SI ${l.buildingsTotal})`
+          : ''),
+    ),
     fireProposed1: record.fire.proposed1,
     fireProposed2: record.fire.proposed2,
     sectionsIncluded: record.sections

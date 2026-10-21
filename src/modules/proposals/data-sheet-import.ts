@@ -31,8 +31,7 @@ const MAX_TEXT = 300;
 
 /** Fire lines by the words their description starts with, as the client's sheet words them. */
 const FIRE_LINE_WORDS: readonly [string, FireItemKey][] = [
-  ['building 1', 'BUILDING_1'],
-  ['building 2', 'BUILDING_2'],
+  // D1: "Building 1", "Building 2", … rows are read as buildings, not fixed items (see readFire).
   ['compound wall', 'COMPOUND_WALL'],
   ['false ceiling', 'FALSE_CEILING'],
   ['plinth', 'PLINTH_FOUNDATION'],
@@ -144,6 +143,39 @@ function dataSheets(workbook: ExcelJS.Workbook): ExcelJS.Worksheet[] {
   );
 }
 
+/** Area and rate (or sum insured) from a measured row, kept exact as the form accepts it. */
+function measuredValues(
+  reader: Reader,
+  sheet: ExcelJS.Worksheet,
+  row: number,
+  sqFtColumn: number,
+  rateColumn: number,
+  amount: string | null,
+  where: string,
+): { sqFt: string | null; rate: string | null; product: string | null } {
+  const area = own(sheet, row, sqFtColumn);
+  const perSqFt = own(sheet, row, rateColumn);
+  const areaValue = area ? numberOf(area) : null;
+  const rateValue = perSqFt ? numberOf(perSqFt) : null;
+  if (area && !areaValue) reader.warnings.push(`${where}: "${area}" is not an area; left blank.`);
+  if (perSqFt && !rateValue)
+    reader.warnings.push(`${where}: "${perSqFt}" is not a rate; left blank.`);
+  if (areaValue && rateValue) {
+    if (rateValue.isInteger() && areaValue.decimalPlaces() <= 2) {
+      return { sqFt: areaValue.toFixed(), rate: rateValue.toFixed(), product: null };
+    }
+    if (!amount) {
+      // The form takes whole-rupee rates and 2-decimal areas: the product is kept instead.
+      const product = areaValue.times(rateValue).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+      reader.warnings.push(
+        `${where}: ${areaValue.toFixed()} sq ft × ${rateValue.toFixed()} entered as the sum insured ₹${product.toFixed()}.`,
+      );
+      return { sqFt: null, rate: null, product: product.toFixed() };
+    }
+  }
+  return { sqFt: null, rate: null, product: null };
+}
+
 function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
   const header = findRow(sheet, 'S No') ?? 10;
   const sqFtColumn = findColumn(sheet, header, 'Sq Feet', true) ?? 3;
@@ -152,9 +184,42 @@ function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
   const total =
     findRow(sheet, 'Total sum insured', { column: 2, from: header, prefix: true }) ?? header + 20;
   const fire: DataSheetImport['locations'][number]['fire'] = [];
+  const buildings: DataSheetImport['locations'][number]['buildings'] = [];
   for (let row = header + 1; row < total; row += 1) {
     const label = own(sheet, row, 2);
-    const match = label ? startsWithAny(label, FIRE_LINE_WORDS) : undefined;
+    if (!label) continue;
+    // D1: a "Building …" row is a building, not a fixed Fire item. Its name is the row's text.
+    if (labelKey(label).startsWith('building')) {
+      const where = `${place}, ${label}`;
+      const amount = rupees(reader, own(sheet, row, sumColumn), where);
+      const { sqFt, rate, product } = measuredValues(
+        reader,
+        sheet,
+        row,
+        sqFtColumn,
+        rateColumn,
+        amount,
+        where,
+      );
+      if (product !== null) {
+        buildings.push({ name: label, sqFt: null, ratePerSqFt: null, amount: product });
+        continue;
+      }
+      if (sqFt === null && rate === null && amount === null) continue;
+      const sameAsProduct =
+        sqFt !== null &&
+        rate !== null &&
+        amount !== null &&
+        new Decimal(sqFt).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).equals(amount);
+      buildings.push({
+        name: label,
+        sqFt,
+        ratePerSqFt: rate,
+        amount: sameAsProduct ? null : amount,
+      });
+      continue;
+    }
+    const match = startsWithAny(label, FIRE_LINE_WORDS);
     if (!match) continue;
     const key = match[1];
     const item = FIRE_ITEMS.find((candidate) => candidate.key === key);
@@ -163,29 +228,13 @@ function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
     let sqFt: string | null = null;
     let rate: string | null = null;
     if (item?.measured) {
-      const area = own(sheet, row, sqFtColumn);
-      const perSqFt = own(sheet, row, rateColumn);
-      const areaValue = area ? numberOf(area) : null;
-      const rateValue = perSqFt ? numberOf(perSqFt) : null;
-      if (area && !areaValue)
-        reader.warnings.push(`${where}: "${area}" is not an area; left blank.`);
-      if (perSqFt && !rateValue) {
-        reader.warnings.push(`${where}: "${perSqFt}" is not a rate; left blank.`);
+      const measured = measuredValues(reader, sheet, row, sqFtColumn, rateColumn, amount, where);
+      if (measured.product !== null) {
+        fire.push({ key, sqFt: null, ratePerSqFt: null, amount: measured.product });
+        continue;
       }
-      if (areaValue && rateValue) {
-        if (rateValue.isInteger() && areaValue.decimalPlaces() <= 2) {
-          sqFt = areaValue.toFixed();
-          rate = rateValue.toFixed();
-        } else if (!amount) {
-          // The form takes whole-rupee rates and 2-decimal areas: the product is kept instead.
-          const product = areaValue.times(rateValue).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
-          reader.warnings.push(
-            `${where}: ${areaValue.toFixed()} sq ft × ${rateValue.toFixed()} entered as the sum insured ₹${product.toFixed()}.`,
-          );
-          fire.push({ key, sqFt: null, ratePerSqFt: null, amount: product.toFixed() });
-          continue;
-        }
-      }
+      sqFt = measured.sqFt;
+      rate = measured.rate;
     }
     if (sqFt === null && rate === null && amount === null) continue;
     // A typed sum insured equal to sq ft × rate adds nothing.
@@ -196,7 +245,7 @@ function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
       new Decimal(sqFt).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).equals(amount);
     fire.push({ key, sqFt, ratePerSqFt: rate, amount: sameAsProduct ? null : amount });
   }
-  return { fire, sumColumn };
+  return { fire, buildings, sumColumn };
 }
 
 function readRisk(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
@@ -421,7 +470,7 @@ export async function readDataSheetWorkbook(
   let sections: DataSheetImport['sections'] = [];
   const read = sheets.map((sheet, index) => {
     const place = sheets.length > 1 ? sheet.name : 'Data Sheet';
-    const { fire, sumColumn } = readFire(reader, sheet, place);
+    const { fire, buildings, sumColumn } = readFire(reader, sheet, place);
     const found = readSections(reader, sheet, sumColumn);
     // The other sections are the case's: taken from the first sheet that has them.
     if (sections.length === 0) sections = found;
@@ -436,6 +485,7 @@ export async function readDataSheetWorkbook(
       sheetName: sheet.name,
       riskLocation: valueBeside(sheet, 'Risk Location'),
       index,
+      buildings,
       fire,
       hypothecation: hypothecation ? clip(reader, hypothecation, `${place}, Hypothecation`) : null,
       openStock: openStock ? clip(reader, openStock, `${place}, Stock kept at open space`) : null,

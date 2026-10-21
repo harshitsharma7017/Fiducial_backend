@@ -28,6 +28,13 @@ export interface FireItemValues {
   amount: string | null;
 }
 
+/** D1: a building's figures; its sum insured is the typed amount, else area × rate (exact). */
+export interface BuildingValues {
+  sqFt: string | null;
+  ratePerSqFt: string | null;
+  amount: string | null;
+}
+
 /** An item's sum insured: the typed amount, else area × rate (exact) for a measured item. */
 export function itemSumInsured(item: FireItemValues): Decimal {
   if (item.amount !== null) return new Decimal(item.amount);
@@ -38,13 +45,29 @@ export function itemSumInsured(item: FireItemValues): Decimal {
   return new Decimal(0);
 }
 
+/** A building's sum insured: the typed amount, else area × rate (exact), like a measured item. */
+export function buildingSumInsured(building: BuildingValues): Decimal {
+  if (building.amount !== null) return new Decimal(building.amount);
+  if (building.sqFt !== null && building.ratePerSqFt !== null) {
+    return new Decimal(building.sqFt).times(building.ratePerSqFt);
+  }
+  return new Decimal(0);
+}
+
 export function sumOf(values: readonly Decimal[]): Decimal {
   return values.reduce((total, value) => total.plus(value), new Decimal(0));
 }
 
 export interface LocationValues {
   name: string;
+  /** D1: the location's buildings, all in the Fire BUILDING line. */
+  buildings?: readonly BuildingValues[];
   fire: readonly FireItemValues[];
+}
+
+/** The total sum insured of a location's buildings (D1). */
+export function buildingsTotal(location: LocationValues): Decimal {
+  return sumOf((location.buildings ?? []).map(buildingSumInsured));
 }
 
 export interface FireTotals {
@@ -63,13 +86,16 @@ export function fireTotals(
   option2: ReadonlyMap<FireGroup, string | null>,
 ): FireTotals {
   const groups = FIRE_GROUPS.map((group) => {
-    const proposed1 = sumOf(
+    const items = sumOf(
       locations.flatMap((location) =>
         location.fire
           .filter((item) => ITEM_BY_KEY.get(item.key)?.group === group)
           .map(itemSumInsured),
       ),
     );
+    // D1: buildings add to the BUILDING line, alongside the fixed civil-structure sub-items.
+    const buildings = group === 'BUILDING' ? sumOf(locations.map(buildingsTotal)) : new Decimal(0);
+    const proposed1 = items.plus(buildings);
     const second = option2.get(group) ?? null;
     return { group, proposed1, proposed2: second === null ? null : new Decimal(second) };
   });
@@ -136,7 +162,8 @@ export function missingForRfq(sheet: SheetValues): string[] {
   const missing: string[] = [];
   if (sheet.locations.length === 0) missing.push('Add at least one risk location.');
   for (const location of sheet.locations) {
-    if (sumOf(location.fire.map(itemSumInsured)).isZero()) {
+    const items = sumOf(location.fire.map(itemSumInsured));
+    if (items.plus(buildingsTotal(location)).isZero()) {
       missing.push(`Enter the Fire sums insured for ${location.name}.`);
     }
   }

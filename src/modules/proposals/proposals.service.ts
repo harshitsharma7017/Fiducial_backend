@@ -725,6 +725,22 @@ export async function updateDataSheet(
     policyEnd: input.policyEnd,
     locations: input.locations.map((location) => ({
       locationId: new Types.ObjectId(location.locationId),
+      // D1: buildings as a dynamic list; a building with nothing filled in is dropped. Writing
+      // this list (never the legacy BUILDING_1/BUILDING_2 keys) migrates old cases on save.
+      buildings: location.buildings
+        .filter(
+          (building) =>
+            building.name !== null ||
+            building.sqFt !== null ||
+            building.ratePerSqFt !== null ||
+            building.amount !== null,
+        )
+        .map((building) => ({
+          name: building.name,
+          sqFt: money(building.sqFt),
+          ratePerSqFt: money(building.ratePerSqFt),
+          amount: money(building.amount),
+        })),
       fire: location.fire
         .filter((item) => item.sqFt !== null || item.ratePerSqFt !== null || item.amount !== null)
         .map((item) => ({
