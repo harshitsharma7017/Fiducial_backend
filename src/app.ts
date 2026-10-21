@@ -23,6 +23,8 @@ import { createGhiRouter } from './modules/ghi/ghi.routes.ts';
 import { createGhiWorkflowRouter } from './modules/ghi/ghi-workflow.routes.ts';
 import { createEbProductRouter } from './modules/ghi/eb-product.routes.ts';
 import { createAgeBandsRouter } from './modules/age-bands/age-bands.routes.ts';
+import { createAnalysisRouter } from './modules/claims-analysis/analysis.routes.ts';
+import { createTpaRouter } from './modules/tpa/tpa.routes.ts';
 import { createCaseConfigurationRouter } from './modules/ghi/case-configuration.routes.ts';
 import { toEbCaseRecord } from './modules/ghi/eb-cases.service.ts';
 import { getCase } from './modules/ghi/ghi-cases.service.ts';
@@ -167,6 +169,9 @@ export function createApp({
   api.use('/family-plans', createFamilyPlansRouter(jwt));
   // N4 and N7: the Age Band Master, and each case's age bands and RFQ selection summary.
   api.use('/age-bands', createAgeBandsRouter(jwt));
+  // N8 to N10: TPA claims, claims analysis, renewal analysis.
+  api.use('/tpa', createTpaRouter({ ...jwt, mailTransport: transport }));
+  api.use('/', createAnalysisRouter(jwt));
   api.use('/ghi', createCaseConfigurationRouter({ ...jwt, scope: GMC_SCOPE, record: getCase }));
   for (const [path, scope] of [
     ['/eb/gpa', GPA_SCOPE],

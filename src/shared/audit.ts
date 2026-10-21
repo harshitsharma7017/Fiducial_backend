@@ -187,6 +187,28 @@ export const AUDIT_ACTIONS = {
   EB_AGE_BANDS_SELECTED: 'EB_AGE_BANDS_SELECTED',
   GHI_SELECTION_SUMMARY_DOWNLOADED: 'GHI_SELECTION_SUMMARY_DOWNLOADED',
   EB_SELECTION_SUMMARY_DOWNLOADED: 'EB_SELECTION_SUMMARY_DOWNLOADED',
+  // TPA claims (N9), claims analysis (N10) and renewal analysis (N8).
+  TPA_FORMAT_CREATED: 'TPA_FORMAT_CREATED',
+  TPA_FORMAT_UPDATED: 'TPA_FORMAT_UPDATED',
+  TPA_IMPORT_UPLOADED: 'TPA_IMPORT_UPLOADED',
+  TPA_IMPORT_COMMITTED: 'TPA_IMPORT_COMMITTED',
+  TPA_IMPORT_DISCARDED: 'TPA_IMPORT_DISCARDED',
+  TPA_CLAIM_LINKED: 'TPA_CLAIM_LINKED',
+  PREMIUM_ADJUSTMENT_RECORDED: 'PREMIUM_ADJUSTMENT_RECORDED',
+  PREMIUM_ADJUSTMENT_VOIDED: 'PREMIUM_ADJUSTMENT_VOIDED',
+  CLAIMS_ANALYSIS_DOWNLOADED: 'CLAIMS_ANALYSIS_DOWNLOADED',
+  POLICY_YEAR_RECORDED: 'POLICY_YEAR_RECORDED',
+  POLICY_YEAR_UPDATED: 'POLICY_YEAR_UPDATED',
+  RENEWAL_REPORT_SAVED: 'RENEWAL_REPORT_SAVED',
+  RENEWAL_REPORT_DOWNLOADED: 'RENEWAL_REPORT_DOWNLOADED',
+  // N11: import notification settings; N12: claim data views and refused access.
+  CLAIM_IMPORT_SETTINGS_UPDATED: 'CLAIM_IMPORT_SETTINGS_UPDATED',
+  CLAIM_VIEWED: 'CLAIM_VIEWED',
+  CLAIMS_LISTED: 'CLAIMS_LISTED',
+  TPA_CLAIM_VIEWED: 'TPA_CLAIM_VIEWED',
+  CLAIMS_ANALYSIS_VIEWED: 'CLAIMS_ANALYSIS_VIEWED',
+  CLAIM_ACCESS_DENIED: 'CLAIM_ACCESS_DENIED',
+  TPA_ERROR_REPORT_DOWNLOADED: 'TPA_ERROR_REPORT_DOWNLOADED',
 } as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -222,6 +244,12 @@ export const AUDIT_ENTITIES = {
   EB_EMPLOYEE: 'eb_employee',
   /** An age band set of the Age Band Master (N4). */
   AGE_BAND_SET: 'age_band_set',
+  /** A TPA import format (N9). */
+  TPA_FORMAT: 'tpa_format',
+  /** A placed policy (its case id) for TPA imports, claims analysis and premium (N9, N10). */
+  INSURED_POLICY: 'insured_policy',
+  /** A company's policy years and renewal analyses (entity id: the client's id) (N8). */
+  RENEWAL: 'renewal',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -230,7 +258,16 @@ export type AuditEntity = z.infer<typeof AuditEntitySchema>;
  * The kind of event, as feature F-3 and requirement AUD-01 list them. SEND covers the RFQ:
  * emailing it, reminding, a failed mail and marking it sent by hand; EXPORT covers downloading it.
  */
-export const AUDIT_KINDS = ['SESSION', 'CREATE', 'EDIT', 'APPROVE', 'SEND', 'EXPORT'] as const;
+/** VIEW (N12): reading claim data, and refused attempts to. */
+export const AUDIT_KINDS = [
+  'SESSION',
+  'CREATE',
+  'EDIT',
+  'APPROVE',
+  'SEND',
+  'EXPORT',
+  'VIEW',
+] as const;
 export const AuditKindSchema = z.enum(AUDIT_KINDS);
 export type AuditKind = z.infer<typeof AuditKindSchema>;
 
@@ -407,6 +444,26 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   EB_AGE_BANDS_SELECTED: 'EDIT',
   GHI_SELECTION_SUMMARY_DOWNLOADED: 'EXPORT',
   EB_SELECTION_SUMMARY_DOWNLOADED: 'EXPORT',
+  TPA_FORMAT_CREATED: 'CREATE',
+  TPA_FORMAT_UPDATED: 'EDIT',
+  TPA_IMPORT_UPLOADED: 'CREATE',
+  TPA_IMPORT_COMMITTED: 'CREATE',
+  TPA_IMPORT_DISCARDED: 'EDIT',
+  TPA_CLAIM_LINKED: 'EDIT',
+  PREMIUM_ADJUSTMENT_RECORDED: 'CREATE',
+  PREMIUM_ADJUSTMENT_VOIDED: 'EDIT',
+  CLAIMS_ANALYSIS_DOWNLOADED: 'EXPORT',
+  POLICY_YEAR_RECORDED: 'CREATE',
+  POLICY_YEAR_UPDATED: 'EDIT',
+  RENEWAL_REPORT_SAVED: 'CREATE',
+  RENEWAL_REPORT_DOWNLOADED: 'EXPORT',
+  CLAIM_IMPORT_SETTINGS_UPDATED: 'EDIT',
+  CLAIM_VIEWED: 'VIEW',
+  CLAIMS_LISTED: 'VIEW',
+  TPA_CLAIM_VIEWED: 'VIEW',
+  CLAIMS_ANALYSIS_VIEWED: 'VIEW',
+  CLAIM_ACCESS_DENIED: 'VIEW',
+  TPA_ERROR_REPORT_DOWNLOADED: 'EXPORT',
 };
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -582,6 +639,26 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   EB_AGE_BANDS_SELECTED: 'Age bands chosen for the case',
   GHI_SELECTION_SUMMARY_DOWNLOADED: 'RFQ selection summary downloaded',
   EB_SELECTION_SUMMARY_DOWNLOADED: 'RFQ selection summary downloaded',
+  TPA_FORMAT_CREATED: 'TPA format created',
+  TPA_FORMAT_UPDATED: 'TPA format edited',
+  TPA_IMPORT_UPLOADED: 'TPA claims file uploaded',
+  TPA_IMPORT_COMMITTED: 'TPA claims imported',
+  TPA_IMPORT_DISCARDED: 'TPA claims file discarded',
+  TPA_CLAIM_LINKED: 'TPA claim linked',
+  PREMIUM_ADJUSTMENT_RECORDED: 'Premium addition or deletion recorded',
+  PREMIUM_ADJUSTMENT_VOIDED: 'Premium addition or deletion voided',
+  CLAIMS_ANALYSIS_DOWNLOADED: 'Claims analysis downloaded',
+  POLICY_YEAR_RECORDED: 'Policy year recorded',
+  POLICY_YEAR_UPDATED: 'Policy year edited',
+  RENEWAL_REPORT_SAVED: 'Renewal analysis saved',
+  RENEWAL_REPORT_DOWNLOADED: 'Renewal analysis downloaded',
+  CLAIM_IMPORT_SETTINGS_UPDATED: 'TPA import email settings changed',
+  CLAIM_VIEWED: 'Claim viewed',
+  CLAIMS_LISTED: 'Claims list viewed',
+  TPA_CLAIM_VIEWED: 'TPA claim viewed',
+  CLAIMS_ANALYSIS_VIEWED: 'Claims analysis viewed',
+  CLAIM_ACCESS_DENIED: 'Claim data access refused',
+  TPA_ERROR_REPORT_DOWNLOADED: 'TPA import problems downloaded',
 };
 
 export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
@@ -591,6 +668,7 @@ export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
   APPROVE: 'Approve',
   SEND: 'Send',
   EXPORT: 'Export',
+  VIEW: 'View',
 };
 
 export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
@@ -613,6 +691,9 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   client_plan_default: 'Company default plan',
   eb_employee: 'Employee',
   age_band_set: 'Age band set',
+  tpa_format: 'TPA format',
+  insured_policy: 'Placed policy',
+  renewal: 'Renewal analysis',
 };
 
 /** The actions of one kind, for filtering the log. */

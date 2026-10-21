@@ -45,9 +45,10 @@ interface Recipient {
 
 /** Who a status change emails: the claimant, and HR when configured and switched on. */
 async function recipientsOf(claim: ClaimDoc, session: mongo.ClientSession): Promise<Recipient[]> {
-  const recipients: Recipient[] = [
-    { audience: 'CLAIMANT', email: claim.contactEmail.toLowerCase(), name: claim.employee.name },
-  ];
+  // A claim added by a TPA import has no claimant email (N11): only HR can be told.
+  const recipients: Recipient[] = claim.contactEmail
+    ? [{ audience: 'CLAIMANT', email: claim.contactEmail.toLowerCase(), name: claim.employee.name }]
+    : [];
   const hr = await ClaimHrContactModel.findOne({ clientId: claim.clientId })
     .session(session)
     .lean();

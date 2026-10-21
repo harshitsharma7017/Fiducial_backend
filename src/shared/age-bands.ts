@@ -242,6 +242,22 @@ export const DEFAULT_AGE_BAND_SETS: readonly DefaultAgeBandSet[] = [
     ],
   },
   {
+    seedKey: 'CLAIMS_ANALYSIS',
+    name: 'Claims analysis: 0–10 to Above 70',
+    description:
+      'The claims analysis bands (N10): ten-year bands to 61–70, then Above 70. The client’s exact boundaries await confirmation (CA-1).',
+    bands: [
+      { label: '0–10', min: 0, max: 10 },
+      { label: '11–20', min: 11, max: 20 },
+      { label: '21–30', min: 21, max: 30 },
+      { label: '31–40', min: 31, max: 40 },
+      { label: '41–50', min: 41, max: 50 },
+      { label: '51–60', min: 51, max: 60 },
+      { label: '61–70', min: 61, max: 70 },
+      { label: 'Above 70', min: 71, max: null },
+    ],
+  },
+  {
     seedKey: 'STANDARD',
     name: STANDARD_AGE_BANDS_NAME,
     description:

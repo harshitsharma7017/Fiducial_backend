@@ -1,5 +1,6 @@
 import {
   CLAIM_ACTOR_KINDS,
+  CLAIM_SOURCES,
   CLAIM_DOCUMENT_KINDS,
   CLAIM_EMAIL_AUDIENCES,
   CLAIM_EVENT_TYPES,
@@ -12,6 +13,7 @@ import {
   type ClaimEmailAudience,
   type ClaimEventType,
   type ClaimNotificationStatus,
+  type ClaimSource,
   type ClaimStatus,
   type ClaimType,
   type GhiRelationship,
@@ -30,7 +32,7 @@ export interface ClaimDoc {
   claimNumber: string;
   status: ClaimStatus;
   statusChangedAt: Date;
-  source: 'STAFF' | 'EMPLOYEE_LINK';
+  source: ClaimSource;
   linkId: Types.ObjectId | null;
   clientId: Types.ObjectId;
   ghiCaseId: Types.ObjectId;
@@ -54,8 +56,26 @@ export interface ClaimDoc {
   dischargeDate: string;
   claimType: ClaimType;
   amountClaimed: Types.Decimal128;
-  contactEmail: string;
+  /** Null on a claim added by a TPA import (N11): the TPA gives no email. */
+  contactEmail: string | null;
   contactPhone: string | null;
+  /** N11: settlement as the TPA reports it, apart from the board status; missing before N11. */
+  settlement?: {
+    state: 'SETTLED' | 'NOT_SETTLED';
+    amount: Types.Decimal128 | null;
+    date: string | null;
+    tpaStatus: string;
+    updatedAt: Date;
+  } | null;
+  /** N11: the TPA record the claim's TPA data comes from. */
+  tpa?: {
+    tpaClaimRecordId: Types.ObjectId;
+    tpaCode: string;
+    tpaClaimId: string;
+    sourceStatus: string;
+    importId: Types.ObjectId;
+    importedAt: Date;
+  } | null;
   assignedTo: Types.ObjectId | null;
   createdBy: Types.ObjectId | null;
   updatedBy: Types.ObjectId | null;
@@ -68,7 +88,7 @@ const claimSchema = new Schema<ClaimDoc>(
     claimNumber: { type: String, required: true },
     status: { type: String, enum: CLAIM_STATUSES, required: true },
     statusChangedAt: { type: Date, required: true },
-    source: { type: String, enum: ['STAFF', 'EMPLOYEE_LINK'], required: true },
+    source: { type: String, enum: CLAIM_SOURCES, required: true },
     linkId: { type: Schema.Types.ObjectId, ref: 'ClaimLink', default: null },
     clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
     ghiCaseId: { type: Schema.Types.ObjectId, ref: 'GhiCase', required: true },
@@ -116,8 +136,35 @@ const claimSchema = new Schema<ClaimDoc>(
     dischargeDate: { type: String, required: true },
     claimType: { type: String, enum: CLAIM_TYPES, required: true },
     amountClaimed: { type: Schema.Types.Decimal128, required: true },
-    contactEmail: { type: String, required: true },
+    contactEmail: text,
     contactPhone: text,
+    settlement: {
+      type: new Schema(
+        {
+          state: { type: String, enum: ['SETTLED', 'NOT_SETTLED'], required: true },
+          amount: { type: Schema.Types.Decimal128, default: null },
+          date: text,
+          tpaStatus: { type: String, required: true },
+          updatedAt: { type: Date, required: true },
+        },
+        noId,
+      ),
+      default: undefined,
+    },
+    tpa: {
+      type: new Schema(
+        {
+          tpaClaimRecordId: { type: Schema.Types.ObjectId, ref: 'TpaClaim', required: true },
+          tpaCode: { type: String, required: true },
+          tpaClaimId: { type: String, required: true },
+          sourceStatus: { type: String, required: true },
+          importId: { type: Schema.Types.ObjectId, ref: 'TpaImport', required: true },
+          importedAt: { type: Date, required: true },
+        },
+        noId,
+      ),
+      default: undefined,
+    },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
@@ -129,6 +176,8 @@ claimSchema.index({ status: 1, statusChangedAt: 1 });
 claimSchema.index({ clientId: 1, createdAt: -1 });
 claimSchema.index({ createdAt: -1, _id: -1 });
 claimSchema.index({ linkId: 1 });
+// N11: the board claims of a policy's census member on an admission date (linking TPA records).
+claimSchema.index({ ghiCaseId: 1, 'patient.memberId': 1, admissionDate: 1 });
 
 export const ClaimModel = model<ClaimDoc>('Claim', claimSchema);
 

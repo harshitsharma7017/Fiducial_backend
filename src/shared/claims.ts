@@ -187,6 +187,46 @@ export const ClaimDocumentSchema = z.object({
 });
 export type ClaimDocument = z.infer<typeof ClaimDocumentSchema>;
 
+/** How a claim came to be: staff, an employee's link, or a TPA import (N11). */
+export const CLAIM_SOURCES = ['STAFF', 'EMPLOYEE_LINK', 'TPA_IMPORT'] as const;
+export type ClaimSource = (typeof CLAIM_SOURCES)[number];
+
+export const ClaimSettlementSchema = z.object({
+  state: z.enum(['SETTLED', 'NOT_SETTLED']),
+  amount: z.string().nullable(),
+  date: z.iso.date().nullable(),
+  /** The TPA status it was read from. */
+  tpaStatus: z.string(),
+  updatedAt: IsoDateTimeSchema,
+});
+export type ClaimSettlement = z.infer<typeof ClaimSettlementSchema>;
+export const ClaimTpaLinkSchema = z.object({
+  tpaClaimRecordId: ObjectIdSchema,
+  tpaCode: z.string(),
+  tpaClaimId: z.string(),
+  sourceStatus: z.string(),
+  importId: ObjectIdSchema,
+  importedAt: IsoDateTimeSchema,
+});
+
+/** What TPA imports may do to the board (N11 4): emails are off until the client approves them. */
+export const ClaimImportSettingsSchema = z.strictObject({
+  /** Email the claimant and HR when an import moves a board claim to another status. */
+  notifyOnImportStatusChange: z.boolean(),
+  /** Email when an import adds a claim to the board (in a status that has emails). */
+  notifyOnImportCreate: z.boolean(),
+});
+export type ClaimImportSettings = z.infer<typeof ClaimImportSettingsSchema>;
+export const ClaimImportSettingsResponseSchema = ClaimImportSettingsSchema.extend({
+  updatedAt: IsoDateTimeSchema.nullable(),
+  updatedBy: z.string().nullable(),
+});
+/** The safe default until the client confirms (open question N11-2): no import emails. */
+export const DEFAULT_CLAIM_IMPORT_SETTINGS: ClaimImportSettings = {
+  notifyOnImportStatusChange: false,
+  notifyOnImportCreate: false,
+};
+
 export const ClaimCardSchema = z.object({
   id: ObjectIdSchema,
   claimNumber: z.string(),
@@ -205,6 +245,10 @@ export const ClaimCardSchema = z.object({
   /** The signed-in user may move this claim (assigned to them, or an Admin). */
   canMove: z.boolean(),
   createdAt: IsoDateTimeSchema,
+  /** N11: the TPA reports it settled (a state apart from the board column). */
+  settled: z.boolean().optional(),
+  /** N11: the TPA's own status, for a claim a TPA import has touched. */
+  tpaStatus: z.string().nullable().optional(),
 });
 export type ClaimCard = z.infer<typeof ClaimCardSchema>;
 
@@ -252,6 +296,8 @@ export const CLAIM_EVENT_TYPES = [
   'EMAIL_SENT',
   'EMAIL_FAILED',
   'EMAIL_RETRY_REQUESTED',
+  // N11: a change made by a TPA import (status, settlement), with its notification decision.
+  'TPA_IMPORT',
 ] as const;
 export type ClaimEventType = (typeof CLAIM_EVENT_TYPES)[number];
 export const CLAIM_ACTOR_KINDS = ['STAFF', 'EMPLOYEE', 'SYSTEM'] as const;
@@ -333,7 +379,7 @@ export const ClaimRecordSchema = z.object({
   status: ClaimStatusSchema,
   statusChangedAt: IsoDateTimeSchema,
   daysInStage: z.number().int(),
-  source: z.enum(['STAFF', 'EMPLOYEE_LINK']),
+  source: z.enum(CLAIM_SOURCES),
   client: z.object({ id: ObjectIdSchema, name: z.string() }),
   policy: z.object({
     ghiCaseId: ObjectIdSchema,
@@ -349,15 +395,22 @@ export const ClaimRecordSchema = z.object({
     name: z.string(),
     relationship: GhiRelationshipSchema,
     gender: z.string(),
-    dateOfBirth: z.iso.date(),
+    /** N12: null for users who do not process claims (claims.process). */
+    dateOfBirth: z.iso.date().nullable(),
   }),
   hospital: z.object({ name: z.string(), city: z.string().nullable() }),
   admissionDate: z.iso.date(),
   dischargeDate: z.iso.date(),
   claimType: ClaimTypeSchema,
   amountClaimed: z.string(),
-  contactEmail: z.string(),
+  /** Null on a claim added by a TPA import (the TPA gives no email). */
+  contactEmail: z.string().nullable(),
+  /** N12: masked (XXXXXX3210) for users who do not process claims. */
   contactPhone: z.string().nullable(),
+  /** N11: settlement, kept apart from the board status (open question N11-1). */
+  settlement: ClaimSettlementSchema.nullable().optional(),
+  /** N11: where the claim's TPA data comes from (a TPA import). */
+  tpa: ClaimTpaLinkSchema.nullable().optional(),
   assignedTo: z.object({ id: ObjectIdSchema, name: z.string() }).nullable(),
   documents: z.array(ClaimDocumentSchema),
   /** Required documents not yet uploaded; the claim cannot be Submitted until none are missing. */

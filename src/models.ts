@@ -32,6 +32,15 @@ import { EmployeeIdentityModel } from './modules/employees/employee.model.ts';
 import { ClientPlanDefaultModel } from './modules/family-plans/client-plan-default.model.ts';
 import { FamilyPlanModel } from './modules/family-plans/family-plan.model.ts';
 import { AgeBandSetModel } from './modules/age-bands/age-band-set.model.ts';
+import { RecordedPolicyYearModel, RenewalReportModel } from './modules/renewal/renewal.model.ts';
+import {
+  PremiumAdjustmentModel,
+  TpaClaimEventModel,
+  TpaClaimModel,
+  TpaFormatModel,
+  TpaImportModel,
+  TpaImportRowModel,
+} from './modules/tpa/tpa.model.ts';
 import {
   GhiDispatchModel,
   GhiFileModel,
@@ -94,6 +103,14 @@ const MODELS = [
   EbCensusImportModel,
   FamilyPlanModel,
   AgeBandSetModel,
+  TpaFormatModel,
+  TpaImportModel,
+  TpaImportRowModel,
+  TpaClaimModel,
+  TpaClaimEventModel,
+  PremiumAdjustmentModel,
+  RecordedPolicyYearModel,
+  RenewalReportModel,
   ClientPlanDefaultModel,
   EmployeeIdentityModel,
   EbPolicySnapshotModel,

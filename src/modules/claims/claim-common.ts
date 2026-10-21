@@ -6,6 +6,7 @@ import {
   GHI_RELATIONSHIP_LABELS,
   REQUIRED_CLAIM_DOCUMENTS,
   can,
+  maskPhone,
   type AuditAction,
   type ClaimCard,
   type ClaimDocument,
@@ -235,6 +236,8 @@ export async function toCards(
       : null,
     canMove: mayMove(actor, claim) && CLAIM_TRANSITIONS[claim.status].length > 0,
     createdAt: claim.createdAt.toISOString(),
+    settled: claim.settlement?.state === 'SETTLED',
+    tpaStatus: claim.tpa?.sourceStatus ?? null,
   }));
 }
 
@@ -267,6 +270,8 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
   ]);
   const fileNames = await userNames(files.map((file) => file.uploadedBy));
   const editable = actor.kind === 'STAFF' && mayEdit(actor, claim);
+  // N12: the date of birth and phone only for those who process claims (and the employee's own link).
+  const personal = actor.kind === 'EMPLOYEE' || can(actor.roles, 'claims.process');
   return {
     id: claim._id.toHexString(),
     claimNumber: claim.claimNumber,
@@ -293,7 +298,7 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
       name: claim.patient.name,
       relationship: claim.patient.relationship,
       gender: claim.patient.gender,
-      dateOfBirth: claim.patient.dateOfBirth,
+      dateOfBirth: personal ? claim.patient.dateOfBirth : null,
     },
     hospital: claim.hospital,
     admissionDate: claim.admissionDate,
@@ -301,7 +306,26 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
     claimType: claim.claimType,
     amountClaimed: amountText(claim.amountClaimed),
     contactEmail: claim.contactEmail,
-    contactPhone: claim.contactPhone,
+    contactPhone: personal ? claim.contactPhone : maskPhone(claim.contactPhone),
+    settlement: claim.settlement
+      ? {
+          state: claim.settlement.state,
+          amount: claim.settlement.amount ? amountText(claim.settlement.amount) : null,
+          date: claim.settlement.date,
+          tpaStatus: claim.settlement.tpaStatus,
+          updatedAt: claim.settlement.updatedAt.toISOString(),
+        }
+      : null,
+    tpa: claim.tpa
+      ? {
+          tpaClaimRecordId: claim.tpa.tpaClaimRecordId.toHexString(),
+          tpaCode: claim.tpa.tpaCode,
+          tpaClaimId: claim.tpa.tpaClaimId,
+          sourceStatus: claim.tpa.sourceStatus,
+          importId: claim.tpa.importId.toHexString(),
+          importedAt: claim.tpa.importedAt.toISOString(),
+        }
+      : null,
     assignedTo: claim.assignedTo
       ? {
           id: claim.assignedTo.toHexString(),
@@ -316,7 +340,9 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
     createdBy:
       claim.source === 'EMPLOYEE_LINK'
         ? 'Employee (submission link)'
-        : (names.get(claim.createdBy?.toHexString() ?? '') ?? 'Unknown user'),
+        : claim.source === 'TPA_IMPORT'
+          ? `TPA import (${names.get(claim.createdBy?.toHexString() ?? '') ?? 'unknown user'})`
+          : (names.get(claim.createdBy?.toHexString() ?? '') ?? 'Unknown user'),
     updatedAt: claim.updatedAt.toISOString(),
   };
 }
@@ -355,6 +381,10 @@ export function describeEvent(event: ClaimEventDoc): string {
       return `Email failed: ${event.email?.recipient ?? ''}`;
     case 'EMAIL_RETRY_REQUESTED':
       return `Email retry requested: ${event.detail ?? ''}`;
+    case 'TPA_IMPORT':
+      return event.fromStatus !== event.toStatus && event.toStatus
+        ? `Moved from ${statusLabel(event.fromStatus)} to ${statusLabel(event.toStatus)} by a TPA import${event.detail ? ` (${event.detail})` : ''}`
+        : `Updated by a TPA import${event.detail ? ` (${event.detail})` : ''}`;
   }
 }
 

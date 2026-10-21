@@ -1,4 +1,7 @@
 import {
+  AUDIT_ACTIONS,
+  AUDIT_ENTITIES,
+  type AuditAction,
   AddClaimRemarkRequestSchema,
   AssignClaimRequestSchema,
   ClaimBoardQuerySchema,
@@ -43,7 +46,8 @@ import { z } from 'zod';
 import type { Logger } from '../../lib/logger.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
+import { currentUser, requireClaimPermission } from '../../middleware/require-permission.ts';
+import { writeAudit } from '../audit/audit.service.ts';
 import { route } from '../../middleware/validate.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import type { ClaimActor } from './claim-common.ts';
@@ -96,6 +100,24 @@ const DocumentQuerySchema = z.strictObject({
   disposition: z.enum(['inline', 'attachment']).default('attachment'),
 });
 
+/** A view of claim data (N12): who, what, when; no names, dates of birth or medical detail. */
+async function auditView(
+  req: Request,
+  action: AuditAction,
+  entityId: string,
+  context: Record<string, unknown>,
+) {
+  await writeAudit({
+    userId: currentUser(req).id,
+    action,
+    entity: AUDIT_ENTITIES.CLAIM,
+    entityId,
+    before: null,
+    after: { ...context, outcome: 'ALLOWED' },
+    requestId: req.requestId ?? null,
+  });
+}
+
 export function createClaimsRouter(options: {
   jwtSecret: string;
   mailTransport: MailTransport;
@@ -103,23 +125,35 @@ export function createClaimsRouter(options: {
 }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('claims.view');
-  const processing = requirePermission('claims.process');
-  const admin = requirePermission('claims.admin');
+  // N12: a refused claim request is audited.
+  const view = requireClaimPermission('claims.view');
+  const processing = requireClaimPermission('claims.process');
+  const admin = requireClaimPermission('claims.admin');
   const deps = { transport: options.mailTransport, logger: options.logger };
 
   router.get(
     '/',
     view,
     route({ query: ClaimListQuerySchema }, async ({ query }, req, res) => {
-      res.json(await listClaims(query, actorOf(req)));
+      const list = await listClaims(query, actorOf(req));
+      await auditView(req, AUDIT_ACTIONS.CLAIMS_LISTED, 'list', {
+        filters: query,
+        shown: list.items.length,
+        total: list.total,
+      });
+      res.json(list);
     }),
   );
   router.get(
     '/board',
     view,
     route({ query: ClaimBoardQuerySchema }, async ({ query }, req, res) => {
-      res.json(await claimBoard(query, actorOf(req)));
+      const board = await claimBoard(query, actorOf(req));
+      await auditView(req, AUDIT_ACTIONS.CLAIMS_LISTED, 'board', {
+        filters: query,
+        shown: board.columns.reduce((sum, column) => sum + column.items.length, 0),
+      });
+      res.json(board);
     }),
   );
   router.post(
@@ -215,7 +249,12 @@ export function createClaimsRouter(options: {
     '/:id',
     view,
     route({ params: ClaimParamsSchema }, async ({ params }, req, res) => {
-      res.json(await getClaim(params.id, actorOf(req)));
+      const claim = await getClaim(params.id, actorOf(req));
+      await auditView(req, AUDIT_ACTIONS.CLAIM_VIEWED, params.id, {
+        claimNumber: claim.claimNumber,
+        personalDetailsShown: claim.patient.dateOfBirth !== null,
+      });
+      res.json(claim);
     }),
   );
   router.put(

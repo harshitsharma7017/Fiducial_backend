@@ -92,7 +92,13 @@ describe('Age Band Master (N4)', () => {
 
   it('creates the default sets once, and lets every role read them', async () => {
     expect((await ensureDefaultAgeBandSets()).created).toEqual([]);
-    expect(Object.keys(setIds).sort()).toEqual(['CUSTOM_EXAMPLE', 'OPTION_1', 'STANDARD']);
+    // N10 adds the claims analysis set (0–10 to Above 70).
+    expect(Object.keys(setIds).sort()).toEqual([
+      'CLAIMS_ANALYSIS',
+      'CUSTOM_EXAMPLE',
+      'OPTION_1',
+      'STANDARD',
+    ]);
     for (const role of ROLE_LIST) {
       const list = await request(app).get(AGES).set(bearer(world.tokens[role])).expect(200);
       expect(list.body.items.length).toBeGreaterThanOrEqual(3);

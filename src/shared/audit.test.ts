@@ -123,6 +123,13 @@ describe('audit vocabulary', () => {
       'EB_EMPLOYEE_CREATED',
       // N4 adds the Age Band Master.
       'AGE_BAND_SET_CREATED',
+      // N8 to N10 add TPA formats and imports, premium adjustments, policy years and saved analyses.
+      'TPA_FORMAT_CREATED',
+      'TPA_IMPORT_UPLOADED',
+      'TPA_IMPORT_COMMITTED',
+      'PREMIUM_ADJUSTMENT_RECORDED',
+      'POLICY_YEAR_RECORDED',
+      'RENEWAL_REPORT_SAVED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -205,6 +212,13 @@ describe('audit vocabulary', () => {
       'AGE_BAND_SET_DEACTIVATED',
       'GHI_AGE_BANDS_SELECTED',
       'EB_AGE_BANDS_SELECTED',
+      // N8 to N10.
+      'TPA_FORMAT_UPDATED',
+      'TPA_IMPORT_DISCARDED',
+      'TPA_CLAIM_LINKED',
+      'PREMIUM_ADJUSTMENT_VOIDED',
+      'POLICY_YEAR_UPDATED',
+      'CLAIM_IMPORT_SETTINGS_UPDATED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual([
       'MASTER_ACTIVATED',
@@ -261,6 +275,19 @@ describe('audit vocabulary', () => {
       // N7 adds the RFQ selection summary download.
       'GHI_SELECTION_SUMMARY_DOWNLOADED',
       'EB_SELECTION_SUMMARY_DOWNLOADED',
+      // N10 and N8 add the claims and renewal analysis downloads.
+      'CLAIMS_ANALYSIS_DOWNLOADED',
+      'RENEWAL_REPORT_DOWNLOADED',
+      // N12: the TPA import problems report is audited as an export.
+      'TPA_ERROR_REPORT_DOWNLOADED',
+    ]);
+    // N12 adds the VIEW kind: claim data read, and access refused.
+    expect(auditActionsOfKind('VIEW')).toEqual([
+      'CLAIM_VIEWED',
+      'CLAIMS_LISTED',
+      'TPA_CLAIM_VIEWED',
+      'CLAIMS_ANALYSIS_VIEWED',
+      'CLAIM_ACCESS_DENIED',
     ]);
   });
 });
