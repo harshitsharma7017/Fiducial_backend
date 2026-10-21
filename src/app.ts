@@ -41,6 +41,7 @@ import {
 import { createProposalsRouter, liveCaseOnly } from './modules/proposals/proposals.routes.ts';
 import { createClientApprovalRouter } from './modules/client-approval/client-approval.routes.ts';
 import { createPlacementSlipRouter } from './modules/placement-slip/placement-slip.routes.ts';
+import { createCoverageConfirmationRouter } from './modules/coverage-confirmation/coverage-confirmation.routes.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
 import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
@@ -153,6 +154,15 @@ export function createApp({
   api.use(
     '/proposals',
     createPlacementSlipRouter({
+      ...jwt,
+      gstRatePercent: config.GST_RATE_PERCENT,
+      mailTransport: transport,
+    }),
+  );
+  // Q4: the coverage confirmation (letter / email to the insured), after the case is placed.
+  api.use(
+    '/proposals',
+    createCoverageConfirmationRouter({
       ...jwt,
       gstRatePercent: config.GST_RATE_PERCENT,
       mailTransport: transport,

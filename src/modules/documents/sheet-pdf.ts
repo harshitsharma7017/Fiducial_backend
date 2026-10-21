@@ -4,6 +4,14 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import pdfmake from 'pdfmake';
 import type { Content, TableCell } from 'pdfmake';
+import {
+  CONTENT_WIDTH,
+  DOCUMENT_COLORS,
+  DOCUMENT_FONT,
+  DOCUMENT_FONT_FAMILY,
+  DOCUMENT_LINE_HEIGHT,
+  MARGIN,
+} from './document-theme.ts';
 import { cellText, printColumns, printRows } from './excel-template.ts';
 
 // The document engine's PDF (R-4): each chosen sheet of a filled workbook drawn as a table, within
@@ -19,7 +27,7 @@ const fontDir = join(
   'Roboto',
 );
 pdfmake.setFonts({
-  Roboto: {
+  [DOCUMENT_FONT_FAMILY]: {
     normal: join(fontDir, 'Roboto-Regular.ttf'),
     bold: join(fontDir, 'Roboto-Medium.ttf'),
     italics: join(fontDir, 'Roboto-Italic.ttf'),
@@ -30,10 +38,8 @@ pdfmake.setFonts({
 pdfmake.setUrlAccessPolicy(() => false);
 pdfmake.setLocalAccessPolicy((path) => path.startsWith(fontDir));
 
-/** A4 portrait in points, and the margins used. */
-const PAGE = { width: 595.28, height: 841.89 };
-const MARGIN = { left: 36, right: 36, top: 92, bottom: 44 };
-const CONTENT_WIDTH = PAGE.width - MARGIN.left - MARGIN.right;
+// Page geometry, margins, the palette and fonts come from the shared document theme (Q2) so the
+// Coverage Confirmation Letter and every Excel-drawn document read the same.
 /** Points per Excel character width (Calibri 11). */
 const POINTS_PER_CHARACTER = 5.6;
 const DEFAULT_COLUMN_WIDTH = 8.43;
@@ -259,8 +265,8 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
     layout: {
       hLineWidth: () => 0.5,
       vLineWidth: () => 0.5,
-      hLineColor: () => '#6b7280',
-      vLineColor: () => '#6b7280',
+      hLineColor: () => DOCUMENT_COLORS.gridline,
+      vLineColor: () => DOCUMENT_COLORS.gridline,
       paddingLeft: () => 2,
       paddingRight: () => 2,
       paddingTop: () => 1.5,
@@ -284,16 +290,14 @@ export async function workbookToPdf(
   options: PdfOptions,
 ): Promise<Buffer> {
   const sheets = options.sheets ?? workbook.worksheets.filter((sheet) => sheet.state !== 'hidden');
-  const { logo, address } = options.letterhead;
-  const logoImage = logo
-    ? `data:image/${logo.extension === 'png' ? 'png' : 'jpeg'};base64,${logo.data.toString('base64')}`
-    : null;
+  const { address } = options.letterhead;
+  const logoImage = logoDataUrl(options.letterhead.logo);
 
   const content: Content[] = sheets.flatMap((sheet, index): Content[] => [
     {
       text: sheet.name,
-      fontSize: 7,
-      color: '#6b7280',
+      fontSize: DOCUMENT_FONT.caption,
+      color: DOCUMENT_COLORS.muted,
       margin: [0, 0, 0, 3],
       ...(index > 0 ? { pageBreak: 'before' as const } : {}),
     },
@@ -305,45 +309,75 @@ export async function workbookToPdf(
     pageOrientation: 'portrait',
     pageMargins: [MARGIN.left, MARGIN.top, MARGIN.right, MARGIN.bottom],
     info: { title: options.title, creator: 'Fiducial', producer: 'Fiducial' },
-    defaultStyle: { font: 'Roboto', fontSize: 8, lineHeight: 1.1 },
-    header: () => ({
-      margin: [MARGIN.left, 22, MARGIN.right, 0],
-      stack: [
-        {
-          columns: [
-            logoImage ? { image: logoImage, fit: [130, 42], width: 140 } : { text: '', width: 140 },
-            {
-              text: (address ?? '').replace(/\s*\|\s*/g, ' · ').replace(/\s*\n\s*/g, '\n'),
-              alignment: 'right',
-              fontSize: 7,
-              color: '#374151',
-              width: '*',
-            },
-          ],
-        },
-        {
-          canvas: [
-            {
-              type: 'line',
-              x1: 0,
-              y1: 6,
-              x2: CONTENT_WIDTH,
-              y2: 6,
-              lineWidth: 0.75,
-              lineColor: '#1f3a5f',
-            },
-          ],
-        },
-      ],
-    }),
-    footer: (page: number, pages: number) => ({
-      margin: [MARGIN.left, 14, MARGIN.right, 0],
-      columns: [
-        { text: options.footer, fontSize: 7, color: '#6b7280' },
-        { text: `Page ${page} of ${pages}`, fontSize: 7, color: '#6b7280', alignment: 'right' },
-      ],
-    }),
+    defaultStyle: {
+      font: DOCUMENT_FONT_FAMILY,
+      fontSize: DOCUMENT_FONT.body,
+      lineHeight: DOCUMENT_LINE_HEIGHT,
+    },
+    header: () => documentHeader(logoImage, address),
+    footer: (page: number, pages: number) => documentFooter(options.footer, page, pages),
     content,
   };
   return Buffer.from(await pdfmake.createPdf(definition).getBuffer());
+}
+
+/**
+ * The shared letterhead band (Q2): the broker's logo, the address on the right and the navy rule,
+ * drawn at the top of every page of every generated PDF. Exported so the Coverage Confirmation
+ * Letter (Q4), which pdfmake draws directly, shows the same header.
+ */
+export function documentHeader(logoImage: string | null, address: string | null): Content {
+  return {
+    margin: [MARGIN.left, 22, MARGIN.right, 0],
+    stack: [
+      {
+        columns: [
+          logoImage ? { image: logoImage, fit: [130, 42], width: 140 } : { text: '', width: 140 },
+          {
+            text: (address ?? '').replace(/\s*\|\s*/g, ' · ').replace(/\s*\n\s*/g, '\n'),
+            alignment: 'right',
+            fontSize: DOCUMENT_FONT.letterheadAddress,
+            color: DOCUMENT_COLORS.text,
+            width: '*',
+          },
+        ],
+      },
+      {
+        canvas: [
+          {
+            type: 'line',
+            x1: 0,
+            y1: 6,
+            x2: CONTENT_WIDTH,
+            y2: 6,
+            lineWidth: 0.75,
+            lineColor: DOCUMENT_COLORS.rule,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** The shared footer (Q2): the document reference on the left, "Page X of Y" on the right. */
+export function documentFooter(text: string, page: number, pages: number): Content {
+  return {
+    margin: [MARGIN.left, 14, MARGIN.right, 0],
+    columns: [
+      { text, fontSize: DOCUMENT_FONT.footer, color: DOCUMENT_COLORS.muted },
+      {
+        text: `Page ${page} of ${pages}`,
+        fontSize: DOCUMENT_FONT.footer,
+        color: DOCUMENT_COLORS.muted,
+        alignment: 'right',
+      },
+    ],
+  };
+}
+
+/** A letterhead logo as a pdfmake data URL, or null. Shared by the directly-drawn documents (Q4). */
+export function logoDataUrl(logo: Letterhead['logo']): string | null {
+  return logo
+    ? `data:image/${logo.extension === 'png' ? 'png' : 'jpeg'};base64,${logo.data.toString('base64')}`
+    : null;
 }

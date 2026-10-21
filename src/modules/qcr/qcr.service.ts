@@ -461,6 +461,12 @@ export async function sendQcr(
     }),
   );
   const to = input.to.map((email) => email.toLowerCase());
+  // Q3: the recipients that are the selected insured's own contacts (resolved from this case's
+  // client only), and any additional addresses typed by the sender, kept apart for the audit log
+  // so one insured's contacts can never be silently mixed with another's.
+  const clientEmails = new Set(qcr.recipients.map((item) => item.email.toLowerCase()));
+  const fromClientMaster = to.filter((email) => clientEmails.has(email));
+  const additional = to.filter((email) => !clientEmails.has(email));
   let sent;
   try {
     sent = await deps.transport.send({
@@ -548,6 +554,8 @@ export async function sendQcr(
         before: null,
         after: {
           to: to.join(', '),
+          toClientContacts: fromClientMaster.join(', ') || null,
+          toAdditional: additional.join(', ') || null,
           mailId: mailId.toHexString(),
           result,
           attachment: file.fileName,

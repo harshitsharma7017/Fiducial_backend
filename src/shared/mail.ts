@@ -14,8 +14,14 @@ import { MAX_PROPOSAL_INSURERS, ProposalRecordSchema, type ProposalRecord } from
 // every mail sent for a case. The API and the web app render with the same renderMail(), so a
 // preview is exactly what is sent.
 
-/** The two emails the app sends. */
-export const EMAIL_TEMPLATE_KINDS = ['RFQ', 'REMINDER', 'QCR', 'PLACEMENT_SLIP'] as const;
+/** The emails the app sends. */
+export const EMAIL_TEMPLATE_KINDS = [
+  'RFQ',
+  'REMINDER',
+  'QCR',
+  'PLACEMENT_SLIP',
+  'COVERAGE_CONFIRMATION',
+] as const;
 export const EmailTemplateKindSchema = z.enum(EMAIL_TEMPLATE_KINDS);
 export type EmailTemplateKind = z.infer<typeof EmailTemplateKindSchema>;
 export const EMAIL_TEMPLATE_KIND_LABELS: Record<EmailTemplateKind, string> = {
@@ -23,6 +29,7 @@ export const EMAIL_TEMPLATE_KIND_LABELS: Record<EmailTemplateKind, string> = {
   REMINDER: 'Reminder email',
   QCR: 'QCR email to the insured',
   PLACEMENT_SLIP: 'Placement slip email to the insurer',
+  COVERAGE_CONFIRMATION: 'Coverage confirmation email to the insured',
 };
 
 export const EMAIL_SUBJECT_MAX = 200;

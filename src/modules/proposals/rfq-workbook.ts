@@ -24,6 +24,7 @@ import {
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
+import { TABLE_HEADER_FILL_ARGB } from '../documents/document-theme.ts';
 
 // The RFQ in the client's layout (document 07): premium details for the insurer to fill in,
 // the schedule, Fire by location, risk details and claim details. Amounts are whole rupees.
@@ -49,10 +50,12 @@ const DEFAULT_PRODUCT_LINES = [
 
 /** Indian digit grouping (1,23,45,678) for whole rupees. */
 export const RUPEES = '[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
+// The header tint is the shared document theme's table-header colour (one source for Q2), so the
+// workbook-derived PDFs and the directly-drawn Coverage Confirmation Letter match.
 const HEADER_FILL: ExcelJS.Fill = {
   type: 'pattern',
   pattern: 'solid',
-  fgColor: { argb: 'FFE8EEF6' },
+  fgColor: { argb: TABLE_HEADER_FILL_ARGB },
 };
 
 const amount = (value: string | null) => (value === null ? null : Number(value));

@@ -327,6 +327,38 @@ const ENDPOINTS: Endpoint[] = [
     call: (token) =>
       request(app).get(`/api/v1/proposals/${NO_ID}/mails/${NO_ID}/attachment`).set(bearer(token)),
   },
+  {
+    name: 'GET /proposals/{id}/coverage-confirmation',
+    permission: 'proposals.view',
+    call: (token) =>
+      request(app).get(`/api/v1/proposals/${NO_ID}/coverage-confirmation`).set(bearer(token)),
+  },
+  {
+    name: 'PUT /proposals/{id}/coverage-confirmation',
+    permission: 'proposals.edit',
+    call: (token) =>
+      request(app)
+        .put(`/api/v1/proposals/${NO_ID}/coverage-confirmation`)
+        .set(bearer(token))
+        .send({ confirmedOn: '2026-10-20' }),
+  },
+  {
+    name: 'GET /proposals/{id}/coverage-confirmation/document',
+    permission: 'proposals.export',
+    call: (token) =>
+      request(app)
+        .get(`/api/v1/proposals/${NO_ID}/coverage-confirmation/document`)
+        .set(bearer(token)),
+  },
+  {
+    name: 'POST /proposals/{id}/coverage-confirmation/email',
+    permission: 'proposals.send',
+    call: (token) =>
+      request(app)
+        .post(`/api/v1/proposals/${NO_ID}/coverage-confirmation/email`)
+        .set(bearer(token))
+        .send({ sendId: '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f63', to: ['a@b.example'] }),
+  },
 ];
 
 describe.each(ENDPOINTS)('$name needs $permission', ({ permission, call }) => {

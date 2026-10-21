@@ -45,6 +45,19 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKind, { subject: strin
         '{{senderName}}',
       ].join('\n'),
     },
+    COVERAGE_CONFIRMATION: {
+      subject: 'Confirmation of cover: {{insuredName}} ({{reference}})',
+      body: [
+        'Dear {{contactName}},',
+        '',
+        'We are pleased to confirm that cover for {{insuredName}} has been placed with {{insurerName}} for the policy period {{policyPeriod}}.',
+        '',
+        'Please find attached the coverage confirmation for your records.',
+        '',
+        'Regards,',
+        '{{senderName}}',
+      ].join('\n'),
+    },
     REMINDER: {
       subject: 'Reminder: request for quotation: {{insuredName}} ({{reference}})',
       body: [

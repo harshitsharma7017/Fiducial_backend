@@ -171,6 +171,10 @@ describe('API documentation', () => {
         'POST /api/v1/proposals/{id}/placement-slip/files',
         'GET /api/v1/proposals/{id}/placement-slip/files/{fileId}',
         'PUT /api/v1/proposals/{id}/placement-slip/placed',
+        'GET /api/v1/proposals/{id}/coverage-confirmation',
+        'PUT /api/v1/proposals/{id}/coverage-confirmation',
+        'GET /api/v1/proposals/{id}/coverage-confirmation/document',
+        'POST /api/v1/proposals/{id}/coverage-confirmation/email',
         'GET /api/v1/qcrs',
         'GET /api/v1/placement-slips',
         // Group health (GHI)

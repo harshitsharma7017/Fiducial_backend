@@ -45,10 +45,16 @@ describe('email templates', () => {
   it('seeds every kind with the default wording, once', async () => {
     await ensureEmailTemplates();
     await ensureEmailTemplates();
-    expect(await EmailTemplateModel.countDocuments()).toBe(4);
+    expect(await EmailTemplateModel.countDocuments()).toBe(5);
 
     const items = await listTemplates(readOnlyToken);
-    expect(items.map((item) => item.kind)).toEqual(['RFQ', 'REMINDER', 'QCR', 'PLACEMENT_SLIP']);
+    expect(items.map((item) => item.kind)).toEqual([
+      'RFQ',
+      'REMINDER',
+      'QCR',
+      'PLACEMENT_SLIP',
+      'COVERAGE_CONFIRMATION',
+    ]);
     expect(items[0]).toMatchObject({
       ...DEFAULT_EMAIL_TEMPLATES.RFQ,
       version: 1,
