@@ -13,6 +13,7 @@ import {
   GHI_WAIVER_LABELS,
   formatDate,
   formatIndianNumber,
+  slotText,
   type GhiCaseRecord,
   type GhiCensusSummary,
   type GhiMember,
@@ -21,6 +22,7 @@ import {
   type GhiRequirements,
 } from '../../shared/index.ts';
 import { compareTerms } from './ghi-quote-calc.ts';
+import { gmcFamilyCover } from './products/gmc.ts';
 import { money, type DocumentModel, type SheetModel, type SheetRow } from './ghi-sheet.ts';
 
 // What the GHI RFQ (G5), QCR (G6) and placement slip (G7) say, as sheets. Every figure comes from
@@ -36,8 +38,12 @@ function periodText(record: GhiCaseRecord): string {
   return `${formatDate(record.policyStart)} to ${record.policyEnd ? formatDate(record.policyEnd) : '1 year'}`;
 }
 
-function familyText(requirements: GhiRequirements): string {
-  const family = requirements.familyDefinition;
+function familyText(record: GhiCaseRecord): string {
+  // With a plan, the family is the plan's (Requirement 16.4).
+  if (record.plan) {
+    return `${record.plan.name} v${record.plan.versionNumber}: ${record.plan.slots.map((slot) => slotText(slot)).join('; ')}`;
+  }
+  const family = record.requirements.familyDefinition;
   const parts = ['Employee'];
   if (family.spouse) parts.push('spouse');
   if (family.maxChildren > 0) {
@@ -96,7 +102,7 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
   return [
     { cells: ['Coverage requirements'], style: 'section' },
     label('Employees to be covered', requirements.employeeCount?.toString() ?? 'Not stated'),
-    label('Family definition', familyText(requirements)),
+    label('Family definition', familyText(record)),
     label(
       'Coverage type',
       requirements.coverageType
@@ -127,7 +133,7 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
     ),
     label(
       'Co-payment for parents',
-      requirements.familyDefinition.parents === 'NONE'
+      !gmcFamilyCover({ requirements, planAssignment: record.plan }).parentsCovered
         ? 'Parents not covered'
         : requirements.parentsCoPayPercent === null
           ? 'Not stated'
@@ -197,7 +203,9 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
   };
 }
 
-function claimsSheet(record: GhiCaseRecord): SheetModel {
+export function claimsSheet(record: {
+  requirements: { claims: GhiRequirements['claims'] };
+}): SheetModel {
   const claims = record.requirements.claims;
   return {
     name: 'Claims History',
@@ -443,7 +451,12 @@ export function placementSlipDocument(
   members: readonly (GhiMember & { coveredBy: string | null })[],
   payments: { received: string; references: string[] },
 ): DocumentModel {
-  const terms = compareTerms(record.requirements, quote.terms);
+  const terms = compareTerms(
+    record.requirements,
+    quote.terms,
+    gmcFamilyCover({ requirements: record.requirements, planAssignment: record.plan })
+      .parentsCovered,
+  );
   return {
     title: `GHI Placement Slip ${record.reference} — ${record.client.name}`,
     fileBase: `GHI-Placement-Slip-${record.reference}`,

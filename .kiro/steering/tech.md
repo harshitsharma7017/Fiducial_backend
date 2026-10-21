@@ -21,6 +21,12 @@
   `src/middleware/validate.ts`. Never pass `req.body` or `req.query` into a Mongo filter.
 - **Contracts live in `src/shared/`** and are the source of truth for the frontend's copy. Add request and response
   schemas there, not inline. After changing them, run `npm run shared:sync` in Fiducial_frontend.
+- **Employee Benefits money in `src/shared`** uses `eb-money.ts` (BigInt fixed point, half up), because the web app
+  has no decimal.js; the API's `eb-calc.ts` (Decimal) is pinned to the same results by a unit test.
+- **Configuration copies**: a case keeps copies of its family plan version and age band set; RFQ versions and
+  placements keep their own. Never recalculate a stored copy; recalculate live figures from the census as stored.
+- **Product scope**: GPA and GTLI reuse the GHI collections through a `CaseScope` (`modules/ghi/products/profile.ts`);
+  load cases with their scope so an id of another product answers 404, and keep `/api/v1/ghi` responses unchanged.
 - **Errors** are `{ message, code, details? }`; throw the `AppError` helpers from `src/lib/errors.ts`.
 - **Document every endpoint** with `documentRoute()` next to the route (OpenAPI at `/api/docs`).
 - **Permissions**: guard every non-public route with `requirePermission('<area>.<action>')` after `authenticate()`.

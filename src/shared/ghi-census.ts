@@ -139,6 +139,11 @@ export const GhiMemberParamsSchema = z.strictObject({
 export const GhiCensusIssueSchema = z.object({
   field: z.enum(GHI_CENSUS_FIELDS).nullable(),
   message: z.string(),
+  /** N3: an ERROR keeps the row out of the import; a WARNING does not. Missing means ERROR. */
+  severity: z.enum(['ERROR', 'WARNING']).optional(),
+  /** N3: what to change. */
+  fix: z.string().optional(),
+  code: z.string().optional(),
 });
 export type GhiCensusIssue = z.infer<typeof GhiCensusIssueSchema>;
 
@@ -179,6 +184,14 @@ export const GhiCensusSummarySchema = z.object({
   /** Members whose sum insured is missing although the coverage needs it. */
   missingSumInsured: z.number().int(),
   revision: z.number().int(),
+  /** GTLI only: the free cover limit asked for, and the members above it (Requirement 5.3). */
+  freeCoverLimit: z.string().nullable().optional(),
+  aboveFreeCoverLimit: z.number().int().optional(),
+  /** N4: the age band set the bands come from; null for the standard bands. */
+  ageBands: z.object({ name: z.string(), revision: z.number().int() }).nullable().optional(),
+  /** N4: lives in no band of the case's set, and lives with no valid date of birth. */
+  outsideAgeBands: z.number().int().optional(),
+  ageUnknown: z.number().int().optional(),
 });
 export type GhiCensusSummary = z.infer<typeof GhiCensusSummarySchema>;
 
@@ -237,6 +250,20 @@ export const GhiCensusImportSchema = z.object({
   uploadedAt: IsoDateTimeSchema,
   uploadedBy: z.string(),
   importedAt: IsoDateTimeSchema.nullable(),
+  /** N3 (additive): file warnings, the mode the preview was checked under, the import's counts. */
+  fileWarnings: z.array(z.string()).optional(),
+  mode: z.enum(['ADD_NEW_ONLY', 'ADD_AND_UPDATE']).nullable().optional(),
+  result: z
+    .object({
+      added: z.number().int(),
+      updated: z.number().int(),
+      unchanged: z.number().int(),
+      skipped: z.number().int(),
+      identitiesCreated: z.number().int(),
+      identitiesReused: z.number().int(),
+    })
+    .nullable()
+    .optional(),
 });
 export type GhiCensusImport = z.infer<typeof GhiCensusImportSchema>;
 
@@ -284,6 +311,13 @@ export const CorrectGhiImportRowRequestSchema = z.strictObject({
 
 export const CommitGhiImportRequestSchema = z.strictObject({
   policy: z.enum(GHI_IMPORT_POLICIES),
+  /** N3 (optional): without it, GMC imports as before (design D8). */
+  mode: z.enum(['ADD_NEW_ONLY', 'ADD_AND_UPDATE']).optional(),
+});
+
+/** N3 (optional): the preview of a GMC file under an import mode. */
+export const GhiImportPreviewQuerySchema = z.strictObject({
+  mode: z.enum(['ADD_NEW_ONLY', 'ADD_AND_UPDATE']).optional(),
 });
 
 export const GhiCommitResultSchema = z.object({

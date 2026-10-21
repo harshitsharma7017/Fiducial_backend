@@ -718,6 +718,8 @@ export async function claimPolicies(clientId?: string): Promise<{ items: ClaimPo
     {
       policy: { $ne: null },
       stage: { $ne: 'CLOSED' },
+      // GMC only (16.9): GPA and GTLI placements never carry a policy.
+      product: { $in: [null, 'GMC'] },
       ...(clientId ? { clientId: new Types.ObjectId(clientId) } : {}),
     },
     { reference: 1, clientId: 1, policy: 1 },

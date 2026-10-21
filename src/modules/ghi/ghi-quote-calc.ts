@@ -111,6 +111,8 @@ const WAITING_FOR_WAIVER: Partial<
 export function compareTerms(
   requested: GhiRequirementsInput,
   offered: GhiQuoteTermsInput,
+  /** Whether the cover includes parents (design D6); the Data Sheet's family definition when left out. */
+  parentsCovered: boolean = requested.familyDefinition.parents !== 'NONE',
 ): ComparedRow[] {
   const rows: ComparedRow[] = [];
   const add = (key: string, label: string, asked: string, given: string, kind: GhiComparison) =>
@@ -184,7 +186,6 @@ export function compareTerms(
     yesNo(offered.preExistingCovered),
     compareYesNo(requested.preExistingDiseases.covered, offered.preExistingCovered),
   );
-  const parentsCovered = requested.familyDefinition.parents !== 'NONE';
   add(
     'parentsCoPayPercent',
     'Co-payment for parents',
@@ -240,8 +241,9 @@ export function compareTerms(
 export function deviationsOf(
   requested: GhiRequirementsInput,
   offered: GhiQuoteTermsInput,
+  parentsCovered?: boolean,
 ): GhiDeviation[] {
-  return compareTerms(requested, offered).flatMap((row) =>
+  return compareTerms(requested, offered, parentsCovered).flatMap((row) =>
     row.kind === 'DEVIATION' || row.kind === 'MISSING'
       ? [
           {

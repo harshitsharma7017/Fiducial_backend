@@ -1,4 +1,6 @@
 import {
+  AssignEbPlanRequestSchema,
+  GhiImportPreviewQuerySchema,
   CloseGhiCaseRequestSchema,
   CommitGhiImportRequestSchema,
   CorrectGhiImportRowRequestSchema,
@@ -49,6 +51,7 @@ import {
   deleteMember,
   discardImport,
   getImport,
+  importErrorReport,
   listImports,
   listMembers,
   updateMember,
@@ -67,6 +70,8 @@ import {
 } from './ghi-cases.service.ts';
 import { loadCase, type Actor } from './ghi-common.ts';
 import { caseFile, listFiles, uploadFile } from './ghi-files.service.ts';
+import { assignPlan } from './eb-plan-assignment.service.ts';
+import { GMC_SCOPE } from './products/profile.ts';
 
 // Group health cases (G1 to G3) under /api/v1/ghi. They use the proposal permissions, as a GHI
 // case is a proposal of another line of business: viewing proposals.view, creating
@@ -84,7 +89,7 @@ export function sendFile(
   res.setHeader('Content-Type', file.contentType);
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename="${file.fileName.replace(/[^\w.\- ]/g, '_')}"`,
+    `attachment; filename="${file.fileName.replace(/[^\w.\-+ ]/g, '_')}"`,
   );
   res.send(file.data);
 }
@@ -147,6 +152,17 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
       { params: GhiCaseParamsSchema, body: GhiRequirementsInputSchema },
       async ({ params, body }, req, res) => {
         res.json(await saveRequirements(params.id, body, actorOf(req)));
+      },
+    ),
+  );
+  router.put(
+    '/cases/:id/plan',
+    edit,
+    route(
+      { params: GhiCaseParamsSchema, body: AssignEbPlanRequestSchema },
+      async ({ params, body }, req, res) => {
+        await assignPlan(GMC_SCOPE, params.id, body.planId, actorOf(req));
+        res.json(await getCase(params.id));
       },
     ),
   );
@@ -263,9 +279,24 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.get(
     '/cases/:id/census/imports/:importId',
     view,
-    route({ params: GhiImportParamsSchema }, async ({ params }, _req, res) => {
-      res.json(await getImport(params.id, params.importId));
-    }),
+    route(
+      { params: GhiImportParamsSchema, query: GhiImportPreviewQuerySchema },
+      async ({ params, query }, _req, res) => {
+        res.json(await getImport(params.id, params.importId, query.mode));
+      },
+    ),
+  );
+  router.get(
+    '/cases/:id/census/imports/:importId/error-report',
+    view,
+    route(
+      { params: GhiImportParamsSchema, query: GhiImportPreviewQuerySchema },
+      async ({ params, query }, req, res) => {
+        const file = await importErrorReport(params.id, params.importId, actorOf(req), query.mode);
+        res.setHeader('Cache-Control', 'no-store');
+        sendFile(res, { ...file, contentType: XLSX_CONTENT_TYPE });
+      },
+    ),
   );
   router.put(
     '/cases/:id/census/imports/:importId/rows/:row',
@@ -285,7 +316,9 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
     route(
       { params: GhiImportParamsSchema, body: CommitGhiImportRequestSchema },
       async ({ params, body }, req, res) => {
-        res.json(await commitImport(params.id, params.importId, body.policy, actorOf(req)));
+        res.json(
+          await commitImport(params.id, params.importId, body.policy, actorOf(req), body.mode),
+        );
       },
     ),
   );
@@ -391,6 +424,14 @@ for (const item of [
   },
   {
     method: 'put',
+    path: `${base}/plan`,
+    summary: 'Assign or change the family plan (N2; optional on GMC cases)',
+    permission: 'proposals.edit',
+    body: AssignEbPlanRequestSchema,
+    response: GhiCaseRecordSchema,
+  },
+  {
+    method: 'put',
     path: `${base}/insurers`,
     summary: 'Choose up to five insurers for the RFQ',
     permission: 'proposals.edit',
@@ -480,9 +521,18 @@ for (const item of [
   {
     method: 'get',
     path: `${base}/census/imports/{importId}`,
-    summary: 'A checked census file with each row’s problems',
+    summary: 'A checked census file with each row’s problems (optionally under an import mode)',
     permission: 'proposals.view',
+    query: GhiImportPreviewQuerySchema,
     response: GhiCensusImportSchema,
+  },
+  {
+    method: 'get',
+    path: `${base}/census/imports/{importId}/error-report`,
+    summary: 'The census file’s rows with issues as an Excel error report',
+    permission: 'proposals.view',
+    query: GhiImportPreviewQuerySchema,
+    file: true,
   },
   {
     method: 'put',

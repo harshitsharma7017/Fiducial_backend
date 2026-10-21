@@ -1,9 +1,15 @@
 import {
   AUDIT_ACTIONS,
+  EB_PRODUCT_NAMES,
+  EB_REFERENCE_PREFIX,
   ERROR_CODES,
   ROLES,
   can,
   emptyGhiRequirements,
+  DEFAULT_NOMINEE_REQUIREMENT,
+  emptyGpaRequirements,
+  emptyGtliRequirements,
+  type EbProduct,
   type CreateGhiCaseRequest,
   type GhiCaseListQuery,
   type GhiCaseListResponse,
@@ -23,10 +29,14 @@ import { ClientModel } from '../clients/client.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { CounterModel } from '../proposals/proposal.model.ts';
 import { UserModel } from '../users/user.model.ts';
+import { initialAssignment, planAudit } from './eb-plan-assignment.service.ts';
+import { gmcFamilyCover } from './products/gmc.ts';
+import { GMC_SCOPE, scopeOf, type CaseScope } from './products/profile.ts';
 import {
   advanceStage,
   assertEditable,
   assertOpen,
+  assertWritable,
   auditCase,
   caseAuditView,
   ghiCaseNotFound,
@@ -49,15 +59,19 @@ function istYear(now: Date): string {
   );
 }
 
-/** GHI-2026-0001: its own yearly series, apart from Property's PRP numbers. */
-async function nextReference(session: mongo.ClientSession): Promise<string> {
+/**
+ * GHI-2026-0001 (GMC), GPA-2026-0001, GTLI-2026-0001: each product's own yearly series in IST,
+ * apart from Property's PRP numbers (Requirements 1.6, 16.8).
+ */
+async function nextReference(product: EbProduct, session: mongo.ClientSession): Promise<string> {
   const year = istYear(new Date());
+  const prefix = EB_REFERENCE_PREFIX[product];
   const counter = await CounterModel.findOneAndUpdate(
-    { _id: `ghi-${year}` },
+    { _id: `${prefix.toLowerCase()}-${year}` },
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: 'after', session },
   ).lean();
-  return `GHI-${year}-${String(counter?.seq ?? 1).padStart(4, '0')}`;
+  return `${prefix}-${year}-${String(counter?.seq ?? 1).padStart(4, '0')}`;
 }
 
 async function assertOwner(ownerId: string): Promise<void> {
@@ -82,6 +96,32 @@ export async function createCase(
   actor: Actor,
   options: { defaultGstRatePercent: string },
 ): Promise<GhiCaseRecord> {
+  const created = await createCaseOf('GMC', input, actor, options);
+  return getCase(created.id);
+}
+
+/** The Data Sheet a new case of the product starts with. */
+function emptyRequirementsOf(product: EbProduct) {
+  // A new GPA or GTLI case asks for a nominee on each employee's row (N5, N6; open question NM-1).
+  if (product === 'GPA')
+    return { ...emptyGpaRequirements(), nominees: DEFAULT_NOMINEE_REQUIREMENT };
+  if (product === 'GTLI')
+    return { ...emptyGtliRequirements(), nominees: DEFAULT_NOMINEE_REQUIREMENT };
+  return emptyGhiRequirements();
+}
+
+/**
+ * Creates a GMC, GPA or GTLI case (Requirement 1). The company and staff are checked before the
+ * transaction, so a refused request takes no reference number (1.9). The reference continues the
+ * product's own yearly series (1.6, 16.8). The plan comes from the company's default, else GTLI
+ * Self only for GTLI, else none (15.2, 5.2, 15.8); both are audited in the same transaction.
+ */
+export async function createCaseOf(
+  product: EbProduct,
+  input: CreateGhiCaseRequest,
+  actor: Actor,
+  options: { defaultGstRatePercent: string },
+): Promise<{ id: string; product: EbProduct; reference: string }> {
   const client = await ClientModel.findById(input.clientId, { name: 1 }).lean();
   if (!client) {
     throw validationError([{ location: 'body', path: 'clientId', message: 'Choose a client' }]);
@@ -89,13 +129,23 @@ export async function createCase(
   if (input.ownerId) await assertOwner(input.ownerId);
   const userId = new Types.ObjectId(actor.id);
   const now = new Date();
+  const scope = scopeOf(product);
   // The case keeps the GST rate in force today, as a Property proposal does (M-8).
   const gstRatePercent = await taxRatePercentOn('GST', istDay(now), options.defaultGstRatePercent);
-  const id = await withTransaction(async (session) => {
+  return withTransaction(async (session) => {
+    const reference = await nextReference(product, session);
+    const planAssignment = await initialAssignment(
+      product,
+      client._id,
+      input.policyStart ?? istDay(now),
+      userId,
+      session,
+    );
     const [doc] = await GhiCaseModel.create(
       [
         {
-          reference: await nextReference(session),
+          product,
+          reference,
           type: input.type,
           stage: 'CREATED',
           closedReason: null,
@@ -107,19 +157,29 @@ export async function createCase(
           existingInsurer: input.existingInsurer,
           existingPolicyNumber: input.existingPolicyNumber,
           gstRatePercent: toDecimal128(gstRatePercent),
-          requirements: emptyGhiRequirements(),
+          requirements: emptyRequirementsOf(product),
           requirementsSaved: false,
           requirementsRevision: 0,
           censusRevision: 0,
           insurers: [],
           finalQcr: null,
           policy: null,
+          ...(planAssignment ? { planAssignment } : {}),
           activity: [
             {
               at: now,
               actorId: userId,
-              message: `Group health ${input.type === 'RENEWAL' ? 'renewal' : 'new business'} case created for ${client.name}`,
+              message: `${product === 'GMC' ? 'Group health' : EB_PRODUCT_NAMES[product]} ${input.type === 'RENEWAL' ? 'renewal' : 'new business'} case created for ${client.name}`,
             },
+            ...(planAssignment
+              ? [
+                  {
+                    at: now,
+                    actorId: userId,
+                    message: `Family plan: ${planAssignment.name} v${planAssignment.versionNumber} (${planAssignment.source === 'COMPANY_DEFAULT' ? 'the company’s default' : 'GTLI Self only'})`,
+                  },
+                ]
+              : []),
           ],
           createdBy: userId,
           updatedBy: userId,
@@ -128,22 +188,35 @@ export async function createCase(
       { session },
     );
     if (!doc) throw new Error('Case was not created');
+    const id = doc._id.toHexString();
     await auditCase(
       actor,
       AUDIT_ACTIONS.GHI_CASE_CREATED,
-      doc._id.toHexString(),
+      id,
       null,
       caseAuditView(doc.toObject()),
       session,
+      scope,
     );
-    return doc._id.toHexString();
+    if (planAssignment) {
+      await auditCase(
+        actor,
+        AUDIT_ACTIONS.EB_PLAN_ASSIGNED,
+        id,
+        null,
+        { ...planAudit(planAssignment), source: planAssignment.source },
+        session,
+        scope,
+      );
+    }
+    return { id, product, reference };
   });
-  return getCase(id);
 }
 
 /** Cases, most recently changed first, searchable by reference or client, with page numbers. */
 export async function listCases(query: GhiCaseListQuery): Promise<GhiCaseListResponse> {
-  const filter: QueryFilter<GhiCaseDoc> = {};
+  // /ghi lists GMC cases only (Requirement 2.2); a stored case without a product is GMC.
+  const filter: QueryFilter<GhiCaseDoc> = { product: { $in: [null, 'GMC'] } };
   if (query.stage) filter.stage = query.stage;
   if (query.type) filter.type = query.type;
   if (query.q) {
@@ -182,6 +255,7 @@ export async function listCases(query: GhiCaseListQuery): Promise<GhiCaseListRes
   return {
     items: docs.map((doc) => ({
       id: doc._id.toHexString(),
+      product: doc.product ?? 'GMC',
       reference: doc.reference,
       type: doc.type,
       stage: doc.stage,
@@ -208,8 +282,19 @@ export async function updateCase(
   input: UpdateGhiCaseRequest,
   actor: Actor,
 ): Promise<GhiCaseRecord> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  await updateCaseOf(id, input, actor, GMC_SCOPE);
+  return getCase(id);
+}
+
+/** Changes a case's dates, staff and expiring policy (Requirement 2.5), for any product. */
+export async function updateCaseOf(
+  id: string,
+  input: UpdateGhiCaseRequest,
+  actor: Actor,
+  scope: CaseScope,
+): Promise<void> {
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const issues: { location: 'body'; path: string; message: string }[] = [];
   if (input.policyEnd && !input.policyStart) {
     issues.push({
@@ -267,23 +352,39 @@ export async function updateCase(
       caseAuditView(doc),
       caseAuditView(updated),
       session,
+      scope,
     );
   });
-  return getCase(id);
 }
 
 export async function closeCase(id: string, reason: string, actor: Actor): Promise<GhiCaseRecord> {
-  const doc = await loadCase(id);
+  await closeCaseOf(id, reason, actor, GMC_SCOPE);
+  return getCase(id);
+}
+
+/** Closes a case that is not placed, with its reason (Requirements 3.5, 3.10). */
+export async function closeCaseOf(
+  id: string,
+  reason: string,
+  actor: Actor,
+  scope: CaseScope,
+): Promise<void> {
+  const doc = await loadCase(id, undefined, scope);
   assertOpen(doc);
   if (doc.policy)
     throw conflict(
       ERROR_CODES.CONFLICT,
       'The policy is recorded: the case is complete and cannot be closed.',
     );
+  if (doc.placement)
+    throw conflict(
+      ERROR_CODES.EB_PLACED,
+      'The placement slip has been issued: a placed case is complete and cannot be closed.',
+    );
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {
     const result = await GhiCaseModel.updateOne(
-      { _id: doc._id, stage: { $ne: 'CLOSED' }, policy: null },
+      { _id: doc._id, stage: { $ne: 'CLOSED' }, policy: null, placement: { $in: [null] } },
       {
         $set: { stage: 'CLOSED', closedReason: reason, updatedBy: actorId },
         $push: { activity: { at: new Date(), actorId, message: `Case closed: ${reason}` } },
@@ -298,9 +399,9 @@ export async function closeCase(id: string, reason: string, actor: Actor): Promi
       { stage: doc.stage },
       { stage: 'CLOSED', reason },
       session,
+      scope,
     );
   });
-  return getCase(id);
 }
 
 /**
@@ -315,6 +416,19 @@ export async function saveRequirements(
 ): Promise<GhiCaseRecord> {
   const doc = await loadCase(id);
   assertEditable(doc);
+  // Moved from the Data Sheet schema (design D6): with a plan, the plan says who is covered.
+  if (
+    input.parentsCoPayPercent !== null &&
+    !gmcFamilyCover({ requirements: input, planAssignment: doc.planAssignment }).parentsCovered
+  ) {
+    throw validationError([
+      {
+        location: 'body',
+        path: 'parentsCoPayPercent',
+        message: 'Parents are not covered: leave the co-payment blank',
+      },
+    ]);
+  }
   const actorId = new Types.ObjectId(actor.id);
   const affectsCensus =
     JSON.stringify([
@@ -381,8 +495,18 @@ export async function setInsurers(
   input: SetGhiInsurersRequest,
   actor: Actor,
 ): Promise<GhiCaseRecord> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  await setInsurersOf(id, input, actor, GMC_SCOPE);
+  return getCase(id);
+}
+
+export async function setInsurersOf(
+  id: string,
+  input: SetGhiInsurersRequest,
+  actor: Actor,
+  scope: CaseScope,
+): Promise<void> {
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const wanted = input.insurerIds.map((insurerId) => new Types.ObjectId(insurerId));
   const known = await InsurerModel.find({ _id: { $in: wanted } }, { active: 1 }).lean();
   const kept = new Map(doc.insurers.map((item) => [item.insurerId.toHexString(), item]));
@@ -448,7 +572,7 @@ export async function setInsurers(
       },
       { session },
     );
-    if (result.matchedCount === 0) throw ghiCaseNotFound();
+    if (result.matchedCount === 0) throw ghiCaseNotFound(scope);
     await auditCase(
       actor,
       AUDIT_ACTIONS.GHI_INSURERS_UPDATED,
@@ -456,9 +580,9 @@ export async function setInsurers(
       { insurerIds: doc.insurers.map((item) => item.insurerId.toHexString()) },
       { insurerIds: input.insurerIds },
       session,
+      scope,
     );
   });
-  return getCase(id);
 }
 
 /** Records that an insurer declined to quote, with its reason. */
@@ -468,8 +592,19 @@ export async function declineInsurer(
   reason: string,
   actor: Actor,
 ): Promise<GhiCaseRecord> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  await declineInsurerOf(id, insurerId, reason, actor, GMC_SCOPE);
+  return getCase(id);
+}
+
+export async function declineInsurerOf(
+  id: string,
+  insurerId: string,
+  reason: string,
+  actor: Actor,
+  scope: CaseScope,
+): Promise<void> {
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const item = doc.insurers.find((insurer) => insurer.insurerId.toHexString() === insurerId);
   if (!item)
     throw validationError([
@@ -505,7 +640,7 @@ export async function declineInsurer(
       { insurerId, status: item.status },
       { insurerId, status: 'DECLINED', reason },
       session,
+      scope,
     );
   });
-  return getCase(id);
 }

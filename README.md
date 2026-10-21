@@ -492,6 +492,79 @@ The occupancy and pincode masters are versioned and edited in Excel, never in pl
 - The same file uploaded again creates nothing while its versions are draft or active; once superseded it uploads
   as a new draft, which is how an older master is restored.
 
+## Employee Benefits: GMC, GPA and GTLI (N1 to N3)
+
+GMC is the existing group health case (`/api/v1/ghi`, unchanged apart from optional additions). GPA and GTLI cases
+use the same collections with a `product` field and their own routes, `/api/v1/eb/gpa/...` and
+`/api/v1/eb/gtli/...`, whose paths mirror the GHI ones. Their stages are Data Sheet → RFQ → QCR → Approval (the
+client's decision is recorded here) → Payment → Placement Slip; issuing the slip places the case and freezes its
+census, plan copy and agreed premium in an append-only snapshot. An id of another product or company answers 404.
+
+- **Data Sheets** (`src/shared/eb-requirements.ts`): GPA asks the sum insured basis (flat, graded or a multiple of
+  salary with an optional cap), the four covers (Required / Not required), temporary total disablement terms and how
+  dependants' sums insured are set; GTLI asks the employee count, the basis and the free cover limit (flagged, not
+  enforced). Strict objects: a field of GMC or of the other product is refused.
+- **Family Plan Master** (`/api/v1/family-plans`, `src/modules/family-plans/`): plans per product with Draft and
+  Active versions (slots, relationships, maximums, required minimums, the parents / parents-in-law mixing rule, dates
+  that never overlap). Every rule is checked at once by `PlanVersionInputSchema`. Plans are never deleted; a plan can
+  be deactivated after the open cases using it are listed. Seven default plans are created at startup, each awaiting
+  client confirmation. A case keeps a copy of its plan version (`PUT .../cases/:id/plan`), so later versions never
+  change it; a company can set a default plan per product.
+- **Shared employee identity** (`src/modules/employees/`): one identity per company and employee ID, shared by the
+  company's GMC, GPA and GTLI Self members; a row that disagrees with it is refused, and members of one ID that
+  disagree are "unresolved" until a user resolves them on the company page.
+- **Census** (`src/shared/eb-census-rules.ts`, the pure Census_Validator): families are checked against the case's
+  plan (slots, relationship maximums, mixing, a dependant needs its Self row, duplicates), ages, genders and sums
+  insured against the Data Sheet. Seven provisional templates (`GET /api/v1/eb/census-templates`); upload, preview by
+  mode, row corrections, an error report, and an import by policy (All valid / Valid only) and mode (Add new only /
+  Add and update) in one transaction. Re-importing the same rows changes nothing. Manual members get the same checks.
+  Dates are day first (DD/MM/YYYY) or Excel dates.
+
+| Routes                                                                       | Permission          |
+| ---------------------------------------------------------------------------- | ------------------- |
+| `GET /eb/cases`, `GET /eb/{gpa,gtli}/cases/:id` and every case read          | `proposals.view`    |
+| `GET /eb/census-templates`, `GET /eb/companies/:clientId/employees`          | `proposals.view`    |
+| `POST /eb/cases`                                                             | `proposals.create`  |
+| Case edits: Data Sheet, plan, insurers, members, imports, quotes, QCR drafts | `proposals.edit`    |
+| Client decision, payments, issuing the placement slip, files                 | `proposals.edit`    |
+| `POST /eb/companies/:clientId/employees/resolve`, `PUT .../employees/:id`    | `proposals.edit`    |
+| RFQ and QCR decisions                                                        | `proposals.approve` |
+| RFQ and QCR mail, marking the RFQ sent                                       | `proposals.send`    |
+| RFQ, QCR and placement slip documents                                        | `proposals.export`  |
+| `GET /family-plans`, `GET /family-plans/:planId`                             | `masters.view`      |
+| Every family plan change, `GET /family-plans/:planId/open-cases`             | `masters.manage`    |
+| `GET /eb/companies/:clientId/plan-defaults`                                  | `clients.view`      |
+| `PUT /eb/companies/:clientId/plan-defaults/:product`                         | `clients.manage`    |
+
+The open questions, the provisional templates, the default plans and the design points to confirm are in
+`docs/OPEN_ITEMS.md` (Employee Benefits).
+
+## Age bands, GPA rules, GTLI sum assured and the RFQ selection summary (N4 to N7)
+
+- **Age Band Master** (`/api/v1/age-bands`, `src/modules/age-bands/`): named sets of bands checked by
+  `AgeBandSetInputSchema` (increasing, no overlap, no gap). A case takes a copy of a set (`PUT …/cases/{id}/age-bands`);
+  the census summary, the RFQ and the selection summary follow it. Ages are completed years on the case's reference
+  date; members outside the bands or without a valid date of birth are reported, never put in a band.
+- **GPA cover by relationship** (`BY_RELATIONSHIP` dependant basis): a percentage, a fixed amount, the employee's
+  amount or the member's own, per relationship; worked out by the Census_Validator (`memberCoverage`), with the basis
+  shown beside each amount.
+- **GTLI (and GPA) salary input**: annual salary, or monthly salary with annual CTC = monthly × 12; sum assured =
+  annual CTC × multiplier, half up, capped at the optional maximum (Decimal in the API, BigInt in the web app).
+- **Nominees**: one per member (name, relationship, date of birth or age), required as the Data Sheet says.
+- **RFQ Selection Summary Sheet** (`src/shared/rfq-summary.ts`, `selection-summary.service.ts`): employees and lives
+  by cover, the age band × cover matrix, gender and relationship counts, cover by relationship. Preview, Excel and
+  PDF; added to each RFQ version, which keeps its copy.
+
+| Routes                                                                             | Permission         |
+| ---------------------------------------------------------------------------------- | ------------------ |
+| `GET /age-bands`, `GET /age-bands/:setId`, `GET /age-bands/:setId/cases`           | `masters.view`     |
+| `POST /age-bands`, `PUT /age-bands/:setId`, `POST …/activate`, `…/deactivate`      | `masters.manage`   |
+| `PUT /{ghi,eb/gpa,eb/gtli}/cases/:id/age-bands`                                    | `proposals.edit`   |
+| `GET …/cases/:id/rfq/selection-summary`, `…/rfq/versions/:rfqId/selection-summary` | `proposals.view`   |
+| `GET …/cases/:id/rfq/selection-summary/document`                                   | `proposals.export` |
+
+Open questions and decisions: `docs/OPEN_ITEMS.md` (N4 to N7).
+
 ## Security notes
 
 - Passwords are hashed with argon2id (12-character minimum). Every sign-in failure returns the same error; 5 failures

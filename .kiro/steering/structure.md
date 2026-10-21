@@ -39,11 +39,26 @@ src/
                          (census-rules.ts and census-summary.ts, pure), census template and import, RFQ versions
                          and mails, quotes and QCR (ghi-quote-calc.ts, pure), final QCR, payments, placement slip,
                          policy; documents described once (ghi-sheet.ts) for Excel, PDF and preview
+                         Employee Benefits beside it: products/ (CaseScope for GMC, GPA, GTLI; gmc.ts), eb-*.service.ts
+                         (GPA/GTLI cases, quotes, QCR, client decision, payments, placement and snapshots), the
+                         Census_Validator wiring (eb-census-context.ts), eb-census-import.service.ts and
+                         eb-census-template.ts (seven provisional templates, error report), eb-product.routes.ts
+                         (/eb/gpa, /eb/gtli) and eb.routes.ts (/eb lists, templates, company employees, defaults)
+                         N7: selection-summary.service.ts and selection-summary-document.ts (the RFQ Selection
+                         Summary Sheet), case-configuration.routes.ts (age bands and summary on every product)
+    age-bands/           Age Band Master (N4): sets, default sets at startup, case-bands.ts (a case's copy)
+    family-plans/        Family Plan Master (N2): versioned plans, default plans at startup (default-plans.ts),
+                         company default plans, /family-plans routes
+    employees/           shared employee identity (N1/N3): identities per company and employee key, linking at
+                         startup (employee-link.ts), update and resolve
     imports/             Excel templates, sample rows, per-row preview and import of chosen valid rows
     rating/              calculateFire() (pure), extension points, POST /rating/fire
     health/
   scripts/               seed-admin.ts, import-masters.ts, write-import-samples.ts
-  shared/                Zod schemas, enums, types, formatters (copied to Fiducial_frontend)
+  shared/                Zod schemas, enums, types, formatters (copied to Fiducial_frontend); Employee Benefits:
+                         eb*.ts (products, Data Sheets, quotes, workflow, census, eb-census-rules.ts the pure
+                         Census_Validator, eb-import-plan.ts, eb-money.ts BigInt money), family-plans.ts,
+                         age-bands.ts, eb-nominees.ts, rfq-summary.ts (N4 to N7)
 test/                    Supertest integration tests and helpers (setup/ starts the in-memory replica set)
 data/client-formats/     the client's blank Excel formats (reference only; no data is kept in the repo)
 docs/                    project PDFs and OPEN_ITEMS.md

@@ -19,7 +19,19 @@ import { AddonFavouritesModel } from './modules/clients/addon-favourites.model.t
 import { ClientLocationModel } from './modules/clients/client-location.model.ts';
 import { ClientModel } from './modules/clients/client.model.ts';
 import { GhiCaseModel } from './modules/ghi/ghi-case.model.ts';
-import { GhiCensusImportModel, GhiMemberModel } from './modules/ghi/ghi-census.model.ts';
+import {
+  EbCensusImportModel,
+  GhiCensusImportModel,
+  GhiMemberModel,
+} from './modules/ghi/ghi-census.model.ts';
+import {
+  EbPolicySnapshotMemberModel,
+  EbPolicySnapshotModel,
+} from './modules/ghi/eb-placement.model.ts';
+import { EmployeeIdentityModel } from './modules/employees/employee.model.ts';
+import { ClientPlanDefaultModel } from './modules/family-plans/client-plan-default.model.ts';
+import { FamilyPlanModel } from './modules/family-plans/family-plan.model.ts';
+import { AgeBandSetModel } from './modules/age-bands/age-band-set.model.ts';
 import {
   GhiDispatchModel,
   GhiFileModel,
@@ -78,6 +90,14 @@ const MODELS = [
   ClaimLinkModel,
   ClaimEmailTemplateModel,
   ClaimHrContactModel,
+  // Employee Benefits (GPA, GTLI), family plans and employee identities: new collections only.
+  EbCensusImportModel,
+  FamilyPlanModel,
+  AgeBandSetModel,
+  ClientPlanDefaultModel,
+  EmployeeIdentityModel,
+  EbPolicySnapshotModel,
+  EbPolicySnapshotMemberModel,
 ];
 
 /**

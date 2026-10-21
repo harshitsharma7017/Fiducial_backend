@@ -24,6 +24,7 @@ import {
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { assertCaseFiles, fileNames } from './ghi-files.service.ts';
 import { deviationsOf, premiumOf } from './ghi-quote-calc.ts';
+import { gmcFamilyCover } from './products/gmc.ts';
 import { GhiQuoteModel, type GhiQuoteDoc } from './ghi-workflow.model.ts';
 
 // Insurers' quotes (G6): a draft can change until it is recorded; a recorded (final) version
@@ -62,7 +63,11 @@ export function toQuote(
       id: fileId.toHexString(),
       fileName: names.files.get(fileId.toHexString()) ?? 'File',
     })),
-    deviations: deviationsOf(caseDoc.requirements, doc.terms),
+    deviations: deviationsOf(
+      caseDoc.requirements,
+      doc.terms,
+      gmcFamilyCover(caseDoc).parentsCovered,
+    ),
     latest: latestIds.has(doc._id.toHexString()),
     createdAt: doc.createdAt.toISOString(),
     createdBy: nameOf(names.users, doc.createdBy),

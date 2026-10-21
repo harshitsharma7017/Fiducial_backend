@@ -10,7 +10,15 @@ import { Types, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { notFound, validationError } from '../../lib/errors.ts';
 import { sniff } from '../quotes/quotes.service.ts';
-import { assertOpen, auditCase, loadCase, nameOf, userNames, type Actor } from './ghi-common.ts';
+import {
+  assertWritable,
+  auditCase,
+  loadCase,
+  nameOf,
+  userNames,
+  type Actor,
+} from './ghi-common.ts';
+import { GMC_SCOPE, type CaseScope } from './products/profile.ts';
 import { GhiFileModel, type GhiFileDoc } from './ghi-workflow.model.ts';
 
 // Files kept on a GHI case. Each is read back only through its own case, so a file id from one
@@ -37,9 +45,10 @@ export async function uploadFile(
   fileName: string,
   data: Buffer,
   actor: Actor,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<GhiFile> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   // The insurer's PDF or mail, a scan or photo: the same kinds as Property quotes and placements.
   const contentType = sniff(data, fileName);
   if (!contentType) {
@@ -80,14 +89,18 @@ export async function uploadFile(
         size: data.length,
       },
       session,
+      scope,
     );
     return file.toObject();
   });
   return toFile(saved, await userNames([saved.uploadedBy]));
 }
 
-export async function listFiles(id: string): Promise<{ items: GhiFile[] }> {
-  const doc = await loadCase(id);
+export async function listFiles(
+  id: string,
+  scope: CaseScope = GMC_SCOPE,
+): Promise<{ items: GhiFile[] }> {
+  const doc = await loadCase(id, undefined, scope);
   const files = await GhiFileModel.find(
     { caseId: doc._id, purpose: { $ne: 'RFQ' } },
     { data: 0, sha256: 0 },
@@ -102,8 +115,9 @@ export async function listFiles(id: string): Promise<{ items: GhiFile[] }> {
 export async function caseFile(
   id: string,
   fileId: string,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<{ fileName: string; contentType: string; data: Buffer }> {
-  const doc = await loadCase(id);
+  const doc = await loadCase(id, undefined, scope);
   const file = await GhiFileModel.findOne({
     _id: new Types.ObjectId(fileId),
     caseId: doc._id,

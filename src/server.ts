@@ -6,6 +6,9 @@ import { ensureIndexes } from './models.ts';
 import { ensureClaimEmailTemplates } from './modules/claims/claim-templates.service.ts';
 import { startClaimNotificationWorker } from './modules/claims/claim-notifications.ts';
 import { ensureEmailTemplates } from './modules/email-templates/email-templates.service.ts';
+import { linkEmployeeIdentities } from './modules/employees/employee-link.ts';
+import { ensureDefaultFamilyPlans } from './modules/family-plans/default-plans.ts';
+import { ensureDefaultAgeBandSets } from './modules/age-bands/age-bands.service.ts';
 import { transportFromEnv } from './modules/mail/transport.ts';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -35,6 +38,12 @@ try {
   await ensureIndexes();
   await ensureEmailTemplates();
   await ensureClaimEmailTemplates();
+  // Employee Benefits (N2, N1): the seven default family plans, then existing GHI members linked
+  // to employee identities. Both leave existing records unchanged and are safe on every start.
+  await ensureDefaultFamilyPlans();
+  // N4: the default age band sets (Option 1, the custom example, the standard bands), once.
+  await ensureDefaultAgeBandSets();
+  await linkEmployeeIdentities(logger);
 } catch (error) {
   logger.fatal({ err: error }, 'Could not connect to MongoDB');
   process.exit(1);

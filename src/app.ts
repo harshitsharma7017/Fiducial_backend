@@ -21,7 +21,16 @@ import { createCatalogRouter } from './modules/catalog/catalog.routes.ts';
 import { createTemplatesRouter } from './modules/documents/templates.routes.ts';
 import { createGhiRouter } from './modules/ghi/ghi.routes.ts';
 import { createGhiWorkflowRouter } from './modules/ghi/ghi-workflow.routes.ts';
+import { createEbProductRouter } from './modules/ghi/eb-product.routes.ts';
+import { createAgeBandsRouter } from './modules/age-bands/age-bands.routes.ts';
+import { createCaseConfigurationRouter } from './modules/ghi/case-configuration.routes.ts';
+import { toEbCaseRecord } from './modules/ghi/eb-cases.service.ts';
+import { getCase } from './modules/ghi/ghi-cases.service.ts';
+import { loadCase } from './modules/ghi/ghi-common.ts';
+import { GMC_SCOPE, GPA_SCOPE, GTLI_SCOPE } from './modules/ghi/products/profile.ts';
+import { createEbRouter } from './modules/ghi/eb.routes.ts';
 import { createEmailTemplatesRouter } from './modules/email-templates/email-templates.routes.ts';
+import { createFamilyPlansRouter } from './modules/family-plans/family-plans.routes.ts';
 import {
   httpExistingPolicySource,
   notConfiguredSource,
@@ -150,6 +159,28 @@ export function createApp({
   // Group health (GHI): its own cases and routes beside Property's proposals.
   api.use('/ghi', createGhiRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/ghi', createGhiWorkflowRouter({ ...jwt, mailTransport: transport }));
+  // Employee Benefits (N1 to N3): GPA and GTLI cases, the cross-product routes, the Family
+  // Plan Master. GMC stays on /ghi above.
+  api.use('/eb/gpa', createEbProductRouter('GPA', { ...jwt, mailTransport: transport }));
+  api.use('/eb/gtli', createEbProductRouter('GTLI', { ...jwt, mailTransport: transport }));
+  api.use('/eb', createEbRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use('/family-plans', createFamilyPlansRouter(jwt));
+  // N4 and N7: the Age Band Master, and each case's age bands and RFQ selection summary.
+  api.use('/age-bands', createAgeBandsRouter(jwt));
+  api.use('/ghi', createCaseConfigurationRouter({ ...jwt, scope: GMC_SCOPE, record: getCase }));
+  for (const [path, scope] of [
+    ['/eb/gpa', GPA_SCOPE],
+    ['/eb/gtli', GTLI_SCOPE],
+  ] as const) {
+    api.use(
+      path,
+      createCaseConfigurationRouter({
+        ...jwt,
+        scope,
+        record: async (id) => toEbCaseRecord(await loadCase(id, undefined, scope)),
+      }),
+    );
+  }
   // Group health claims: staff routes, and the public side of employee submission links.
   api.use('/claims', createClaimsRouter({ ...jwt, mailTransport: transport, logger }));
   api.use('/claim-links', createClaimLinksRouter());

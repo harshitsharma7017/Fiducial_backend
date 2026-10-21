@@ -102,7 +102,11 @@ export interface EligibleClaim {
 
 /** A GHI case whose policy is recorded (placed) and that is not closed: a policy claims are made on. */
 export async function placedPolicy(ghiCaseId: string, path = 'ghiCaseId') {
-  const ghiCase = await GhiCaseModel.findById(ghiCaseId).lean<GhiCaseDoc>();
+  // GMC only: GPA and GTLI cases never carry a policy, and are never claimed on (16.9).
+  const ghiCase = await GhiCaseModel.findOne({
+    _id: ghiCaseId,
+    product: { $in: [null, 'GMC'] },
+  }).lean<GhiCaseDoc>();
   if (!ghiCase) throw fail(path, 'Choose a group health policy');
   if (!ghiCase.policy || ghiCase.stage === 'CLOSED') {
     throw fail(

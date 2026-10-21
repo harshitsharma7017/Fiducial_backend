@@ -108,6 +108,21 @@ describe('audit vocabulary', () => {
       'CLAIM_SUBMITTED_BY_EMPLOYEE',
       'CLAIM_DOCUMENT_UPLOADED',
       'CLAIM_LINK_CREATED',
+      'EB_CASE_CREATED',
+      'EB_MEMBER_CREATED',
+      'EB_CENSUS_UPLOADED',
+      'EB_CENSUS_IMPORTED',
+      'EB_RFQ_GENERATED',
+      'EB_QUOTE_SAVED',
+      'EB_QCR_SAVED',
+      'EB_PAYMENT_RECORDED',
+      'EB_PLACEMENT_ISSUED',
+      'EB_FILE_UPLOADED',
+      'FAMILY_PLAN_CREATED',
+      'FAMILY_PLAN_VERSION_CREATED',
+      'EB_EMPLOYEE_CREATED',
+      // N4 adds the Age Band Master.
+      'AGE_BAND_SET_CREATED',
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
@@ -157,6 +172,39 @@ describe('audit vocabulary', () => {
       'CLAIM_LINK_REVOKED',
       'CLAIM_EMAIL_TEMPLATE_UPDATED',
       'CLAIM_HR_CONTACT_UPDATED',
+      'EB_CASE_UPDATED',
+      'EB_CASE_CLOSED',
+      'EB_REQUIREMENTS_SAVED',
+      'EB_PLAN_ASSIGNED',
+      'EB_MEMBER_UPDATED',
+      'EB_MEMBER_DELETED',
+      'EB_CENSUS_ROW_CORRECTED',
+      'EB_CENSUS_IMPORT_DISCARDED',
+      'EB_INSURERS_UPDATED',
+      'EB_INSURER_DECLINED',
+      'EB_RFQ_SUBMITTED',
+      'EB_QUOTE_FINALIZED',
+      'EB_QUOTE_DELETED',
+      'EB_QCR_SUBMITTED',
+      'EB_CLIENT_DECISION_RECORDED',
+      'EB_PAYMENT_UPDATED',
+      'FAMILY_PLAN_UPDATED',
+      'FAMILY_PLAN_ACTIVATED',
+      'FAMILY_PLAN_DEACTIVATED',
+      'FAMILY_PLAN_VERSION_UPDATED',
+      'FAMILY_PLAN_VERSION_ENDED',
+      'FAMILY_PLAN_VERSION_CONFIRMED',
+      'CLIENT_PLAN_DEFAULT_SET',
+      'CLIENT_PLAN_DEFAULT_CLEARED',
+      'EB_EMPLOYEE_UPDATED',
+      'EB_EMPLOYEE_RESOLVED',
+      'EB_EMPLOYEE_LINKED',
+      // N4 adds the Age Band Master and the case's choice of age bands.
+      'AGE_BAND_SET_UPDATED',
+      'AGE_BAND_SET_ACTIVATED',
+      'AGE_BAND_SET_DEACTIVATED',
+      'GHI_AGE_BANDS_SELECTED',
+      'EB_AGE_BANDS_SELECTED',
     ]);
     expect(auditActionsOfKind('APPROVE')).toEqual([
       'MASTER_ACTIVATED',
@@ -168,6 +216,11 @@ describe('audit vocabulary', () => {
       'GHI_RFQ_RETURNED',
       'GHI_QCR_APPROVED',
       'GHI_QCR_REJECTED',
+      'EB_RFQ_APPROVED',
+      'EB_RFQ_RETURNED',
+      'EB_QCR_APPROVED',
+      'EB_QCR_REJECTED',
+      'FAMILY_PLAN_VERSION_ACTIVATED',
     ]);
     expect(auditActionsOfKind('SEND')).toEqual([
       'RFQ_SENT',
@@ -186,6 +239,11 @@ describe('audit vocabulary', () => {
       'CLAIM_EMAIL_SENT',
       'CLAIM_EMAIL_FAILED',
       'CLAIM_EMAIL_RETRIED',
+      'EB_RFQ_EMAILED',
+      'EB_RFQ_EMAIL_FAILED',
+      'EB_RFQ_MARKED_SENT',
+      'EB_QCR_EMAILED',
+      'EB_QCR_EMAIL_FAILED',
     ]);
     expect(auditActionsOfKind('EXPORT')).toEqual([
       'RFQ_DOWNLOADED',
@@ -195,7 +253,33 @@ describe('audit vocabulary', () => {
       'GHI_QCR_DOWNLOADED',
       'GHI_PLACEMENT_SLIP_DOWNLOADED',
       'CLAIM_DOCUMENT_DOWNLOADED',
+      'EB_RFQ_DOWNLOADED',
+      'EB_QCR_DOWNLOADED',
+      'EB_PLACEMENT_SLIP_DOWNLOADED',
+      'EB_CENSUS_TEMPLATE_DOWNLOADED',
+      'EB_CENSUS_ERROR_REPORT_DOWNLOADED',
+      // N7 adds the RFQ selection summary download.
+      'GHI_SELECTION_SUMMARY_DOWNLOADED',
+      'EB_SELECTION_SUMMARY_DOWNLOADED',
     ]);
+  });
+});
+
+describe('employee benefits audit vocabulary', () => {
+  it('gives every employee benefits, family plan and employee action one kind and a label', () => {
+    const added = Object.values(AUDIT_ACTIONS).filter((action) =>
+      /^(EB_|FAMILY_PLAN_|CLIENT_PLAN_DEFAULT_)/.test(action),
+    );
+    expect(added.length).toBeGreaterThan(50);
+    for (const action of added) {
+      expect(AUDIT_ACTION_KINDS[action]).toMatch(/^(CREATE|EDIT|APPROVE|SEND|EXPORT)$/);
+      expect(AUDIT_ACTION_LABELS[action].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps every group health action and label as it was', () => {
+    expect(AUDIT_ACTION_LABELS.GHI_CASE_CREATED).toBe('Group health case created');
+    expect(AUDIT_ACTION_KINDS.GHI_POLICY_RECORDED).toBe('EDIT');
   });
 });
 

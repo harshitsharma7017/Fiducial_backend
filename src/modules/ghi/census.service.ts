@@ -2,8 +2,12 @@ import {
   AUDIT_ACTIONS,
   ERROR_CODES,
   GHI_RELATIONSHIPS,
+  ghiFieldOf,
+  identityMismatches,
+  rowValuesOf,
+  type EbImportMode,
+  type EbMember,
   GHI_RELATIONSHIP_LABELS,
-  formatDate,
   type GhiCensusImport,
   type GhiCensusIssue,
   type GhiCensusRowValues,
@@ -15,22 +19,40 @@ import {
   type GhiMemberListQuery,
   type GhiMemberListResponse,
 } from '../../shared/index.ts';
-import { createHash } from 'node:crypto';
 import { Types, type PipelineStage, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { toDecimal128 } from '../../lib/decimal.ts';
-import { conflict, notFound, unprocessable, validationError } from '../../lib/errors.ts';
+import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { escapeRegExp } from '../../lib/text.ts';
 import {
   ageOn,
   checkCensus,
   memberFromInput,
-  readCensusRow,
   type Candidate,
   type CensusMember,
 } from './census-rules.ts';
 import { effectiveSumInsured } from './census-summary.ts';
-import { parseCensusWorkbook } from './census-workbook.ts';
+import {
+  commitEbImport,
+  correctEbImportRow,
+  discardEbImport,
+  ebErrorReport,
+  getEbImport,
+  toGhiImport,
+  uploadEbCensus,
+} from './eb-census-import.service.ts';
+import {
+  ensureSelfIdentities,
+  identityContext,
+  unresolvedConflict,
+} from '../employees/employees.service.ts';
+import {
+  addEbMember,
+  deleteEbMember,
+  ebCensusIssues,
+  updateEbMember,
+} from './eb-members.service.ts';
+import { GMC_SCOPE } from './products/profile.ts';
 import {
   assertEditable,
   auditCase,
@@ -43,12 +65,7 @@ import {
   type Actor,
 } from './ghi-common.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
-import {
-  GhiCensusImportModel,
-  GhiMemberModel,
-  type GhiCensusImportDoc,
-  type GhiMemberDoc,
-} from './ghi-census.model.ts';
+import { GhiCensusImportModel, GhiMemberModel, type GhiMemberDoc } from './ghi-census.model.ts';
 
 // The census (G3): members added or edited one at a time, or imported from a checked file. Every
 // change is checked by census-rules.ts against the Data Sheet and the rest of the census, and
@@ -179,6 +196,20 @@ export async function censusIssues(
   doc: GhiCaseDoc,
   session?: mongo.ClientSession,
 ): Promise<Array<{ member: GhiMember; issues: GhiCensusIssue[] }>> {
+  if (doc.planAssignment) {
+    // With a plan, the census is checked against the plan's slots (16.4).
+    const checked = await ebCensusIssues(doc, session);
+    return checked.items.map((item) => ({
+      member: asGhiMember(item.member),
+      issues: item.issues.map((issue) => ({
+        field: ghiFieldOf(issue.field),
+        message: issue.message,
+        severity: issue.severity,
+        fix: issue.fix,
+        code: issue.code,
+      })),
+    }));
+  }
   const members = await allMembers(doc._id, session);
   const candidates: Candidate[] = members.map((member) => ({
     key: member._id.toHexString(),
@@ -194,12 +225,74 @@ export async function censusIssues(
   });
 }
 
+/** An EB member in the GMC member contract. */
+function asGhiMember(member: EbMember): GhiMember {
+  return {
+    id: member.id,
+    employeeId: member.employeeId,
+    name: member.name,
+    gender: member.gender,
+    dateOfBirth: member.dateOfBirth,
+    relationship: member.relationship,
+    dateOfJoining: member.dateOfJoining,
+    sumInsured: member.sumInsured,
+    age: member.age,
+    source: member.source,
+    updatedAt: member.updatedAt,
+  };
+}
+
+/**
+ * The employee identity of a Self member being saved on a GMC case without a plan (design D7):
+ * an unresolved key or details that differ from the company's record refuse the save; otherwise
+ * the identity is created or reused in the same transaction.
+ */
+async function gmcIdentityOf(
+  doc: GhiCaseDoc,
+  member: CensusMember,
+  actor: Actor,
+  session: mongo.ClientSession,
+  options: { existing: boolean },
+): Promise<Types.ObjectId | null> {
+  if (member.relationship !== 'SELF') return null;
+  const context = await identityContext(doc.clientId, session);
+  const identity = context.identities.get(member.employeeKey);
+  if (identity) {
+    const mismatches = identityMismatches(identity, member);
+    if (mismatches.length > 0) {
+      throw issuesToValidation(
+        mismatches.map((mismatch) => ({
+          field: mismatch.field,
+          message: `The ${mismatch.field === 'dateOfBirth' ? 'date of birth' : mismatch.field} differs from the company’s record of employee ${member.employeeId}: "${mismatch.identityValue}" there, "${mismatch.rowValue}" here. Correct it, or update the employee on the company page.`,
+        })),
+      );
+    }
+  } else {
+    const unresolved = context.unresolvedKeys.get(member.employeeKey);
+    if (unresolved && !options.existing) throw unresolvedConflict(member.employeeId, unresolved);
+    if (unresolved) return null;
+  }
+  const ensured = await ensureSelfIdentities(doc.clientId, [member], actor, session);
+  return ensured.byKey.get(member.employeeKey) ?? null;
+}
+
 export async function addMember(
   id: string,
   input: GhiMemberInput,
   actor: Actor,
 ): Promise<GhiMember> {
   const doc = await loadCase(id);
+  // With a plan, the family is checked against the plan's slots (Requirement 16.4).
+  if (doc.planAssignment) {
+    return asGhiMember(
+      await addEbMember(
+        GMC_SCOPE,
+        id,
+        { ...input, annualSalary: null, monthlySalary: null, nominee: null },
+        actor,
+      ),
+    );
+  }
   assertEditable(doc);
   const member = memberFromInput(input);
   const actorId = new Types.ObjectId(actor.id);
@@ -212,12 +305,14 @@ export async function addMember(
         censusSettingsOf(doc),
       ).get('new') ?? [];
     if (issues.length > 0) throw issuesToValidation(issues);
+    const identityId = await gmcIdentityOf(doc, member, actor, session, { existing: false });
     const [saved] = await GhiMemberModel.create(
       [
         {
           caseId: doc._id,
           ...member,
           sumInsured: member.sumInsured === null ? null : toDecimal128(member.sumInsured),
+          ...(identityId ? { employeeIdentityId: identityId } : {}),
           source: 'MANUAL',
           importId: null,
           createdBy: actorId,
@@ -278,6 +373,17 @@ export async function updateMember(
   actor: Actor,
 ): Promise<GhiMember> {
   const doc = await loadCase(id);
+  if (doc.planAssignment) {
+    return asGhiMember(
+      await updateEbMember(
+        GMC_SCOPE,
+        id,
+        memberId,
+        { ...input, annualSalary: null, monthlySalary: null, nominee: null },
+        actor,
+      ),
+    );
+  }
   assertEditable(doc);
   const next = memberFromInput(input);
   const actorId = new Types.ObjectId(actor.id);
@@ -322,12 +428,18 @@ export async function updateMember(
         ]);
       }
     }
+    const identityId =
+      next.relationship === 'SELF'
+        ? ((await gmcIdentityOf(doc, next, actor, session, { existing: true })) ??
+          (next.employeeKey === current.employeeKey ? (current.employeeIdentityId ?? null) : null))
+        : null;
     const updated = await GhiMemberModel.findOneAndUpdate(
       { _id: current._id, caseId: doc._id },
       {
         $set: {
           ...next,
           sumInsured: next.sumInsured === null ? null : toDecimal128(next.sumInsured),
+          ...(identityId || current.employeeIdentityId ? { employeeIdentityId: identityId } : {}),
           updatedBy: actorId,
         },
       },
@@ -350,6 +462,7 @@ export async function updateMember(
 
 export async function deleteMember(id: string, memberId: string, actor: Actor): Promise<void> {
   const doc = await loadCase(id);
+  if (doc.planAssignment) return deleteEbMember(GMC_SCOPE, id, memberId, actor);
   assertEditable(doc);
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {
@@ -379,164 +492,29 @@ export async function deleteMember(id: string, memberId: string, actor: Actor): 
   });
 }
 
-// Import
+const asLegacy = (view: Parameters<typeof toGhiImport>[0]) => toGhiImport(view, { legacy: true });
 
-function candidatesOf(importDoc: GhiCensusImportDoc, onlyPending = true): Candidate[] {
-  return importDoc.rows
-    .filter((row) => !onlyPending || !row.imported)
-    .map((row) => {
-      const read = readCensusRow(row.values);
-      return {
-        key: String(row.row),
-        label: `row ${row.row}`,
-        member: read.member,
-        issues: read.issues,
-      };
-    });
-}
+// Import: the generic Import_Service (eb-census-import.service.ts) with the GMC scope. Without a
+// mode it checks rows exactly as GMC always has (design D8) and keeps the guard against
+// importing the same rows twice (22.8); the employee identities of design D7 are added.
 
-async function importView(
-  doc: GhiCaseDoc,
-  importDoc: GhiCensusImportDoc,
-  session?: mongo.ClientSession,
-): Promise<GhiCensusImport> {
-  let issuesByRow = new Map<string, GhiCensusIssue[]>();
-  if (importDoc.status === 'PREVIEW') {
-    const existing = await GhiMemberModel.find({ caseId: doc._id })
-      .session(session ?? null)
-      .lean();
-    issuesByRow = checkCensus(
-      candidatesOf(importDoc),
-      existing.map(toCensusMember),
-      censusSettingsOf(doc),
-    );
-  }
-  const names = await userNames([importDoc.uploadedBy]);
-  const rows = importDoc.rows.map((row) => {
-    const issues =
-      importDoc.status === 'PREVIEW' ? (issuesByRow.get(String(row.row)) ?? []) : row.issues;
-    return {
-      row: row.row,
-      values: row.values,
-      issues,
-      valid: row.imported || issues.length === 0,
-      corrected: row.corrected,
-      imported: row.imported,
-    };
-  });
-  const valid = rows.filter((row) => row.valid).length;
-  return {
-    id: importDoc._id.toHexString(),
-    fileName: importDoc.fileName,
-    status: importDoc.status,
-    fileIssues: importDoc.fileIssues,
-    rows,
-    counts: {
-      rows: rows.length,
-      valid,
-      invalid: rows.length - valid,
-      imported: importDoc.importedCount,
-    },
-    policy: importDoc.policy,
-    uploadedAt: importDoc.createdAt.toISOString(),
-    uploadedBy: nameOf(names, importDoc.uploadedBy),
-    importedAt: importDoc.importedAt?.toISOString() ?? null,
-  };
-}
-
-async function loadImport(doc: GhiCaseDoc, importId: string, session?: mongo.ClientSession) {
-  const importDoc = await GhiCensusImportModel.findOne({
-    _id: new Types.ObjectId(importId),
-    caseId: doc._id,
-  })
-    .session(session ?? null)
-    .lean();
-  if (!importDoc) throw notFound('Census file not found');
-  return importDoc;
-}
-
-/**
- * Reads and checks an uploaded census file; nothing joins the census until it is imported. The
- * same file cannot be imported twice into a case; an earlier unfinished upload is set aside.
- */
 export async function uploadCensus(
   id: string,
   data: Buffer,
   fileName: string,
   actor: Actor,
 ): Promise<GhiCensusImport> {
-  const doc = await loadCase(id);
-  assertEditable(doc);
-  const parsed = await parseCensusWorkbook(data);
-  if (!parsed.ok) {
-    throw unprocessable(
-      ERROR_CODES.IMPORT_FILE_INVALID,
-      parsed.issues[0] ?? 'The file cannot be read',
-      {
-        issues: parsed.issues,
-      },
-    );
-  }
-  // The fingerprint is of the rows, not the file's bytes: the same census saved again in Excel
-  // (which changes the bytes) is still recognised.
-  const sha256 = createHash('sha256').update(JSON.stringify(parsed.rows)).digest('hex');
-  const earlier = await GhiCensusImportModel.findOne(
-    { caseId: doc._id, sha256, status: 'IMPORTED' },
-    { importedAt: 1, importedCount: 1, fileName: 1 },
-  ).lean();
-  if (earlier) {
-    throw conflict(
-      ERROR_CODES.GHI_DUPLICATE_IMPORT,
-      `This census was already imported (${earlier.fileName}, ${earlier.importedCount} members${earlier.importedAt ? ` on ${formatDate(earlier.importedAt.toISOString().slice(0, 10))}` : ''}). To add members, upload a file with only the new rows.`,
-    );
-  }
-  const actorId = new Types.ObjectId(actor.id);
-  const created = await withTransaction(async (session) => {
-    await GhiCensusImportModel.updateMany(
-      { caseId: doc._id, status: 'PREVIEW' },
-      { $set: { status: 'DISCARDED' } },
-      { session },
-    );
-    const [saved] = await GhiCensusImportModel.create(
-      [
-        {
-          caseId: doc._id,
-          fileName,
-          sha256,
-          status: 'PREVIEW',
-          fileIssues: [],
-          rows: parsed.rows.map((row) => ({
-            ...row,
-            corrected: false,
-            imported: false,
-            issues: [],
-          })),
-          policy: null,
-          importedCount: 0,
-          uploadedBy: actorId,
-          importedAt: null,
-          importedBy: null,
-        },
-      ],
-      { session },
-    );
-    if (!saved) throw new Error('Census file was not saved');
-    await auditCase(
-      actor,
-      AUDIT_ACTIONS.GHI_CENSUS_UPLOADED,
-      id,
-      null,
-      { fileName, rows: parsed.rows.length, sha256 },
-      session,
-    );
-    return saved.toObject();
+  return toGhiImport(await uploadEbCensus(GMC_SCOPE, id, data, fileName, actor), {
+    legacy: true,
   });
-  return importView(doc, created);
 }
 
-export async function getImport(id: string, importId: string): Promise<GhiCensusImport> {
-  const doc = await loadCase(id);
-  return importView(doc, await loadImport(doc, importId));
+export async function getImport(
+  id: string,
+  importId: string,
+  mode?: EbImportMode,
+): Promise<GhiCensusImport> {
+  return toGhiImport(await getEbImport(GMC_SCOPE, id, importId, mode), { legacy: !mode });
 }
 
 export async function listImports(id: string) {
@@ -568,35 +546,16 @@ export async function correctImportRow(
   values: GhiCensusRowValues,
   actor: Actor,
 ): Promise<GhiCensusImport> {
-  const doc = await loadCase(id);
-  assertEditable(doc);
-  const importDoc = await loadImport(doc, importId);
-  if (importDoc.status !== 'PREVIEW') {
-    throw conflict(
-      ERROR_CODES.CONFLICT,
-      'This file has been imported or set aside; upload it again to change it.',
-    );
-  }
-  const row = importDoc.rows.find((item) => item.row === rowNumber);
-  if (!row) throw notFound(`Row ${rowNumber} is not in this file`);
-  const updated = await withTransaction(async (session) => {
-    const saved = await GhiCensusImportModel.findOneAndUpdate(
-      { _id: importDoc._id, caseId: doc._id, status: 'PREVIEW' },
-      { $set: { 'rows.$[target].values': values, 'rows.$[target].corrected': true } },
-      { returnDocument: 'after', session, arrayFilters: [{ 'target.row': rowNumber }] },
-    ).lean();
-    if (!saved) throw conflict(ERROR_CODES.CONFLICT, 'This file has been imported or set aside.');
-    await auditCase(
-      actor,
-      AUDIT_ACTIONS.GHI_CENSUS_ROW_CORRECTED,
+  return asLegacy(
+    await correctEbImportRow(
+      GMC_SCOPE,
       id,
-      { file: importDoc.fileName, row: rowNumber, ...row.values },
-      { file: importDoc.fileName, row: rowNumber, ...values },
-      session,
-    );
-    return saved;
-  });
-  return importView(doc, updated);
+      importId,
+      rowNumber,
+      rowValuesOf({ ...values, annualSalary: '' }),
+      actor,
+    ),
+  );
 }
 
 export async function discardImport(
@@ -604,28 +563,7 @@ export async function discardImport(
   importId: string,
   actor: Actor,
 ): Promise<GhiCensusImport> {
-  const doc = await loadCase(id);
-  const importDoc = await loadImport(doc, importId);
-  if (importDoc.status !== 'PREVIEW')
-    throw conflict(ERROR_CODES.CONFLICT, 'Only a file not yet imported can be set aside.');
-  const updated = await withTransaction(async (session) => {
-    const saved = await GhiCensusImportModel.findOneAndUpdate(
-      { _id: importDoc._id, status: 'PREVIEW' },
-      { $set: { status: 'DISCARDED' } },
-      { returnDocument: 'after', session },
-    ).lean();
-    if (!saved) throw conflict(ERROR_CODES.CONFLICT, 'This file has been imported or set aside.');
-    await auditCase(
-      actor,
-      AUDIT_ACTIONS.GHI_CENSUS_IMPORT_DISCARDED,
-      id,
-      null,
-      { file: importDoc.fileName },
-      session,
-    );
-    return saved;
-  });
-  return importView(doc, updated);
+  return toGhiImport(await discardEbImport(GMC_SCOPE, id, importId, actor), { legacy: true });
 }
 
 /**
@@ -637,97 +575,25 @@ export async function commitImport(
   importId: string,
   policy: GhiImportPolicy,
   actor: Actor,
+  mode?: EbImportMode,
 ): Promise<GhiCommitResult> {
-  const actorId = new Types.ObjectId(actor.id);
-  const outcome = await withTransaction(async (session) => {
-    const doc = await loadCase(id, session);
-    assertEditable(doc);
-    const importDoc = await loadImport(doc, importId, session);
-    if (importDoc.status !== 'PREVIEW') {
-      throw conflict(ERROR_CODES.CONFLICT, 'This file has already been imported or set aside.');
-    }
-    const duplicate = await GhiCensusImportModel.exists({
-      caseId: doc._id,
-      sha256: importDoc.sha256,
-      status: 'IMPORTED',
-    }).session(session);
-    if (duplicate)
-      throw conflict(ERROR_CODES.GHI_DUPLICATE_IMPORT, 'This file was already imported.');
-    const existing = await GhiMemberModel.find({ caseId: doc._id }).session(session).lean();
-    const candidates = candidatesOf(importDoc);
-    const issues = checkCensus(candidates, existing.map(toCensusMember), censusSettingsOf(doc));
-    const valid = candidates.filter((candidate) => (issues.get(candidate.key) ?? []).length === 0);
-    const invalid = candidates.length - valid.length;
-    if (policy === 'ALL_VALID' && invalid > 0) {
-      throw conflict(
-        ERROR_CODES.GHI_CENSUS_INVALID,
-        `${invalid} row(s) have problems. Correct them, or import the valid rows only.`,
-        { invalid },
-      );
-    }
-    if (valid.length === 0) {
-      throw conflict(ERROR_CODES.GHI_CENSUS_INVALID, 'No row is valid: nothing to import.', {
-        invalid,
-      });
-    }
-    await GhiMemberModel.insertMany(
-      valid.map((candidate) => {
-        const member = candidate.member!;
-        return {
-          caseId: doc._id,
-          ...member,
-          sumInsured: member.sumInsured === null ? null : toDecimal128(member.sumInsured),
-          source: 'IMPORT',
-          importId: importDoc._id,
-          createdBy: actorId,
-          updatedBy: actorId,
-        };
-      }),
-      { session },
-    );
-    const importedRows = new Set(valid.map((candidate) => candidate.key));
-    const saved = await GhiCensusImportModel.findOneAndUpdate(
-      { _id: importDoc._id, status: 'PREVIEW' },
-      {
-        $set: {
-          status: 'IMPORTED',
-          policy,
-          importedCount: valid.length,
-          importedAt: new Date(),
-          importedBy: actorId,
-          rows: importDoc.rows.map((row) => ({
-            ...row,
-            imported: importedRows.has(String(row.row)),
-            issues: issues.get(String(row.row)) ?? [],
-          })),
-        },
-      },
-      { returnDocument: 'after', session },
-    ).lean();
-    if (!saved) throw conflict(ERROR_CODES.CONFLICT, 'This file has already been imported.');
-    await bumpCensus(
-      doc,
-      actorId,
-      `Census imported from ${importDoc.fileName}: ${valid.length} member(s)${invalid > 0 ? `, ${invalid} row(s) left out` : ''}`,
-      session,
-    );
-    await auditCase(
-      actor,
-      AUDIT_ACTIONS.GHI_CENSUS_IMPORTED,
-      id,
-      null,
-      { file: importDoc.fileName, policy, imported: valid.length, skipped: invalid },
-      session,
-    );
-    return { imported: valid.length, skipped: invalid, saved };
-  });
-  const doc = await loadCase(id);
+  const outcome = await commitEbImport(GMC_SCOPE, id, importId, { policy, mode }, actor);
   return {
-    imported: outcome.imported,
-    skipped: outcome.skipped,
-    import: await importView(doc, outcome.saved),
-    summary: await loadSummary(doc),
+    imported: outcome.result.added + outcome.result.updated,
+    skipped: outcome.result.skipped,
+    import: toGhiImport(outcome.import, { legacy: !mode }),
+    summary: await loadSummary(await loadCase(id)),
   };
+}
+
+/** The error report of a GMC census file (Requirement 21.5). */
+export async function importErrorReport(
+  id: string,
+  importId: string,
+  actor: Actor,
+  mode?: EbImportMode,
+) {
+  return ebErrorReport(GMC_SCOPE, id, importId, actor, mode);
 }
 
 /** Every member with the sum insured that covers them, for the RFQ and placement annexures. */

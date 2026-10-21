@@ -86,7 +86,23 @@ Claims (C1 to C4): group health claims on placed GHI policies: a board of four s
 creation by staff or by employees through a secure link, documents, emails to the claimant and HR at each move
 (editable templates, retries), and an append-only timeline. See docs/OPEN_ITEMS.md (Group health claims).
 
-Not built yet: other documents; GHI endorsements; further claim statuses.
+Employee Benefits (N1 to N3): GMC (the GHI cases), GPA (group personal accident) and GTLI (group term life) as one
+line of business. GPA and GTLI cases (`/api/v1/eb/gpa`, `/api/v1/eb/gtli`) move Data Sheet → RFQ → QCR → Approval
+(with the client's decision) → Payment → Placement Slip, for New Business and Renewal. The Family Plan Master
+(`/api/v1/family-plans`) holds versioned plans per product (slots, relationships, maximums, mixing rule, dates); seven
+default plans (GMC Self, 1+3, 1+5, 1+7; GPA Self, 1+3; GTLI Self) are created at startup awaiting client
+confirmation. Each case keeps a copy of its plan version; a company can set a default plan per product. One employee
+identity per company and employee ID is shared by GMC, GPA and GTLI (`/api/v1/eb/companies/{id}/employees`). Seven
+provisional census templates are built from the plan; uploads are validated, previewed, corrected, reported and
+imported by policy and mode (Add new only, Add and update), safely re-importable. See docs/OPEN_ITEMS.md (Employee
+Benefits) for the 16 open questions and the design points awaiting confirmation.
+
+N4 to N7: an Age Band Master (`/api/v1/age-bands`) whose sets a case copies for its census summary, RFQ and
+selection summary; GPA cover rules per relationship and nominees; GTLI sums assured from the monthly salary
+(monthly × 12 × multiplier, optional maximum); and the RFQ Selection Summary Sheet (preview, Excel, PDF, added to every
+RFQ version and kept with it). See docs/OPEN_ITEMS.md (N4 to N7).
+
+Not built yet: other documents; GHI endorsements; further claim statuses; EB endorsements and claims on GPA/GTLI.
 
 ## Rules
 

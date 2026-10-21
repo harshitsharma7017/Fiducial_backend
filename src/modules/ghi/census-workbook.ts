@@ -141,7 +141,7 @@ function pad(value: number): string {
 }
 
 /** A cell's value as the census reads it: dates as YYYY-MM-DD, numbers without grouping. */
-function cellString(value: RawValue): string {
+export function cellString(value: RawValue): string {
   if (value === null) return '';
   if (value instanceof Date) {
     // Excel dates come as midnight UTC of the day shown in the cell.

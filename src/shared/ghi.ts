@@ -1,7 +1,10 @@
 import { z } from 'zod';
+import { AgeBandSelectionSchema } from './age-bands.ts';
 import { EmailSchema } from './auth.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { SearchTextSchema } from './clients.ts';
+import { EbPlanAssignmentSchema } from './eb-plan.ts';
+import { EbProductSchema } from './eb-products.ts';
 import { MAIL_RESULTS } from './mail.ts';
 
 // Group Health Insurance (GHI): a second line of business beside Property. A GHI case has its own
@@ -265,13 +268,8 @@ export const GhiRequirementsInputSchema = z
         }
       }
     }
-    if (input.familyDefinition.parents === 'NONE' && input.parentsCoPayPercent !== null) {
-      context.addIssue({
-        code: 'custom',
-        path: ['parentsCoPayPercent'],
-        message: 'Parents are not covered: leave the co-payment blank',
-      });
-    }
+    // "Parents are not covered: leave the co-payment blank" is checked by the API, which knows
+    // whether the case's plan covers parents (design D6): same field, message and 400.
   });
 export type GhiRequirementsInput = z.infer<typeof GhiRequirementsInputSchema>;
 export type GhiRequirementsFormValues = z.input<typeof GhiRequirementsInputSchema>;
@@ -446,6 +444,8 @@ export type GhiPolicy = z.infer<typeof GhiPolicySchema>;
 
 export const GhiCaseRecordSchema = z.object({
   id: ObjectIdSchema,
+  /** Employee Benefits product (N1): a GHI case is a GMC case. */
+  product: z.literal('GMC'),
   reference: z.string(),
   type: GhiCaseTypeSchema,
   stage: GhiStageSchema,
@@ -492,6 +492,10 @@ export const GhiCaseRecordSchema = z.object({
     })
     .nullable(),
   policy: GhiPolicySchema.nullable(),
+  /** The family plan assigned to the case (N2); null: the Data Sheet's family definition applies. */
+  plan: EbPlanAssignmentSchema.nullable(),
+  /** N4: the case's copy of its age band set; null: the standard bands. */
+  ageBands: AgeBandSelectionSchema.nullable().optional(),
   /** What the case needs to reach its next stage; empty when nothing (or closed). */
   nextStep: z.string().nullable(),
   activity: z.array(z.object({ at: IsoDateTimeSchema, actor: z.string(), message: z.string() })),
@@ -511,6 +515,8 @@ export type GhiCaseListQuery = z.infer<typeof GhiCaseListQuerySchema>;
 
 export const GhiCaseListItemSchema = z.object({
   id: ObjectIdSchema,
+  /** Employee Benefits product (N1). */
+  product: EbProductSchema,
   reference: z.string(),
   type: GhiCaseTypeSchema,
   stage: GhiStageSchema,

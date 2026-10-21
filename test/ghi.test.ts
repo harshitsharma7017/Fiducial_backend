@@ -682,11 +682,13 @@ describe('RFQ (G5)', () => {
 
     const preview = (await request(app).get(c('/rfq/preview')).set(bearer(readOnly)).expect(200))
       .body;
+    // N7 adds the RFQ Selection Summary Sheet after the RFQ's own sheets.
     expect(preview.sheets.map((sheet: { name: string }) => sheet.name)).toEqual([
       'GHI Data Sheet',
       'Census Summary',
       'Claims History',
       'Annexure - Members',
+      'RFQ Selection Summary',
     ]);
 
     const xlsx = await binary(

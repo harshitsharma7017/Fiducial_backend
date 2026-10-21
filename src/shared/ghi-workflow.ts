@@ -57,6 +57,10 @@ export const GhiRfqVersionSchema = z.object({
     lives: z.number().int(),
     totalSumInsured: z.string().nullable(),
   }),
+  /** N4: the age bands the version was generated with; missing on versions before N4. */
+  ageBands: z.object({ name: z.string(), revision: z.number().int() }).nullable().optional(),
+  /** N7: the selection summary was attached to this version's documents. */
+  hasSelectionSummary: z.boolean().optional(),
 });
 export type GhiRfqVersion = z.infer<typeof GhiRfqVersionSchema>;
 

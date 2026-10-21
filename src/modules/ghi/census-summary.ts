@@ -1,12 +1,14 @@
 import {
-  GHI_AGE_BANDS,
   GHI_RELATIONSHIPS,
+  STANDARD_AGE_BANDS,
+  bandIndexOf,
+  completedAge,
+  type AgeBand,
   type GhiCensusSummary,
   type GhiCoverageType,
   type GhiRelationship,
 } from '../../shared/index.ts';
 import { Decimal } from '../../lib/decimal.ts';
-import { ageOn } from './census-rules.ts';
 
 // The census summary (G4), worked out from the members every time it is read, so it can never
 // lag a change. Ages are completed years on the case's one age reference date.
@@ -24,14 +26,20 @@ export interface SummaryOptions {
   referenceDate: string;
   declaredEmployees: number | null;
   revision: number;
+  /** N4: the case's age bands (missing: the standard bands, as before N4). */
+  bands?: readonly AgeBand[];
+  /** N4: which set the bands come from, for the screen; null for the standard bands. */
+  ageBands?: { name: string; revision: number } | null;
 }
 
-/** The age band (GHI_AGE_BANDS key) of an age in completed years. */
+/** A band's key: "19-35", or "66+" for an open last band (the keys used before N4). */
+export const bandKeyOf = (band: Pick<AgeBand, 'min' | 'max'>) =>
+  band.max === null ? `${band.min}+` : `${band.min}-${band.max}`;
+
+/** The standard band key of an age in completed years. */
 export function ageBandOf(age: number): string {
-  const band = GHI_AGE_BANDS.find(
-    (item) => age >= item.min && (item.max === null || age <= item.max),
-  );
-  return (band ?? GHI_AGE_BANDS[GHI_AGE_BANDS.length - 1]!).key;
+  const index = bandIndexOf(age, STANDARD_AGE_BANDS) ?? STANDARD_AGE_BANDS.length - 1;
+  return bandKeyOf(STANDARD_AGE_BANDS[index]!);
 }
 
 /**
@@ -55,7 +63,10 @@ export function summarizeCensus(
     GhiRelationship,
     number
   >;
-  const bands = new Map<string, number>(GHI_AGE_BANDS.map((band) => [band.key, 0]));
+  const bandList = options.bands ?? STANDARD_AGE_BANDS;
+  const bands = bandList.map(() => 0);
+  let outside = 0;
+  let unknown = 0;
   const familySumInsured = new Map<string, string | null>();
   for (const member of members) {
     if (member.relationship === 'SELF') familySumInsured.set(member.employeeKey, member.sumInsured);
@@ -67,10 +78,14 @@ export function summarizeCensus(
   const bySumInsured = new Map<string, { families: number; lives: number }>();
   for (const member of members) {
     byRelationship[member.relationship] += 1;
-    const age = ageOn(member.dateOfBirth, options.referenceDate);
-    totalAge = totalAge.plus(age);
-    const band = ageBandOf(age);
-    bands.set(band, (bands.get(band) ?? 0) + 1);
+    const age = completedAge(member.dateOfBirth, options.referenceDate);
+    if (age === null) unknown += 1;
+    else {
+      totalAge = totalAge.plus(age);
+      const band = bandIndexOf(age, bandList);
+      if (band === null) outside += 1;
+      else bands[band]! += 1;
+    }
 
     const sumInsured = effectiveSumInsured(member, familySumInsured, options.coverageType);
     if (options.coverageType !== null && sumInsured === null) missing += 1;
@@ -91,10 +106,10 @@ export function summarizeCensus(
     employees: byRelationship.SELF,
     lives: members.length,
     byRelationship,
-    byAgeBand: GHI_AGE_BANDS.map((band) => ({
-      band: band.key,
+    byAgeBand: bandList.map((band, index) => ({
+      band: bandKeyOf(band),
       label: band.label,
-      lives: bands.get(band.key) ?? 0,
+      lives: bands[index]!,
     })),
     bySumInsured: [...bySumInsured.entries()]
       .sort(([a], [b]) => new Decimal(a).comparedTo(b))
@@ -102,9 +117,16 @@ export function summarizeCensus(
     totalSumInsured: options.coverageType === null ? null : total.toFixed(0),
     coverageType: options.coverageType,
     ageReferenceDate: options.referenceDate,
-    averageAge: members.length === 0 ? null : totalAge.dividedBy(members.length).toFixed(1),
+    averageAge:
+      members.length - unknown === 0
+        ? null
+        : totalAge.dividedBy(members.length - unknown).toFixed(1),
     declaredEmployees: options.declaredEmployees,
     missingSumInsured: missing,
     revision: options.revision,
+    // N4: only when bands are given, so a summary without them reads exactly as before.
+    ...(options.bands
+      ? { ageBands: options.ageBands ?? null, outsideAgeBands: outside, ageUnknown: unknown }
+      : {}),
   };
 }

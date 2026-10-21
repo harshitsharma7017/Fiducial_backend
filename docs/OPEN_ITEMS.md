@@ -248,6 +248,144 @@ sends queued claim emails and retries failed ones every 30 seconds.
   no patient names or dates of birth.
 - New claims made by staff are assigned to their creator; claims from a link to the staff member who issued it.
 
+## Employee Benefits: GPA, GTLI, family plans and census templates (N1 to N3)
+
+Built beside GMC (the GHI cases above) and Property. GPA and GTLI cases live in the GHI collections with a `product`
+field (`GMC` when absent, so existing cases read as before) under `/api/v1/eb/gpa` and `/api/v1/eb/gtli`; the lists
+of every product, the census templates and a company's employees and default plans are under `/api/v1/eb`; the
+Family Plan Master is under `/api/v1/family-plans`. New collections: `family_plans`, `eb_client_plan_defaults`,
+`eb_employees`, `eb_census_imports`, and the append-only `eb_policy_snapshots` and `eb_policy_snapshot_members`. New fields are additive with indexes
+created at startup; no existing data is migrated or rewritten. `/api/v1/ghi` keeps its routes and response shapes;
+it gained only optional additions (`PUT /cases/:id/plan`, `?mode=` on the import preview, the error report, `mode` on
+commit). Permissions are unchanged (`src/shared/permissions.ts`): cases and census use the proposal permissions,
+family plans `masters.view` / `masters.manage`, company plan defaults `clients.view` / `clients.manage`.
+
+### Provisional census templates
+
+No client census format was in either repository, so the seven templates below are Fiducial's own layout, built
+from the plan and the case's Data Sheet. Each says so on its Instructions sheet and beside every download, until the
+client sends their formats (open question 15).
+
+| Template      | Plan it follows | Census columns                                                                               |
+| ------------- | --------------- | -------------------------------------------------------------------------------------------- |
+| GMC Self      | GMC Self only   | Employee ID, Name, Gender, Date of Birth, Date of Joining, Sum Insured                       |
+| GMC 1+3       | GMC 1+3         | as GMC Self, plus Relationship (Self, Spouse, Child)                                         |
+| GMC 1+5       | GMC 1+5         | as GMC 1+3, with Father, Mother, Father-in-law, Mother-in-law                                |
+| GMC 1+7       | GMC 1+7         | as GMC 1+5                                                                                   |
+| GPA Self Only | GPA Self only   | Employee ID, Name, Gender, Date of Birth, Date of Joining, then Sum Insured or Annual Salary |
+| GPA 1+3       | GPA 1+3         | as GPA Self Only, plus Relationship (Self, Spouse, Child)                                    |
+| GTLI          | GTLI Self only  | as GPA Self Only                                                                             |
+
+For GPA and GTLI, Sum Insured is the column for a flat or graded basis, Annual Salary for a multiple of salary, and
+both (neither required) when the case's basis is not chosen yet. Dates are DD/MM/YYYY (day first) or Excel dates.
+
+### Default family plans (awaiting client confirmation)
+
+Created once at startup if missing (never changed by a later start), each with version 1 from 2000-01-01 and marked
+"Awaiting client confirmation" until an Admin records the client's confirmation on the plan's page.
+
+| Plan           | Slots (minimum to maximum)                                                                      | Parents and in-laws mixed | Open questions |
+| -------------- | ----------------------------------------------------------------------------------------------- | ------------------------- | -------------- |
+| GMC Self only  | Self (1)                                                                                        | n/a                       | 16             |
+| GMC 1+3        | Self (1); Spouse (0 to 1); Children (0 to 3)                                                    | n/a                       | 3, 8, 16       |
+| GMC 1+5        | Self (1); Spouse (0 to 1); Children (0 to 3); Parents (0 to 2: father, mother, in-laws, 1 each) | Allowed                   | 3, 4, 8, 16    |
+| GMC 1+7        | as GMC 1+5 with Parents (0 to 4)                                                                | Allowed                   | 3, 4, 8, 16    |
+| GPA Self only  | Self (1)                                                                                        | n/a                       | 16             |
+| GPA 1+3        | Self (1); Spouse (0 to 1); Children (0 to 3)                                                    | n/a                       | 3, 8, 16       |
+| GTLI Self only | Self (1)                                                                                        | n/a                       | 6, 16          |
+
+Each product's plans are separate data: changing GMC 1+3 never changes GPA 1+3. A case keeps a copy of the version
+it was given, and a placement keeps its own snapshot, so a later version changes neither.
+
+### Open questions for the client (defaults in brackets)
+
+| ID    | Question                                                                                                                 | Default built                                                                              |
+| ----- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| EB-01 | GPA and GTLI workflow: is the client's decision recorded before payment; is a Final QCR or policy step needed as on GMC? | Client decision within Approval; no Final QCR; the placement slip places the case.         |
+| EB-02 | Is the policy number and copy recorded for GPA and GTLI?                                                                 | Optional policy number and dates on the placement slip.                                    |
+| EB-03 | Does 1+3 mean spouse and two children, or spouse and three children (GMC and GPA)?                                       | Three children; each product's plan can change on its own.                                 |
+| EB-04 | 1+5: which two parent members, and may parents and parents-in-law be mixed? (GMC today forbids mixing.)                  | Any two of father, mother, father-in-law, mother-in-law; mixing allowed.                   |
+| EB-05 | Must new GMC cases use the Family Plan Master; should existing GMC cases move to it?                                     | Optional on new GMC cases; existing cases keep their Data Sheet family definition.         |
+| EB-06 | Does GTLI cover only employees?                                                                                          | Yes: GTLI Self only is the default plan.                                                   |
+| EB-07 | GPA and GTLI sum insured basis (flat, graded, multiple of salary) and its cap                                            | Asked per case on the Data Sheet.                                                          |
+| EB-08 | May a plan allow more than one spouse?                                                                                   | No: at most one.                                                                           |
+| EB-09 | Rounding of a sum insured from a multiple of salary                                                                      | Half up to the rupee, then the cap.                                                        |
+| EB-10 | Standard GPA covers (death, PTD, PPD, TTD) and how they are limited                                                      | Required / Not required per cover; limits recorded as amounts or text; TTD weekly benefit. |
+| EB-11 | How a GPA dependant's sum insured is set                                                                                 | Asked per case: the employee's, the dependant's own, or a percentage of the employee's.    |
+| EB-12 | GTLI free cover limit and medical evidence                                                                               | Recorded; members above it are flagged (warning, summary count); not enforced.             |
+| EB-13 | Age limits per product and relationship; should they belong to the plan?                                                 | Per case on the Data Sheet, blank by default.                                              |
+| EB-14 | Does GPA need an occupation or risk class per employee?                                                                  | Not captured.                                                                              |
+| EB-15 | The client's GMC, GPA and GTLI census formats and RFQ, QCR and placement slip layouts                                    | Provisional Fiducial templates and built-in layouts.                                       |
+| EB-16 | May an unconfirmed plan be assigned to cases and sent in an RFQ?                                                         | Yes, shown as awaiting confirmation.                                                       |
+
+### Design points built as designed (please confirm)
+
+- **D6, "parents covered" on GMC with a plan.** Where GMC asks whether the cover includes parents (co-payment row,
+  missing items, Data Sheet check, documents), one helper answers: with no plan, the Data Sheet's family definition as
+  today; with a plan, whether a slot accepts a parent or parent-in-law. The co-payment check moved from the schema
+  into the service (same path, message and 400). Different co-payments for parents and in-laws are not asked.
+- **D7, identity checks on GMC.** A GMC Self row whose name, gender or date of birth differs from the company's
+  employee record is refused, as on GPA and GTLI. This is the one way a GMC row accepted before can now be refused.
+  The alternative (no identity checks on GMC cases without a plan) is one flag (`identityChecks`).
+- **D8, GMC commit without a mode.** It works as before (a row equal to a member is a duplicate error). A GMC commit
+  naming a mode, and every GPA/GTLI commit, follows Add new only / Add and update.
+- **D10, replacing the client's decision at Payment.** Allowed while no payment is Received, as an acceptance only; a
+  rejection at Payment is refused (409) and the case can be closed instead.
+
+### Other decisions and deviations (please confirm)
+
+- EB routes mirror the GHI paths (`/rfq/generate`, `/qcrs/:id/client-decision`, `/placement-slip`, …) so the shared
+  screens call the same paths with a product prefix.
+- A GPA case whose dependants have their own amount, with a multiple-of-salary basis, gets an extra optional Sum
+  Insured column for the dependants' amounts.
+- The stage rule never moves a case into Closed: closing is its own action with a reason.
+- Excel date serials are read when they have 4 or 5 digits (to 13 October 2173), as GMC does today; later serials are
+  refused and the date can be typed as DD/MM/YYYY. Widening this would also read 6-digit text such as 010490 as a
+  serial, so it was left as is.
+- Placing a GPA or GTLI case freezes its census, plan copy and agreed premium in an append-only snapshot; the case is
+  then read-only (409 `EB_PLACED`).
+
+## Age bands, GPA rules and nominees, GTLI sum assured, RFQ selection summary (N4 to N7)
+
+Built on the N1 to N3 cases, census and documents. New collection: `age_band_sets`. Additive fields (missing on
+records stored before, which read as before): `ghi_cases.ageBandSelection` and `policy.ageBands`; `ghi_members.monthlySalary`
+and `nominee`; `ghi_rfqs.ageBands` and `selectionSummary`; `eb_policy_snapshots.requirements` and `ageBands`;
+`eb_policy_snapshot_members.monthlySalary`, `nominee` and `coverageBasis`. Nothing is migrated or rewritten.
+Permissions are unchanged: the Age Band Master needs `masters.view` / `masters.manage`; choosing a case's bands
+`proposals.edit`; the selection summary `proposals.view`, its download `proposals.export`.
+
+### To be confirmed (N4 to N7)
+
+| ID   | Item                                                                                    | Effect until answered                                                                                                                                                                                                  |
+| ---- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AB-1 | Option 2's age bands: the client's example overlaps                                     | Not created. An Admin defines it on Masters → Age bands with the exact boundaries. Option 1 (0–18, 19–25, 26–35, then 36–40 … 86–90), the custom example (0–35, 36–45, 46–50) and the standard bands are created once. |
+| AB-2 | Members older (or younger) than the last (first) band of the chosen set                 | Counted on their own "Outside the age bands" row, never put in the nearest band; the RFQ and the summary download wait until the set covers them.                                                                      |
+| AB-3 | The age reference date                                                                  | As before: the Data Sheet's age reference date, else the policy start, else the day the case was created. A child born after it is age 0.                                                                              |
+| NM-1 | Which members need a nominee (GPA, GTLI)                                                | A setting on the Data Sheet: each employee's row (what a new case starts with), every member, or not required. A Data Sheet saved before N5 (no setting) asks for none, so cases in progress are not blocked.          |
+| NM-2 | A minor nominee's appointee; several nominees with shares                               | Not captured. One nominee per member (name, relationship, date of birth or age), so a member never has duplicate nominees.                                                                                             |
+| NM-3 | Nominee relationships                                                                   | Spouse, Son, Daughter, Father, Mother, Brother, Sister, Other.                                                                                                                                                         |
+| GP-1 | GPA cover by relationship                                                               | A rule per relationship on the Data Sheet: a percentage of the employee's sum insured, a fixed amount, the employee's amount, or the member's own. Spouse 50% and child ₹50,000 are offered as sample values only.     |
+| GP-2 | Limits on dependants' amounts (for example a child's amount never above the employee's) | None applied; the amounts follow the rules exactly.                                                                                                                                                                    |
+| GT-1 | The salary the GTLI (or GPA) census gives                                               | A Data Sheet choice: the annual salary, or the monthly salary with annual CTC = monthly × 12. Whole rupees above 0. Sum assured = annual CTC × multiplier, half up to the rupee (open question 9), then the maximum.   |
+| GT-2 | Multiplier and maximum per company                                                      | Set per case (policy) on the Data Sheet; no company-wide default is built. The maximum is optional.                                                                                                                    |
+| SS-1 | The client's layout of the RFQ Selection Summary Sheet                                  | Not in the repository: Fiducial's built-in layout (sections A to D), as its own download and as an extra sheet of every RFQ version's Excel and PDF.                                                                   |
+| SS-2 | Family floater in the age band matrix                                                   | Lives only: a family's sum insured is counted once, on the employee, and is not split by age.                                                                                                                          |
+
+### Decisions taken (please confirm)
+
+- A case keeps a copy of the age band set it was given (like its family plan). Editing a set raises its revision and
+  changes no case; choosing the set again takes the new revision. Choosing bands raises the Data Sheet revision, so an
+  RFQ generated with other bands is out of date. Bands cannot change once the RFQ has gone to an insurer.
+- Each RFQ version keeps the bands it was generated with and its selection summary, never recalculated
+  (`GET …/rfq/versions/{rfqId}/selection-summary`). The live summary is worked out from the census as stored.
+- The summary is refused for download (409 `EB_SUMMARY_INCOMPLETE`) and blocks the RFQ while members have no cover,
+  no valid date of birth, or are outside the bands; the screen lists the problems. A GMC case on the standard bands is
+  checked exactly as before (its own wording for an empty census or missing sums insured).
+- Placing a GPA or GTLI case also freezes the Data Sheet's cover rules, the age bands and each member's cover basis;
+  recording a GMC policy keeps the age bands.
+- "Add and update" may now also change a member's monthly salary and nominee.
+- GMC never asks for a nominee or applies GPA rules; GTLI documents and screens say "sum assured".
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

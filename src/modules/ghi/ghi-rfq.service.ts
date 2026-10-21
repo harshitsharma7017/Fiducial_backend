@@ -24,9 +24,14 @@ import { templateFile } from '../documents/templates.service.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { censusIssues, membersForDocuments } from './census.service.ts';
+import { ClientModel } from '../clients/client.model.ts';
+import { ebMissingItems, toEbCaseRecord } from './eb-cases.service.ts';
+import { ebRfqDocument } from './eb-documents.ts';
+import { ebCensusIssues, membersForEbDocuments, summaryOf } from './eb-members.service.ts';
+import { GMC_SCOPE, productOf, type CaseScope } from './products/profile.ts';
 import {
   advanceStage,
-  assertOpen,
+  assertWritable,
   auditCase,
   insurerNames,
   isLocked,
@@ -49,7 +54,10 @@ import {
   prepareAttachment,
   prepareMail,
 } from './ghi-mail.ts';
-import { toPdf, toPreview, toXlsx } from './ghi-sheet.ts';
+import { toPdf, toPreview, toXlsx, type DocumentModel } from './ghi-sheet.ts';
+import { selectionSummarySheet } from './selection-summary-document.ts';
+import { currentSelectionSummary } from './selection-summary.service.ts';
+import { caseBands } from '../age-bands/case-bands.ts';
 import {
   GhiDispatchModel,
   GhiFileModel,
@@ -106,11 +114,49 @@ function toVersion(
       lives: rfq.census.lives,
       totalSumInsured: rfq.census.totalSumInsured?.toString() ?? null,
     },
+    ageBands: rfq.ageBands
+      ? { name: rfq.ageBands.name, revision: rfq.ageBands.revision ?? 0 }
+      : null,
+    hasSelectionSummary: Boolean(rfq.selectionSummary),
   };
+}
+
+/** What the selection summary still lacks (N7), as RFQ blockers. */
+async function summaryBlockers(doc: GhiCaseDoc, gmc: boolean): Promise<string[]> {
+  const { summary } = await currentSelectionSummary(doc);
+  // GMC already names an empty census and missing sums insured in its own words.
+  const codes = gmc
+    ? ['AGE_UNKNOWN', 'OUTSIDE_BANDS']
+    : ['NO_COVER', 'AGE_UNKNOWN', 'OUTSIDE_BANDS'];
+  return summary.problems
+    .filter((problem) => codes.includes(problem.code))
+    .map((problem) => `Selection summary: ${problem.message}`);
+}
+
+/** What stops a GPA or GTLI RFQ (6.1, 6.8, 18.9): Data Sheet, plan, census and shortfalls. */
+async function ebRfqBlockers(doc: GhiCaseDoc): Promise<string[]> {
+  const blockers = ebMissingItems(doc).map((item) => `Data Sheet: ${item.label}`);
+  if (!doc.planAssignment) {
+    blockers.push('Assign a family plan to the case');
+    return blockers;
+  }
+  const summary = await summaryOf(doc);
+  const checked = await ebCensusIssues(doc);
+  const invalid = new Set(checked.items.map((item) => item.member.id));
+  if (summary.lives === 0) blockers.push('Add the census');
+  else if (summary.lives - invalid.size === 0) {
+    blockers.push(
+      'At least one census member free of issues: correct the census on the Census tab',
+    );
+  }
+  for (const shortfall of checked.shortfalls) blockers.push(shortfall.message);
+  if (summary.lives > 0) blockers.push(...(await summaryBlockers(doc, false)));
+  return blockers;
 }
 
 /** What stops an RFQ being generated now: the Data Sheet, the census and its checks. */
 async function rfqBlockers(doc: GhiCaseDoc): Promise<string[]> {
+  if (productOf(doc) !== 'GMC') return ebRfqBlockers(doc);
   const summary = await loadSummary(doc);
   const issues = await censusIssues(doc);
   return [
@@ -121,11 +167,16 @@ async function rfqBlockers(doc: GhiCaseDoc): Promise<string[]> {
           `${issues.length} census member(s) do not fit the Data Sheet: correct them on the Census tab`,
         ]
       : []),
+    ...(summary.lives > 0 ? await summaryBlockers(doc, true) : []),
   ];
 }
 
-export async function rfqState(id: string, transport: MailTransport): Promise<GhiRfqState> {
-  const doc = await loadCase(id);
+export async function rfqState(
+  id: string,
+  transport: MailTransport,
+  scope: CaseScope = GMC_SCOPE,
+): Promise<GhiRfqState> {
+  const doc = await loadCase(id, undefined, scope);
   const versions = await GhiRfqModel.find({ caseId: doc._id }).sort({ version: -1 }).lean();
   const names = await userNames(
     versions.flatMap((rfq) => [rfq.generatedBy, rfq.submitted?.by, rfq.decision?.by]),
@@ -140,18 +191,44 @@ export async function rfqState(id: string, transport: MailTransport): Promise<Gh
   };
 }
 
+/** The RFQ's documents, with the selection summary sheet added after its own (N7 E). */
 async function rfqModel(doc: GhiCaseDoc, version: number) {
+  const selection = await currentSelectionSummary(doc);
+  const selectionStored = { ...selection, source: 'RFQ_VERSION' as const, rfqVersion: version };
+  const withSummary = (model: DocumentModel) => ({
+    ...model,
+    sheets: [...model.sheets, selectionSummarySheet(selectionStored)],
+  });
+  if (productOf(doc) !== 'GMC') {
+    const [record, summary, members] = await Promise.all([
+      toEbCaseRecord(doc),
+      summaryOf(doc),
+      membersForEbDocuments(doc),
+    ]);
+    return {
+      model: withSummary(ebRfqDocument(record, summary, members, version)),
+      summary,
+      selection: selectionStored,
+    };
+  }
   const [record, summary, members] = await Promise.all([
     toCaseRecord(doc),
     loadSummary(doc),
     membersForDocuments(doc),
   ]);
-  return { model: rfqDocument(record, summary, members, version), summary };
+  return {
+    model: withSummary(rfqDocument(record, summary, members, version)),
+    summary,
+    selection: selectionStored,
+  };
 }
 
 /** The RFQ as it would be generated now, for the screen. */
-export async function rfqPreview(id: string): Promise<GhiDocumentPreview> {
-  const doc = await loadCase(id);
+export async function rfqPreview(
+  id: string,
+  scope: CaseScope = GMC_SCOPE,
+): Promise<GhiDocumentPreview> {
+  const doc = await loadCase(id, undefined, scope);
   const latest = await GhiRfqModel.findOne({ caseId: doc._id }, { version: 1 })
     .sort({ version: -1 })
     .lean();
@@ -167,9 +244,10 @@ export async function generateRfq(
   id: string,
   actor: Actor,
   transport: MailTransport,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<GhiRfqState> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   if (isLocked(doc)) {
     throw conflict(
       ERROR_CODES.GHI_LOCKED,
@@ -178,15 +256,20 @@ export async function generateRfq(
   }
   const blockers = await rfqBlockers(doc);
   if (blockers.length > 0) {
-    throw conflict(ERROR_CODES.GHI_INCOMPLETE, `The RFQ needs: ${blockers.join('; ')}.`, {
-      missing: blockers,
-    });
+    throw conflict(
+      !doc.planAssignment && scope.product !== 'GMC'
+        ? ERROR_CODES.EB_PLAN_REQUIRED
+        : ERROR_CODES.GHI_INCOMPLETE,
+      `The RFQ needs: ${blockers.join('; ')}.`,
+      { missing: blockers },
+    );
   }
   const latest = await GhiRfqModel.findOne({ caseId: doc._id }, { version: 1 })
     .sort({ version: -1 })
     .lean();
   const version = (latest?.version ?? 0) + 1;
-  const { model, summary } = await rfqModel(doc, version);
+  const { model, summary, selection } = await rfqModel(doc, version);
+  const bands = caseBands(doc);
   const [xlsx, pdf] = await Promise.all([toXlsx(model), toPdf(model, await caseLetterhead())]);
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {
@@ -229,6 +312,14 @@ export async function generateRfq(
           },
           xlsxFileId: files[0]!._id,
           pdfFileId: files[1]!._id,
+          // N4, N7: the bands and the selection summary as generated, kept with the version.
+          ageBands: {
+            setId: bands.setId ? new Types.ObjectId(bands.setId) : null,
+            name: bands.name,
+            revision: bands.revision,
+            bands: bands.bands,
+          },
+          selectionSummary: selection,
           generatedBy: actorId,
           submitted: null,
           decision: null,
@@ -252,11 +343,16 @@ export async function generateRfq(
         employees: summary.employees,
         lives: summary.lives,
         totalSumInsured: summary.totalSumInsured,
+        ...(doc.planAssignment
+          ? { plan: doc.planAssignment.code, planVersion: doc.planAssignment.versionNumber }
+          : {}),
+        ageBands: { name: bands.name, revision: bands.revision },
       },
       session,
+      scope,
     );
   });
-  return rfqState(id, transport);
+  return rfqState(id, transport, scope);
 }
 
 async function currentVersion(doc: GhiCaseDoc): Promise<GhiRfqDoc> {
@@ -278,9 +374,10 @@ export async function submitRfq(
   id: string,
   actor: Actor,
   transport: MailTransport,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<GhiRfqState> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const rfq = await currentVersion(doc);
   assertFresh(rfq, doc);
   if (rfq.status !== 'DRAFT' && rfq.status !== 'RETURNED') {
@@ -318,9 +415,10 @@ export async function submitRfq(
       { version: rfq.version, status: rfq.status },
       { version: rfq.version, status: 'SUBMITTED' },
       session,
+      scope,
     );
   });
-  return rfqState(id, transport);
+  return rfqState(id, transport, scope);
 }
 
 export async function decideRfq(
@@ -328,9 +426,10 @@ export async function decideRfq(
   input: GhiDecisionRequest,
   actor: Actor,
   transport: MailTransport,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<GhiRfqState> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const rfq = await currentVersion(doc);
   assertFresh(rfq, doc);
   if (rfq.status !== 'SUBMITTED') {
@@ -372,9 +471,10 @@ export async function decideRfq(
       { version: rfq.version, status: 'SUBMITTED' },
       { version: rfq.version, status: input.decision, comment: input.comment },
       session,
+      scope,
     );
   });
-  return rfqState(id, transport);
+  return rfqState(id, transport, scope);
 }
 
 /** A generated RFQ file, exactly as it was generated (the latest version unless one is named). */
@@ -383,8 +483,9 @@ export async function rfqFile(
   format: 'xlsx' | 'pdf',
   actor: Actor,
   versionId?: string,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<{ fileName: string; contentType: string; data: Buffer }> {
-  const doc = await loadCase(id);
+  const doc = await loadCase(id, undefined, scope);
   const rfq = versionId
     ? await GhiRfqModel.findOne({ _id: new Types.ObjectId(versionId), caseId: doc._id }).lean()
     : await GhiRfqModel.findOne({ caseId: doc._id }).sort({ version: -1 }).lean();
@@ -394,10 +495,15 @@ export async function rfqFile(
     caseId: doc._id,
   }).lean();
   if (!file) throw notFound('RFQ file not found');
-  await auditCase(actor, AUDIT_ACTIONS.GHI_RFQ_DOWNLOADED, id, null, {
-    version: rfq.version,
-    format,
-  });
+  await auditCase(
+    actor,
+    AUDIT_ACTIONS.GHI_RFQ_DOWNLOADED,
+    id,
+    null,
+    { version: rfq.version, format },
+    undefined,
+    scope,
+  );
   const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
@@ -445,15 +551,27 @@ export async function dispatchRfq(
   actor: Actor,
   transport: MailTransport,
 ): Promise<DispatchGhiRfqResponse> {
+  const results = await dispatchRfqOf(id, input, actor, transport, GMC_SCOPE);
+  return { results, case: await toCaseRecord(await loadCase(id)) };
+}
+
+/** Emails the approved RFQ for a case of any product; returns each insurer's outcome. */
+export async function dispatchRfqOf(
+  id: string,
+  input: DispatchGhiRfqRequest,
+  actor: Actor,
+  transport: MailTransport,
+  scope: CaseScope,
+): Promise<GhiSendOutcome[]> {
   assertMailOn(transport, 'RFQ');
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const rfq = await approvedForSending(doc);
   const items = insurersOnCase(doc, input.insurerIds);
   const masters = await InsurerModel.find({
     _id: { $in: items.map((item) => item.insurerId) },
   }).lean();
-  const record = await toCaseRecord(doc);
+  const clientName = (await ClientModel.findById(doc.clientId, { name: 1 }).lean())?.name ?? '';
   const file = await GhiFileModel.findOne({
     _id: input.format === 'pdf' ? rfq.pdfFileId : rfq.xlsxFileId,
     caseId: doc._id,
@@ -526,14 +644,7 @@ export async function dispatchRfq(
       });
       continue;
     }
-    const mail = await prepareMail(
-      'RFQ',
-      doc,
-      record.client.name,
-      recipient,
-      input.dueDate,
-      actor.id,
-    );
+    const mail = await prepareMail('RFQ', doc, clientName, recipient, input.dueDate, actor.id);
     const delivery = await deliver(transport, mail, to, attachmentFile);
     const at = new Date();
     await withTransaction(async (session) => {
@@ -599,6 +710,7 @@ export async function dispatchRfq(
           ...(delivery.ok ? {} : { error: delivery.error }),
         },
         session,
+        scope,
       );
     });
     results.push({
@@ -609,7 +721,7 @@ export async function dispatchRfq(
       reason: delivery.error,
     });
   }
-  return { results, case: await toCaseRecord(await loadCase(id)) };
+  return results;
 }
 
 /** The approved RFQ went to these insurers outside the app (mail off, portal, by hand). */
@@ -618,8 +730,18 @@ export async function markRfqSent(
   input: MarkGhiRfqSentRequest,
   actor: Actor,
 ): Promise<GhiCaseRecord> {
-  const doc = await loadCase(id);
-  assertOpen(doc);
+  await markRfqSentOf(id, input, actor, GMC_SCOPE);
+  return toCaseRecord(await loadCase(id));
+}
+
+export async function markRfqSentOf(
+  id: string,
+  input: MarkGhiRfqSentRequest,
+  actor: Actor,
+  scope: CaseScope,
+): Promise<void> {
+  const doc = await loadCase(id, undefined, scope);
+  assertWritable(doc);
   const rfq = await approvedForSending(doc);
   const items = insurersOnCase(doc, input.insurerIds);
   const actorId = new Types.ObjectId(actor.id);
@@ -660,7 +782,7 @@ export async function markRfqSent(
         dueDate: input.dueDate,
       },
       session,
+      scope,
     );
   });
-  return toCaseRecord(await loadCase(id));
 }

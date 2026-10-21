@@ -44,6 +44,7 @@ import {
   prepareMail,
 } from './ghi-mail.ts';
 import { compareTerms, lowestTotals } from './ghi-quote-calc.ts';
+import { gmcFamilyCover } from './products/gmc.ts';
 import { latestFinalIds } from './ghi-quotes.service.ts';
 import { caseLetterhead } from './ghi-rfq.service.ts';
 import { toPdf, toXlsx } from './ghi-sheet.ts';
@@ -83,8 +84,15 @@ async function qcrView(
     dispatchesOf(caseDoc._id, { kind: 'QCR', documentId: qcr._id }),
   ]);
   const lowest = lowestTotals(ordered.map((quote) => money(quote.totalPremium)));
-  const compared = ordered.map((quote) => compareTerms(caseDoc.requirements, quote.terms));
-  const template = compareTerms(caseDoc.requirements, ordered[0]?.terms ?? emptyGhiQuoteTerms());
+  const { parentsCovered } = gmcFamilyCover(caseDoc);
+  const compared = ordered.map((quote) =>
+    compareTerms(caseDoc.requirements, quote.terms, parentsCovered),
+  );
+  const template = compareTerms(
+    caseDoc.requirements,
+    ordered[0]?.terms ?? emptyGhiQuoteTerms(),
+    parentsCovered,
+  );
   return {
     id: qcr._id.toHexString(),
     version: qcr.version,

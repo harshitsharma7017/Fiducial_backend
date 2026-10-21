@@ -44,6 +44,15 @@ export interface GhiRfqDoc {
   census: { employees: number; lives: number; totalSumInsured: Types.Decimal128 | null };
   xlsxFileId: Types.ObjectId;
   pdfFileId: Types.ObjectId;
+  /** N4: the age bands the version was generated with; missing on versions before N4. */
+  ageBands?: {
+    setId: Types.ObjectId | null;
+    name: string;
+    revision: number | null;
+    bands: unknown[];
+  };
+  /** N7: the selection summary as generated (RfqSelectionSummaryResponse); never recalculated. */
+  selectionSummary?: Record<string, unknown>;
   generatedBy: Types.ObjectId;
   submitted: { at: Date; by: Types.ObjectId } | null;
   decision: {
@@ -75,6 +84,19 @@ const ghiRfqSchema = new Schema<GhiRfqDoc>(
     },
     xlsxFileId: { type: Schema.Types.ObjectId, ref: 'GhiFile', required: true },
     pdfFileId: { type: Schema.Types.ObjectId, ref: 'GhiFile', required: true },
+    ageBands: {
+      type: new Schema(
+        {
+          setId: { type: Schema.Types.ObjectId, ref: 'AgeBandSet', default: null },
+          name: { type: String, required: true },
+          revision: { type: Number, default: null },
+          bands: { type: Schema.Types.Mixed, required: true },
+        },
+        noId,
+      ),
+      default: undefined,
+    },
+    selectionSummary: { type: Schema.Types.Mixed, default: undefined },
     generatedBy: by,
     submitted: { type: stampSchema(), default: null },
     decision: { type: decisionSchema(['APPROVED', 'RETURNED']), default: null },
@@ -102,6 +124,8 @@ export interface GhiQuoteDoc {
   gst: Types.Decimal128 | null;
   totalPremium: Types.Decimal128 | null;
   terms: GhiQuoteTermsInput;
+  /** GPA/GTLI: the rate as the insurer stated it; used in no calculation (Requirement 7.1). */
+  statedRate?: string | null;
   otherTerms: string | null;
   validUntil: string | null;
   attachmentIds: Types.ObjectId[];
@@ -126,6 +150,7 @@ const ghiQuoteSchema = new Schema<GhiQuoteDoc>(
     totalPremium: { type: Schema.Types.Decimal128, default: null },
     // Validated by GhiQuoteTermsInputSchema before every write.
     terms: { type: Schema.Types.Mixed, required: true },
+    statedRate: { type: String, default: undefined },
     otherTerms: text,
     validUntil: text,
     attachmentIds: [{ type: Schema.Types.ObjectId, ref: 'GhiFile' }],
@@ -149,6 +174,8 @@ export interface GhiQcrDoc {
   quoteIds: Types.ObjectId[];
   recommendedInsurerId: Types.ObjectId | null;
   remarks: string | null;
+  /** GPA/GTLI: sha256 of the content approved (Requirement 8.3); missing on GMC QCRs. */
+  fingerprint?: string | null;
   submitted: { at: Date; by: Types.ObjectId } | null;
   decision: {
     status: 'APPROVED' | 'REJECTED';
@@ -164,6 +191,9 @@ export interface GhiQcrDoc {
     confirmedBy: string;
     note: string | null;
     fileIds: Types.ObjectId[];
+    /** GPA/GTLI: the chosen quote version's total, and its version (Requirement 9.2). */
+    agreedPremium?: Types.Decimal128 | null;
+    quoteVersion?: number | null;
     recordedAt: Date;
     recordedBy: Types.ObjectId;
   } | null;
@@ -181,6 +211,7 @@ const ghiQcrSchema = new Schema<GhiQcrDoc>(
     quoteIds: [{ type: Schema.Types.ObjectId, ref: 'GhiQuote', required: true }],
     recommendedInsurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', default: null },
     remarks: text,
+    fingerprint: { type: String, default: undefined },
     submitted: { type: stampSchema(), default: null },
     decision: { type: decisionSchema(['APPROVED', 'REJECTED']), default: null },
     clientDecision: {
@@ -193,6 +224,8 @@ const ghiQcrSchema = new Schema<GhiQcrDoc>(
           confirmedBy: { type: String, required: true },
           note: text,
           fileIds: [{ type: Schema.Types.ObjectId, ref: 'GhiFile' }],
+          agreedPremium: { type: Schema.Types.Decimal128, default: undefined },
+          quoteVersion: { type: Number, default: undefined },
           recordedAt: { type: Date, required: true },
           recordedBy: by,
         },

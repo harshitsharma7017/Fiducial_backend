@@ -14,6 +14,7 @@ import {
   type RecordGhiPolicyRequest,
   type SaveGhiPaymentRequest,
 } from '../../shared/index.ts';
+import { caseBands } from '../age-bands/case-bands.ts';
 import { Types, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { Decimal, moneyString, toDecimal128 } from '../../lib/decimal.ts';
@@ -565,6 +566,11 @@ export async function recordPolicy(
               totalSumInsured: toDecimal128(summary.totalSumInsured ?? '0'),
               revision: summary.revision,
             },
+            // N4: the age bands in force when the policy was recorded, kept with it.
+            ageBands: (() => {
+              const bands = caseBands(doc);
+              return { name: bands.name, revision: bands.revision, bands: bands.bands };
+            })(),
             recordedAt: now,
             recordedBy: actorId,
           },

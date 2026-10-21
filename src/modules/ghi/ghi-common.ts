@@ -1,5 +1,4 @@
 import {
-  AUDIT_ENTITIES,
   ERROR_CODES,
   GHI_STAGES,
   GHI_STAGE_LABELS,
@@ -21,23 +20,36 @@ import { ClientModel } from '../clients/client.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import type { CensusSettings } from './census-rules.ts';
+import { caseBands, selectionView } from '../age-bands/case-bands.ts';
 import { summarizeCensus } from './census-summary.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { GhiMemberModel } from './ghi-census.model.ts';
 import { GhiFileModel } from './ghi-workflow.model.ts';
+import { planView } from './eb-plan-view.ts';
+import { gmcFamilyCover } from './products/gmc.ts';
+import { GMC_SCOPE, productFilter, scopedAction, type CaseScope } from './products/profile.ts';
 
 export interface Actor {
   id: string;
   requestId: string | null;
 }
 
-export const ghiCaseNotFound = (): AppError => notFound('Group health case not found');
+export const ghiCaseNotFound = (scope: CaseScope = GMC_SCOPE): AppError =>
+  notFound(`${scope.noun} not found`);
 
-export async function loadCase(id: string, session?: mongo.ClientSession): Promise<GhiCaseDoc> {
-  const doc = await GhiCaseModel.findById(id)
+/**
+ * Loads a case of the scope's product (design D1): a case of another product answers exactly as
+ * a case that does not exist (Requirement 2.9).
+ */
+export async function loadCase(
+  id: string,
+  session?: mongo.ClientSession,
+  scope: CaseScope = GMC_SCOPE,
+): Promise<GhiCaseDoc> {
+  const doc = await GhiCaseModel.findOne({ _id: id, ...productFilter(scope.product) })
     .session(session ?? null)
     .lean<GhiCaseDoc>();
-  if (!doc) throw ghiCaseNotFound();
+  if (!doc) throw ghiCaseNotFound(scope);
   return doc;
 }
 
@@ -48,6 +60,17 @@ export function isLocked(doc: Pick<GhiCaseDoc, 'insurers'>): boolean {
 
 export function assertOpen(doc: Pick<GhiCaseDoc, 'stage' | 'policy'>): void {
   if (doc.stage === 'CLOSED') throw conflict(ERROR_CODES.GHI_LOCKED, 'This case is closed.');
+}
+
+/** Open and, for GPA/GTLI, not placed (Requirements 3.11, 11.4). */
+export function assertWritable(doc: Pick<GhiCaseDoc, 'stage' | 'policy' | 'placement'>): void {
+  assertOpen(doc);
+  if (doc.placement) {
+    throw conflict(
+      ERROR_CODES.EB_PLACED,
+      'The placement slip has been issued: the case is placed and can no longer change.',
+    );
+  }
 }
 
 /** The Data Sheet and census can change: the case is open and no insurer has the RFQ yet. */
@@ -103,8 +126,16 @@ export async function loadSummary(
       referenceDate: referenceDateOf(doc),
       declaredEmployees: doc.requirements.employeeCount,
       revision: doc.censusRevision,
+      ...summaryBandsOf(doc),
     },
   );
+}
+
+/** The case's age band set for its summary (N4); none: the standard bands, as before. */
+export function summaryBandsOf(doc: Pick<GhiCaseDoc, 'ageBandSelection'>) {
+  if (!doc.ageBandSelection) return {};
+  const bands = caseBands(doc);
+  return { bands: bands.bands, ageBands: { name: bands.name, revision: bands.revision ?? 0 } };
 }
 
 /** What the Data Sheet still needs before an RFQ can be generated (G2). */
@@ -133,10 +164,7 @@ export function missingRequirements(doc: GhiCaseDoc): string[] {
   for (const waiver of GHI_WAIVERS) {
     if (requirements.waivers[waiver] === null) missing.push(GHI_WAIVER_LABELS[waiver]);
   }
-  if (
-    requirements.familyDefinition.parents !== 'NONE' &&
-    requirements.parentsCoPayPercent === null
-  ) {
+  if (gmcFamilyCover(doc).parentsCovered && requirements.parentsCoPayPercent === null) {
     missing.push('Co-payment for parents');
   }
   if (doc.type === 'RENEWAL' && requirements.claims.length === 0) {
@@ -264,12 +292,13 @@ export async function auditCase(
   before: unknown,
   after: unknown,
   session?: mongo.ClientSession,
+  scope: CaseScope = GMC_SCOPE,
 ): Promise<void> {
   await writeAudit(
     {
       userId: actor.id,
-      action,
-      entity: AUDIT_ENTITIES.GHI_CASE,
+      action: scopedAction(scope, action),
+      entity: scope.auditEntity,
       entityId: caseId,
       before,
       after,
@@ -310,6 +339,14 @@ export async function insurerNames(ids: readonly Types.ObjectId[]) {
 
 /** The case as the API returns it. */
 export async function toCaseRecord(doc: GhiCaseDoc): Promise<GhiCaseRecord> {
+  return caseRecordWith(doc, missingRequirements(doc));
+}
+
+/**
+ * The case record with the Data Sheet's missing items given: GMC passes its own; GPA and GTLI
+ * pass theirs and replace the product-specific fields (eb-common.ts).
+ */
+export async function caseRecordWith(doc: GhiCaseDoc, missing: string[]): Promise<GhiCaseRecord> {
   const [client, insurers, names, policyFile] = await Promise.all([
     ClientModel.findById(doc.clientId).lean(),
     InsurerModel.find({ _id: { $in: doc.insurers.map((item) => item.insurerId) } }).lean(),
@@ -319,6 +356,7 @@ export async function toCaseRecord(doc: GhiCaseDoc): Promise<GhiCaseRecord> {
       ...doc.insurers.map((item) => item.sentBy),
       doc.finalQcr?.recordedBy,
       doc.policy?.recordedBy,
+      doc.ageBandSelection?.selectedBy,
     ]),
     doc.policy ? GhiFileModel.findById(doc.policy.fileId, { fileName: 1 }).lean() : null,
   ]);
@@ -333,9 +371,9 @@ export async function toCaseRecord(doc: GhiCaseDoc): Promise<GhiCaseRecord> {
       : ((await insurerNames([doc.policy.insurerId])).get(doc.policy.insurerId.toHexString()) ??
         'Insurer')
     : '';
-  const missing = missingRequirements(doc);
   return {
     id: doc._id.toHexString(),
+    product: 'GMC',
     reference: doc.reference,
     type: doc.type,
     stage: doc.stage,
@@ -424,6 +462,8 @@ export async function toCaseRecord(doc: GhiCaseDoc): Promise<GhiCaseRecord> {
           recordedBy: nameOf(names, doc.policy.recordedBy),
         }
       : null,
+    plan: await planView(doc.planAssignment, 'GMC'),
+    ageBands: selectionView(doc.ageBandSelection, (id) => nameOf(names, id)),
     nextStep:
       doc.policy !== null
         ? null
@@ -443,6 +483,7 @@ export async function toCaseRecord(doc: GhiCaseDoc): Promise<GhiCaseRecord> {
 /** A short snapshot of a case for the audit log. */
 export function caseAuditView(doc: GhiCaseDoc) {
   return {
+    product: doc.product ?? 'GMC',
     reference: doc.reference,
     type: doc.type,
     stage: doc.stage,
