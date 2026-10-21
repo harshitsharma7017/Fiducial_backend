@@ -310,8 +310,13 @@ export function createTpaRouter(options: {
   router.get(
     '/claims/:claimId/history',
     view,
-    route({ params: TpaClaimParamsSchema }, async ({ params }, _req, res) => {
-      res.json(await tpaClaimHistory(params.claimId));
+    route({ params: TpaClaimParamsSchema }, async ({ params }, req, res) => {
+      const history = await tpaClaimHistory(params.claimId);
+      await auditView(req, AUDIT_ACTIONS.TPA_CLAIM_VIEWED, history.caseId, {
+        claim: history.tpaClaimId,
+        part: 'history',
+      });
+      res.json({ items: history.items });
     }),
   );
   router.put(

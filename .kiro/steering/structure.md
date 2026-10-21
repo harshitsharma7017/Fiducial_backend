@@ -47,6 +47,13 @@ src/
                          N7: selection-summary.service.ts and selection-summary-document.ts (the RFQ Selection
                          Summary Sheet), case-configuration.routes.ts (age bands and summary on every product)
     age-bands/           Age Band Master (N4): sets, default sets at startup, case-bands.ts (a case's copy)
+    tpa/                 TPA claims (N9, N11): formats, streamed workbook reading (tpa-workbook.ts), imports with
+                         per-row checks and batched commit, tpa_claims and their events, board sync
+                         (tpa-board.service.ts) and import email settings, /tpa routes
+    insured-policies/    a placed policy's facts for reports (GMC policy and final quote; GPA/GTLI snapshot)
+    claims-analysis/     claims analysis (N10) and its Excel/PDF, endorsement premiums; analysis.routes.ts also
+                         mounts the renewal routes
+    renewal/             renewal benefit and cost analysis (N8): recorded years, saved reports, Excel/PDF
     family-plans/        Family Plan Master (N2): versioned plans, default plans at startup (default-plans.ts),
                          company default plans, /family-plans routes
     employees/           shared employee identity (N1/N3): identities per company and employee key, linking at
@@ -58,7 +65,8 @@ src/
   shared/                Zod schemas, enums, types, formatters (copied to Fiducial_frontend); Employee Benefits:
                          eb*.ts (products, Data Sheets, quotes, workflow, census, eb-census-rules.ts the pure
                          Census_Validator, eb-import-plan.ts, eb-money.ts BigInt money), family-plans.ts,
-                         age-bands.ts, eb-nominees.ts, rfq-summary.ts (N4 to N7)
+                         age-bands.ts, eb-nominees.ts, rfq-summary.ts (N4 to N7); tpa-claims.ts, icd.ts,
+                         claims-analysis.ts, renewal-analysis.ts, masking.ts (N8 to N12)
 test/                    Supertest integration tests and helpers (setup/ starts the in-memory replica set)
 data/client-formats/     the client's blank Excel formats (reference only; no data is kept in the repo)
 docs/                    project PDFs and OPEN_ITEMS.md

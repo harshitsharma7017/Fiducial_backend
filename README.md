@@ -565,6 +565,44 @@ The open questions, the provisional templates, the default plans and the design 
 
 Open questions and decisions: `docs/OPEN_ITEMS.md` (N4 to N7).
 
+## TPA claims, claims board, claims analysis and renewal analysis (N8 to N12)
+
+- **TPA formats** (`/api/v1/tpa/formats`, `src/modules/tpa/`): per TPA layout, the column of each field, how each
+  TPA status counts (an unmapped status is a row error, never a guess), and which board column each status puts a
+  claim in (per company over it; forward-only by default).
+- **Imports**: upload (`POST /tpa/imports`, raw `.xlsx` body, at most 25 MB and 50,000 rows) checks every row and keeps
+  the result per row; the preview, the problems report and the import (all rows, or the valid rows only) follow. Claims
+  are keyed by policy, TPA code and claim ID: re-importing updates them and records each change in
+  `tpa_claim_events`; unchanged rows write nothing. One import per policy and TPA at a time (unique partial index).
+  Workbooks are read row by row with ExcelJS after `tpa-workbook.ts` puts the parts in a safe order.
+- **Claims board** (`tpa-board.service.ts`): an import links each claim to the board claim of the same patient and
+  admission date, moves it forward to the mapped column, records the TPA settlement apart from the column, and adds a
+  placed GMC claim that is not on the board. Import emails are off until the client approves (`/tpa/settings`).
+- **Claims analysis** (`src/modules/claims-analysis/`, `src/shared/claims-analysis.ts`): status, members, gender,
+  relationship, age bands, claim type, ICD-10 chapters, and the ICR on the prorated and the total premium (placed
+  premium ± endorsements). Money is BigInt paise, rounded half up.
+- **Renewal analysis** (`src/modules/renewal/`, `src/shared/renewal-analysis.ts`): up to three policy years (placed in
+  the app, or recorded by hand), changes between years, the coming year's quotes; saved reports never change.
+- **Sensitive data**: diagnosis, ICD code and rejection reason only for `claims.process`; full bank accounts only for
+  `claims.admin` (masked otherwise); board claims hide the patient's date of birth and the phone from users without
+  `claims.process`. Views and downloads of claim data are audited, refusals too (`CLAIM_ACCESS_DENIED`); no audit
+  entry holds a diagnosis, bank account or phone number.
+
+| Routes                                                                                                     | Permission         |
+| ---------------------------------------------------------------------------------------------------------- | ------------------ |
+| `GET /tpa/policies`, `GET /tpa/claims`, `GET /tpa/claims/:claimId`, `…/history`                            | `claims.view`      |
+| `GET /tpa/formats`, `GET /tpa/formats/:formatId`, `POST /tpa/inspect`                                      | `claims.process`   |
+| `GET/POST /tpa/imports`, `GET /tpa/imports/:importId`, `…/rows`, `…/error-report`, `…/commit`, `…/discard` | `claims.process`   |
+| `PUT /tpa/claims/:claimId/link`                                                                            | `claims.process`   |
+| `POST/PUT /tpa/formats…`, `…/activate`, `…/deactivate`, `GET/PUT /tpa/settings`                            | `claims.admin`     |
+| `GET /claims-analysis`, `GET /claims-analysis/document`, `GET /claims-analysis/premium/:caseId`            | `claims.view`      |
+| `POST /claims-analysis/premium/:caseId`, `…/:adjustmentId/void`                                            | `proposals.edit`   |
+| `GET /renewal/options`, `POST /renewal/analysis`, `GET /renewal/years`, `GET /renewal/reports…`            | `proposals.view`   |
+| `POST/PUT /renewal/years…`, `POST /renewal/reports`                                                        | `proposals.edit`   |
+| `POST /renewal/analysis/document`, `GET /renewal/reports/:reportId/document`                               | `proposals.export` |
+
+Open questions, decisions and what is BLOCKED on client files: `docs/OPEN_ITEMS.md` (N8 to N13).
+
 ## Security notes
 
 - Passwords are hashed with argon2id (12-character minimum). Every sign-in failure returns the same error; 5 failures

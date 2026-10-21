@@ -110,8 +110,14 @@ export const RENEWAL_METRIC_LABELS: Record<RenewalMetric, string> = {
   premiumPerLakh: 'Premium per lakh of sum insured',
 };
 /** Metrics that are percentages (their change is in percentage points). */
-const PERCENT_METRICS: readonly RenewalMetric[] = ['claimsRatio'];
-const COUNT_METRICS: readonly RenewalMetric[] = ['employees', 'dependants', 'lives', 'claimsCount'];
+export const RENEWAL_PERCENT_METRICS: readonly RenewalMetric[] = ['claimsRatio'];
+/** Metrics that are counts (the rest are amounts in rupees). */
+export const RENEWAL_COUNT_METRICS: readonly RenewalMetric[] = [
+  'employees',
+  'dependants',
+  'lives',
+  'claimsCount',
+];
 
 const ok = (value: string): MetricValue => ({ value, reason: null });
 const missing = (reason: string): MetricValue => ({ value: null, reason });
@@ -233,12 +239,12 @@ export function renewalChanges(from: RenewalYear, to: RenewalYear): RenewalChang
     if (a.value === null || b.value === null) {
       return { ...base, absolute: null, percent: null, reason: a.reason ?? b.reason };
     }
-    const count = COUNT_METRICS.includes(metric);
+    const count = RENEWAL_COUNT_METRICS.includes(metric);
     const left = count ? BigInt(a.value) * 100n : toPaise(a.value);
     const right = count ? BigInt(b.value) * 100n : toPaise(b.value);
     const difference = right - left;
     const absolute = count ? String(difference / 100n) : fromPaise(difference);
-    if (PERCENT_METRICS.includes(metric)) {
+    if (RENEWAL_PERCENT_METRICS.includes(metric)) {
       return {
         ...base,
         absolute,

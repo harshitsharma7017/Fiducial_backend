@@ -163,6 +163,9 @@ export async function tpaClaimHistory(id: string) {
   const doc = await loadTpaClaim(id);
   const events = await TpaClaimEventModel.find({ claimId: doc._id }).sort({ at: 1 }).lean();
   return {
+    // For the view's audit entry (not sent): the policy and the TPA's claim ID.
+    caseId: doc.caseId.toHexString(),
+    tpaClaimId: doc.tpaClaimId,
     items: events.map((event) => ({
       type: event.type,
       at: event.at.toISOString(),

@@ -386,6 +386,65 @@ Permissions are unchanged: the Age Band Master needs `masters.view` / `masters.m
 - "Add and update" may now also change a member's monthly salary and nominee.
 - GMC never asks for a nominee or applies GPA rules; GTLI documents and screens say "sum assured".
 
+## TPA claims, claims board, claims analysis, renewal analysis and sensitive data (N8 to N13)
+
+Built on the placed GMC, GPA and GTLI policies and the claims board (C1 to C4). New collections: `tpa_formats`,
+`tpa_imports`, `tpa_import_rows`, `tpa_claims` (unique per policy, TPA code and claim ID), `tpa_claim_events`
+(append-only), `policy_premium_adjustments` (voided, never deleted), `claim_import_settings`, `recorded_policy_years`
+and `renewal_reports` (never changed once saved). Additive fields on `claims` (missing on claims stored before, which
+read as before): `settlement`, `tpa`, the source value `TPA_IMPORT`, and `contactEmail` may be null for a claim a TPA
+import added. One new index on `claims` (`ghiCaseId`, `patient.memberId`, `admissionDate`). Nothing is migrated,
+rewritten or deleted; staff-made and link-submitted claims behave as before. Permissions are unchanged (no new role
+or permission): TPA formats and import emails need `claims.admin`; checking and importing files `claims.process`;
+reading imported claims and the claims analysis `claims.view`; endorsement premiums `proposals.edit`; the renewal
+analysis `proposals.view`, recording years and saving reports `proposals.edit`, downloads `proposals.export`.
+
+### Client files not available: BLOCKED
+
+| ID    | Item                                                                                                                                  | Status and what was built                                                                                                                                                                                                                                                                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TPA-1 | The TPAs' claims export layouts (columns, header row, status words)                                                                   | BLOCKED. Formats are configured per TPA by an Admin (TPA claims → TPA formats), from a real file read with "Read the headers of a sample file". Tested only on synthetic layouts.                                                                                                               |
+| CA-3  | The client's claims analysis layout                                                                                                   | BLOCKED. Fiducial's own layout (sections A to F, then the claims), as Excel and PDF.                                                                                                                                                                                                            |
+| BC-3  | The client's benefit and cost (renewal) analysis layout                                                                               | BLOCKED. Fiducial's own layout: one column per year, the change between years, the quotes.                                                                                                                                                                                                      |
+| AC-1  | The client's claims dump (61 reported, 48 settled, ₹27,33,627 settled, 10 outstanding, 3 rejected; ICR 84.96% prorated, 81.24% total) | BLOCKED. The figures cannot be checked without the dump and its premium and endorsements. They appear nowhere in the code or tests. A synthetic file of the same shape (61 / 48 / 10 / 3) is checked against figures worked out independently from its rows (`test/claims-acceptance.test.ts`). |
+| CT-1  | The client's census templates                                                                                                         | BLOCKED. The provisional templates (N1 to N3) stay; they are tested on synthetic files only.                                                                                                                                                                                                    |
+
+### To be confirmed (N8 to N13)
+
+| ID    | Item                                                              | Effect until answered                                                                                                                                                                                                                                                                                       |
+| ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TPA-2 | Which TPA statuses mean settled, outstanding, rejected, withdrawn | Each format maps each status word. A word not mapped makes its row an error, never a guess. The client's examples are offered as starting values only.                                                                                                                                                      |
+| TPA-3 | A claim's identity across files                                   | The TPA's claim ID (spaces removed, case ignored) within the policy and TPA code. Re-importing a file updates the same record; unchanged rows write nothing. Members are matched by employee ID and relationship (then date of birth, then name within the family), never by name alone.                    |
+| TPA-4 | Pre-authorisations and pre/post-hospitalisation records           | Counted once: a pre-auth or pre/post record linked to its main claim (by the main claim ID column) is part of that claim and not counted again. One whose main claim is not in the data is counted on its own, and listed for review.                                                                       |
+| TPA-5 | A claim with the same patient and admission date as a board claim | Linked to that board claim. Two candidates, or a board claim another TPA record already drives, are left for a person to link by hand.                                                                                                                                                                      |
+| N11-1 | "Settled" on the claims board                                     | Kept apart from the board column: a claim shows "Settled" (amount and date from the TPA) in whatever column it is in. No new board column was added, so the board's moves, emails and templates are unchanged. Adding a Settled column needs the client's decision.                                         |
+| N11-2 | Emails when a TPA import changes the board                        | OFF by default (Admin setting on TPA formats: "Emails from TPA imports"). Staff moves email as before. Each import's board event records whether an email was sent and why not. No email ever carries a diagnosis, ICD code or bank account.                                                                |
+| N11-3 | Which TPA statuses move a board claim, and to which column        | Per format (and per company over it): e.g. Registration → Submitted, For Investigation → Investigation, Settled → Approved, as the client's examples. A status not mapped moves nothing and is reported after the import. Moves are forward only by default (a format may say never).                       |
+| N11-4 | Board claims for TPA claims not on the board                      | Added for placed GMC policies only (the board holds GMC), when the patient is matched to the census and the file gives the admission date, hospital, claim type and claimed amount. Added unassigned, with no claimant email. Others are listed with the reason.                                            |
+| ICR-1 | Prorated premium                                                  | Earned by days in force, both ends included: the premium as placed × days from the policy start to the reporting date ÷ policy days, and each endorsement × days from its effective date ÷ days from that date to the policy end, each rounded to the paisa.                                                |
+| ICR-2 | Outstanding claims in the ICR                                     | Reserved at the sanctioned amount, else the claimed amount (a filter offers the claimed amount instead). Rejected and withdrawn claims count nothing.                                                                                                                                                       |
+| ICR-3 | Premium for the ICR                                               | Before GST: the placed premium plus additions less deletions recorded as endorsements. Without a recorded premium the ICR is not shown and the reason is given.                                                                                                                                             |
+| CA-1  | Claims analysis age bands                                         | A seeded set "Claims analysis": 0–10, 11–20 … 61–70, Above 70 (age at admission); any other active set can be chosen. Age not known is its own row.                                                                                                                                                         |
+| CA-2  | Disease groups                                                    | ICD-10 chapters (WHO 2019; ICD-10-CM codes of the same chapters accepted). A missing or unreadable code is "Unclassified", never guessed from the diagnosis text.                                                                                                                                           |
+| BC-1  | Renewal figures for years before the app                          | Recorded by hand with their source; a missing figure stays empty and the report says why (no average or ratio from a missing or zero denominator).                                                                                                                                                          |
+| BC-2  | Claims for a year placed in the app                               | From its imported TPA claims, counted to the chosen date; a year with no import shows no claims figure.                                                                                                                                                                                                     |
+| SEC-1 | Who sees diagnoses and bank accounts                              | Diagnosis, ICD code and rejection reason: `claims.process` only (on screens, previews, problems reports and downloads). Full bank account: `claims.admin` only; everyone else sees XXXXXXXX9012. On board claims, the patient's date of birth and the phone are hidden from users without `claims.process`. |
+
+### Decisions taken (please confirm)
+
+- Every view of claim data (board, list, claim, TPA claims, import preview, claims analysis) and every download is
+  audited with who, what and when, never the data; every refused request for claim data is audited too
+  (`CLAIM_ACCESS_DENIED`). Audit entries never hold diagnoses, ICD codes, rejection reasons, full bank accounts or
+  phone numbers.
+- A TPA file is checked in full before anything is saved; importing is all rows (refused while any row has an error)
+  or the valid rows only. One import per policy and TPA runs at a time. Each batch of 500 rows is saved in its own
+  transaction; a failed batch is reported and the rest kept.
+- Large files are read row by row (at most 25 MB and 50,000 claim rows). The reader rebuilds the workbook's parts in
+  a safe order first: ExcelJS's streaming reader otherwise loses the shared strings or styles of some files.
+- A TPA format's TPA code cannot change once claims are imported under it; another layout of the same TPA is another
+  format with the same code.
+- Saved renewal reports keep their figures as saved; a later correction of a recorded year changes only new analyses.
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

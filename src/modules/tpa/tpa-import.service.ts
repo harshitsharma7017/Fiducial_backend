@@ -270,15 +270,26 @@ export async function inspectTpaFile(
   const headerRow = query.headerRow ?? format?.headerRow ?? 1;
   let plan: ReturnType<typeof planColumns> | null = null;
   const sample: TpaInspectResponse['sample'] = [];
+  // The status values in the file, to map each one (statuses are not sensitive).
+  const statuses = new Map<string, number>();
+  let statusColumn: number | null = null;
   const read = await streamTpaSheet(data, {
     sheetName,
     headerRow,
-    limit: 10,
     onHeaders: (headers) => {
       plan = planColumns(headers, format?.mappings ?? [], format?.keepColumns ?? []);
+      const mapped = plan.fields.get('status');
+      const guessed = headers.findIndex((item) => SUGGEST.status!.includes(headerKey(item)));
+      statusColumn = mapped ?? (guessed >= 0 ? guessed + 1 : null);
     },
     onRow: (row, values) => {
-      if (!format || !plan) return;
+      if (statusColumn !== null) {
+        const cell = tpaCell(values[statusColumn] ?? null);
+        const text = typeof cell === 'string' ? cell.trim() : '';
+        if (text && (statuses.has(text) || statuses.size < 100))
+          statuses.set(text, (statuses.get(text) ?? 0) + 1);
+      }
+      if (!format || !plan || sample.length >= 10) return;
       const cells = cellsOf(plan, values);
       const parsed = parseTpaRow(cells, format);
       sample.push({
@@ -306,6 +317,7 @@ export async function inspectTpaFile(
       return header ? [{ field, header }] : [];
     }),
     sample,
+    statusValues: [...statuses].map(([value, rows]) => ({ value, rows })),
   };
 }
 

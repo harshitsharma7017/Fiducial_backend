@@ -852,6 +852,8 @@ export const TpaInspectResponseSchema = z.object({
       issues: z.array(TpaRowIssueSchema),
     }),
   ),
+  /** The values of the status column across the file (at most 100), to map each one. */
+  statusValues: z.array(z.object({ value: z.string(), rows: z.number().int() })),
 });
 export type TpaInspectResponse = z.infer<typeof TpaInspectResponseSchema>;
 export const CommitTpaImportRequestSchema = z.strictObject({ policy: z.enum(TPA_IMPORT_POLICIES) });

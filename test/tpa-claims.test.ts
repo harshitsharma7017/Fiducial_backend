@@ -453,8 +453,10 @@ describe('TPA formats (N9 1)', () => {
   it('reads the headers of a file in another layout and suggests columns, without importing anything', async () => {
     const other = new ExcelJS.Workbook();
     other.addWorksheet('Report').addRows([
-      ['Claim Number', 'Employee Code', 'Current Status', 'Date of Admission'],
+      ['Claim Number', 'Employee Code', 'Claim Status', 'Date of Admission'],
       ['X1', 'E001', 'Settled', '01/05/2026'],
+      ['X2', 'E002', 'Query Raised', '02/05/2026'],
+      ['X3', 'E003', 'Settled', '03/05/2026'],
     ]);
     const response = await request(app)
       .post(t('/inspect?fileName=other.xlsx&headerRow=1'))
@@ -466,8 +468,19 @@ describe('TPA formats (N9 1)', () => {
     expect(response.body.headers).toEqual([
       'Claim Number',
       'Employee Code',
-      'Current Status',
+      'Claim Status',
       'Date of Admission',
+    ]);
+    expect(response.body.suggestions).toEqual(
+      expect.arrayContaining([
+        { field: 'tpaClaimId', header: 'Claim Number' },
+        { field: 'status', header: 'Claim Status' },
+      ]),
+    );
+    // The statuses in the file, to map each one (from every row, not only the sample).
+    expect(response.body.statusValues).toEqual([
+      { value: 'Settled', rows: 2 },
+      { value: 'Query Raised', rows: 1 },
     ]);
     expect(await TpaImportModel.countDocuments()).toBe(0);
   });
@@ -810,6 +823,9 @@ describe('sensitive data (N12)', () => {
 
   it('audits every view and refusal, and never puts a diagnosis or a full bank account in the audit trail', async () => {
     expect(
+      await AuditLogModel.countDocuments({ action: 'TPA_CLAIM_VIEWED', 'after.part': 'history' }),
+    ).toBeGreaterThanOrEqual(1);
+    expect(
       await AuditLogModel.countDocuments({ action: 'TPA_CLAIM_VIEWED' }),
     ).toBeGreaterThanOrEqual(2);
     expect(await AuditLogModel.countDocuments({ action: 'CLAIMS_LISTED' })).toBeGreaterThan(0);
@@ -925,7 +941,14 @@ describe('claims analysis over the imported claims (N10)', () => {
     expect(forViewer).not.toContain('K35.8');
     expect(forViewer).not.toContain(ACCOUNT);
     expect(await download(manager)).toContain(DIAGNOSIS);
-    expect(await AuditLogModel.countDocuments({ action: 'CLAIMS_ANALYSIS_DOWNLOADED' })).toBe(2);
+    const pdf = await binary(
+      request(app)
+        .get(`/api/v1/claims-analysis/document?caseId=${caseId}&asOf=2026-09-30&format=pdf`)
+        .set(bearer(viewer)),
+    ).expect(200);
+    expect(pdf.headers['content-type']).toContain('application/pdf');
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    expect(await AuditLogModel.countDocuments({ action: 'CLAIMS_ANALYSIS_DOWNLOADED' })).toBe(3);
     await request(app)
       .get(`/api/v1/claims-analysis/document?caseId=${caseId}`)
       .set(bearer(readOnly))
