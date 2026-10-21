@@ -11,6 +11,7 @@ import {
   formatDate,
   formatIndianNumber,
   productRangeText,
+  rfqAttributionRows,
   type AnnexureSection,
   type CatalogItem,
   type Cover,
@@ -18,6 +19,7 @@ import {
   type FireGroup,
   type OtherSection,
   type ProposalRecord,
+  type RfqAttribution,
   type SectionWithLines,
   type TemplateCheck,
 } from '../../shared/index.ts';
@@ -223,6 +225,8 @@ export interface FillContext {
   document: 'RFQ' | 'QCR' | 'PLACEMENT_SLIP';
   /** The premium details heading edited on the RFQ (R-2), if any. */
   title?: string;
+  /** A2: who prepared and approved the RFQ, stamped on premium details. */
+  attribution?: RfqAttribution;
   existingOf: (code: string) => { sumInsured: string | null; premium: string | null } | undefined;
 }
 
@@ -273,6 +277,19 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });
   if (insuredRow) setValue(sheet, insuredRow, 1, `Insured Name: ${record.client.name}`);
+  // A2: "Prepared by" / "Approved by" rows, inserted after the Insured Name row so the quote
+  // blocks below are not disturbed. Reflects the actual creator and approver of the version.
+  if (context.attribution && insuredRow) {
+    const rows = rfqAttributionRows(context.attribution);
+    insertRows(sheet, insuredRow + 1, rows.length, insuredRow);
+    rows.forEach(([label, value], offset) => {
+      const row = insuredRow + 1 + offset;
+      clearCells(sheet, { from: row, to: row }, { from: 1, to: printColumns(sheet).to });
+      setValue(sheet, row, 1, `${label}: ${value}`);
+      const cell = sheet.getCell(row, 1);
+      restyle(cell, { font: { ...cell.font, bold: false, color: { argb: 'FF000000' } } });
+    });
+  }
   const expiryRow = findRow(sheet, 'Policy Expiry Date', { prefix: true });
   if (expiryRow) {
     setValue(
@@ -1090,9 +1107,13 @@ export function fillRfqTemplate(
   record: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters & { addons: readonly CatalogItem<'addons'>[] },
-  options: { title?: string } = {},
+  options: { title?: string; attribution?: RfqAttribution } = {},
 ): void {
-  const context = { ...fillContextOf(record, client, masters, 'RFQ'), title: options.title };
+  const context = {
+    ...fillContextOf(record, client, masters, 'RFQ'),
+    title: options.title,
+    attribution: options.attribution,
+  };
   const sheet = (name: string) => sheetNamed(workbook, name);
   const premium = sheet(SHEETS.premium);
   if (premium) fillPremiumDetails(premium, context);

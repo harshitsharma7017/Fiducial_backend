@@ -29,6 +29,8 @@ export interface RfqEventDoc {
   action: 'GENERATED' | 'SUBMITTED' | 'APPROVED' | 'RETURNED';
   at: Date;
   by: Types.ObjectId;
+  /** A2/A1: the actor's role codes at the time of the event; undefined on older events. */
+  byRoles?: string[];
   comment: string | null;
 }
 
@@ -73,6 +75,8 @@ const rfqVersionSchema = new Schema<RfqVersionDoc>(
           },
           at: { type: Date, required: true },
           by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+          // A2/A1: role snapshot at the time of the event; not required, so older events stay valid.
+          byRoles: { type: [String], default: undefined },
           comment: { type: String, default: null },
         },
         { _id: false, versionKey: false, strict: true },

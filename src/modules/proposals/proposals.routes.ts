@@ -67,7 +67,9 @@ import { ProposalModel } from './proposal.model.ts';
 import { previewMails, sendReminder, sendRfq, type MailDeps } from './rfq-mail.service.ts';
 
 function actorOf(req: Request): Actor {
-  return { id: currentUser(req).id, requestId: req.requestId };
+  const user = currentUser(req);
+  // A1: carry the actor's roles so audit and timeline entries snapshot the role at action time.
+  return { id: user.id, roles: user.roles, requestId: req.requestId };
 }
 
 /**

@@ -43,6 +43,7 @@ export * from './icd.ts';
 export * from './imports.ts';
 export * from './insurers.ts';
 export * from './mail.ts';
+export * from './notifications.ts';
 export * from './masking.ts';
 export * from './masters.ts';
 export * from './permissions.ts';

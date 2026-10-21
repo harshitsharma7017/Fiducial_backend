@@ -13,8 +13,10 @@ import {
   SUM_INSURED_LINE,
   annexureColumnLabel,
   isAnnexureSection,
+  rfqAttributionRows,
   type AnnexureColumn,
   type AnnexureSection,
+  type RfqAttribution,
   type SectionWithLines,
   formatDate,
   productRangeText,
@@ -100,6 +102,7 @@ function premiumDetails(
   record: ProposalRecord,
   gstRate: number,
   heading?: string,
+  attribution?: RfqAttribution,
 ) {
   const sheet = workbook.addWorksheet('premium details');
   sheet.columns = [{ width: 34 }, { width: 20 }, { width: 22 }, { width: 22 }];
@@ -114,6 +117,12 @@ function premiumDetails(
   );
   labelled(sheet, 'Insured Name:', record.client.name, 4);
   labelled(sheet, 'Reference:', record.reference, 4);
+  // A2: who prepared and approved the RFQ. Reflects the actual records, not whoever exports it.
+  if (attribution) {
+    for (const [label, value] of rfqAttributionRows(attribution)) {
+      labelled(sheet, `${label}:`, value, 4);
+    }
+  }
   if (renewal && record.existing) {
     const existing = record.existing;
     labelled(
@@ -609,11 +618,17 @@ export function buildRfqWorkbookDocument(
   record: ProposalRecord,
   client: ClientDoc,
   masters: RfqMasters & { addons?: readonly CatalogItem<'addons'>[] },
-  options: { title?: string } = {},
+  options: { title?: string; attribution?: RfqAttribution } = {},
 ): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiducial';
-  premiumDetails(workbook, record, Number(masters.gstRatePercent), options.title);
+  premiumDetails(
+    workbook,
+    record,
+    Number(masters.gstRatePercent),
+    options.title,
+    options.attribution,
+  );
   schedule(workbook, record, client, masters);
   fireByLocation(workbook, record);
   annexure(workbook, record);

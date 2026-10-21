@@ -5,6 +5,7 @@ import { createLogger } from './lib/logger.ts';
 import { ensureIndexes } from './models.ts';
 import { ensureClaimEmailTemplates } from './modules/claims/claim-templates.service.ts';
 import { startClaimNotificationWorker } from './modules/claims/claim-notifications.ts';
+import { startRenewalReminderWorker } from './modules/notifications/renewal-reminders.ts';
 import { ensureEmailTemplates } from './modules/email-templates/email-templates.service.ts';
 import { linkEmployeeIdentities } from './modules/employees/employee-link.ts';
 import { ensureDefaultFamilyPlans } from './modules/family-plans/default-plans.ts';
@@ -53,6 +54,12 @@ const mailTransport = transportFromEnv(config, logger);
 const app = createApp({ config, logger, mailTransport });
 // Sends queued claim emails and retries failed ones in the background (C3).
 const stopClaimWorker = startClaimNotificationWorker({ transport: mailTransport, logger });
+// A4: raises "renewal due" notifications for placed policies nearing their end date.
+const stopRenewalWorker = startRenewalReminderWorker({
+  reminderDays: config.RENEWAL_REMINDER_DAYS,
+  intervalMs: config.RENEWAL_SCAN_INTERVAL_MINUTES * 60_000,
+  logger,
+});
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT, env: config.NODE_ENV }, 'API listening');
 });
@@ -64,6 +71,7 @@ function shutdown(signal: NodeJS.Signals): void {
   shuttingDown = true;
   logger.info({ signal }, 'Shutting down');
   stopClaimWorker();
+  stopRenewalWorker();
 
   const forceExit = setTimeout(() => {
     logger.error('Shutdown timed out; exiting');

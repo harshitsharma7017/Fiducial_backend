@@ -6,6 +6,7 @@ import {
   ObjectIdSchema,
   paginatedSchema,
 } from './common.ts';
+import { RoleSchema } from './roles.ts';
 
 /**
  * Audit actions as stored in audit_logs.action. Each action has a kind and a label below. A new
@@ -764,6 +765,14 @@ export const AuditActorSchema = z.object({
   id: ObjectIdSchema,
   name: z.string(),
   email: z.string(),
+  /**
+   * The actor's current role codes (A1), resolved from the user at display time. Absent for
+   * historical entries whose actor can no longer be found. The frontend shows the role label
+   * beside the name ("approved by Rahul Sharma, Approver").
+   */
+  roles: z.array(RoleSchema).optional(),
+  /** The role codes as one readable label, in role order, or null when none/unknown. */
+  roleLabel: z.string().nullable().optional(),
 });
 export type AuditActor = z.infer<typeof AuditActorSchema>;
 

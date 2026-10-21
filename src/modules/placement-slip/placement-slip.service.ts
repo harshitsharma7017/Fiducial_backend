@@ -40,8 +40,11 @@ import { InsurerModel } from '../insurers/insurer.model.ts';
 import { MailLogModel } from '../mail/mail-log.model.ts';
 import { fitsAttachmentLimit, storeAttachment } from '../mail/mail-log.service.ts';
 import type { MailTransport } from '../mail/transport.ts';
+import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel, type ProposalDoc } from '../proposals/proposal.model.ts';
 import {
+  activityEntry,
+  actorRolesOf,
   closed,
   keepStage,
   loadDoc,
@@ -324,12 +327,13 @@ export async function approvePlacementSlip(
     );
     await ProposalModel.updateOne(
       { _id: new Types.ObjectId(id) },
-      { $push: { activity: { at, actorId, message: 'Placement slip approved' } } },
+      { $push: { activity: activityEntry(actor, at, 'Placement slip approved') } },
       { session },
     );
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: AUDIT_ACTIONS.PLACEMENT_SLIP_APPROVED,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,
@@ -343,6 +347,16 @@ export async function approvePlacementSlip(
       },
       session,
     );
+  });
+  // A4: the placement slip is approved and ready to send to the insurer.
+  await notifyProposalEvent({
+    proposalId: id,
+    event: 'APPROVED',
+    actorId: actor.id,
+    title: 'Placement slip approved',
+    message: 'The placement slip was approved and is ready to send to the insurer.',
+    audience: 'owners',
+    milestone: `placement-approved:${id}:${fingerprint}`,
   });
   return getPlacementSlip(id, deps);
 }
@@ -439,7 +453,7 @@ async function advanceTo(
   proposalId: Types.ObjectId,
   stage: 'PLACEMENT_SLIP' | 'PLACED',
   current: ProposalRecord['stage'],
-  push: { at: Date; actorId: Types.ObjectId; message: string },
+  push: { at: Date; actorId: Types.ObjectId; actorRoles?: string[]; message: string },
   session: mongo.ClientSession,
 ): Promise<void> {
   const move = PROPOSAL_STAGES.indexOf(current) < PROPOSAL_STAGES.indexOf(stage);
@@ -589,19 +603,20 @@ export async function sendPlacementSlip(
         proposalId,
         'PLACEMENT_SLIP',
         record.stage,
-        { at, actorId, message },
+        activityEntry(actor, at, message),
         session,
       );
     } else {
       await ProposalModel.updateOne(
         { _id: proposalId },
-        { $push: { activity: { at, actorId, message } } },
+        { $push: { activity: activityEntry(actor, at, message) } },
         { session },
       );
     }
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: sent.ok
           ? AUDIT_ACTIONS.PLACEMENT_SLIP_EMAILED
           : AUDIT_ACTIONS.PLACEMENT_SLIP_EMAIL_FAILED,
@@ -764,12 +779,13 @@ export async function recordPlaced(
       new Types.ObjectId(id),
       'PLACED',
       record.stage,
-      { at, actorId, message },
+      activityEntry(actor, at, message),
       session,
     );
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: AUDIT_ACTIONS.PLACEMENT_RECORDED,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,

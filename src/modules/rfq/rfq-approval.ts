@@ -1,8 +1,12 @@
 import {
   ERROR_CODES,
   RFQ_VERSION_STATUS_LABELS,
+  ROLES,
+  roleLabel,
   type ProposalRecord,
+  type RfqAttribution,
   type RfqEdits,
+  type Role,
   NO_RFQ_EDITS,
 } from '../../shared/index.ts';
 import { createHash } from 'node:crypto';
@@ -87,4 +91,48 @@ export async function approvedRfq(record: ProposalRecord): Promise<RfqVersionDoc
 /** A stored file, read back (a lean read gives a BSON Binary). */
 export function bufferOf(raw: unknown): Buffer {
   return Buffer.isBuffer(raw) ? raw : Buffer.from((raw as { buffer: Uint8Array }).buffer);
+}
+
+/** A user's display name and current roles, by id, for attribution. */
+export type AttributionUsers = ReadonlyMap<string, { name: string; roles: readonly Role[] }>;
+
+/**
+ * A2: the preparer and approver of an RFQ version, from the authoritative records — the version's
+ * `createdBy` and its APPROVED event's `by`. Names and roles are resolved from the users map; an
+ * actor no longer found shows "Unknown user" with no role. Never derived from who exports the file.
+ */
+export function rfqAttributionOf(
+  version: Pick<RfqVersionDoc, 'version' | 'status' | 'createdBy' | 'events'>,
+  users: AttributionUsers,
+): RfqAttribution {
+  const nameOf = (id: Types.ObjectId) => users.get(id.toHexString())?.name ?? 'Unknown user';
+  // Prefer the role snapshotted on the event (the role held when it happened); fall back to the
+  // user's current roles only for older events with no snapshot. Invalid stored codes are ignored.
+  const snapshot = (stored: readonly string[] | undefined): Role[] | null => {
+    const valid = (stored ?? []).filter((role): role is Role =>
+      (ROLES as readonly string[]).includes(role),
+    );
+    return valid.length > 0 ? valid : null;
+  };
+  const roleOf = (id: Types.ObjectId, event?: { byRoles?: string[] }) =>
+    roleLabel(snapshot(event?.byRoles) ?? users.get(id.toHexString())?.roles ?? []);
+  const generated = version.events.find((event) => event.action === 'GENERATED');
+  const approval = version.events.find((event) => event.action === 'APPROVED');
+  return {
+    version: version.version,
+    status: version.status,
+    preparedBy: nameOf(version.createdBy),
+    preparedByRole: roleOf(version.createdBy, generated),
+    approvedBy: approval ? nameOf(approval.by) : null,
+    approvedByRole: approval ? roleOf(approval.by, approval) : null,
+    approvedAt: approval ? approval.at.toISOString() : null,
+  };
+}
+
+/** The ids whose names/roles an attribution needs (the creator and the approver). */
+export function rfqAttributionUserIds(
+  version: Pick<RfqVersionDoc, 'createdBy' | 'events'>,
+): Types.ObjectId[] {
+  const approval = version.events.find((event) => event.action === 'APPROVED');
+  return approval ? [version.createdBy, approval.by] : [version.createdBy];
 }

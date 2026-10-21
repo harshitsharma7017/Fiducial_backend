@@ -134,6 +134,53 @@ export const RfqStateSchema = z.object({
 });
 export type RfqState = z.infer<typeof RfqStateSchema>;
 
+/**
+ * A2: who prepared and who approved the RFQ, for the attribution block printed on the sheet, the
+ * PDF and the Excel export. The creator is the version's generator; the approver is the person who
+ * approved the version being exported (null until approved). The names and roles are resolved from
+ * the authoritative records (RfqVersion.createdBy, the APPROVED event's `by`), never from whoever
+ * downloads the file. The same object drives both the PDF and the Excel export (one source).
+ */
+export interface RfqAttribution {
+  version: number;
+  status: RfqVersionStatus;
+  preparedBy: string | null;
+  preparedByRole: string | null;
+  approvedBy: string | null;
+  approvedByRole: string | null;
+  approvedAt: string | null;
+}
+
+/**
+ * The attribution rows to print, as [label, value] pairs. Pure, so the built-in workbook and the
+ * client template stamp identical text. "Approval status" reflects the real state (Pending until
+ * approved, Returned for a returned version) rather than suggesting a fabricated approver.
+ */
+export function rfqAttributionRows(attribution: RfqAttribution): [string, string][] {
+  const prepared = attribution.preparedBy
+    ? attribution.preparedByRole
+      ? `${attribution.preparedBy}, ${attribution.preparedByRole}`
+      : attribution.preparedBy
+    : 'Not recorded';
+  const rows: [string, string][] = [[`Prepared by (RFQ v${attribution.version})`, prepared]];
+  if (attribution.status === 'APPROVED' && attribution.approvedBy) {
+    const approver = attribution.approvedByRole
+      ? `${attribution.approvedBy}, ${attribution.approvedByRole}`
+      : attribution.approvedBy;
+    rows.push(['Approved by', approver]);
+  } else {
+    rows.push([
+      'Approval status',
+      attribution.status === 'RETURNED'
+        ? 'Returned for changes'
+        : attribution.status === 'SUBMITTED'
+          ? 'Submitted — pending approval'
+          : 'Pending approval',
+    ]);
+  }
+  return rows;
+}
+
 export const RfqVersionParamsSchema = z.strictObject({
   id: ObjectIdSchema,
   version: z.coerce.number().int().min(1).max(10_000),

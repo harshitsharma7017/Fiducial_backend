@@ -77,6 +77,13 @@ export const EnvSchema = z
     /** How that software is named on screen, for example "PolicyDesk". */
     EXISTING_POLICY_SOURCE_NAME: z.string().trim().min(1).max(60).default('the policy software'),
     /**
+     * A4: days before a placed policy's end date to raise the "renewal due" notification. The scan
+     * runs periodically; 0 turns it off. Deduplicated per policy expiry, so it fires once.
+     */
+    RENEWAL_REMINDER_DAYS: z.coerce.number().int().min(0).max(365).default(30),
+    /** How often the renewal-due scan runs, in minutes (0 with RENEWAL_REMINDER_DAYS=0 is off). */
+    RENEWAL_SCAN_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(360),
+    /**
      * How RFQ mails leave: smtp delivers them, outbox only keeps them in the mail log, off refuses
      * to send. Unset means outbox, except off in production, so nothing is mailed by accident.
      */

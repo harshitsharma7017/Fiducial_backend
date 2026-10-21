@@ -183,7 +183,12 @@ export interface ProposalDoc {
   /** GST % in force when the proposal was created (tax master), kept for its documents. */
   gstRatePercent?: Types.Decimal128 | null;
   insurers: ProposalInsurerDoc[];
-  activity: Array<{ at: Date; actorId: Types.ObjectId | null; message: string }>;
+  activity: Array<{
+    at: Date;
+    actorId: Types.ObjectId | null;
+    actorRoles?: string[];
+    message: string;
+  }>;
   createdBy: Types.ObjectId;
   updatedBy: Types.ObjectId;
   createdAt: Date;
@@ -452,6 +457,8 @@ const proposalSchema = new Schema<ProposalDoc>(
         {
           at: { type: Date, required: true },
           actorId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+          // A1: the actor's role codes at the time, snapshotted; undefined on older entries.
+          actorRoles: { type: [String], default: undefined },
           message: { type: String, required: true },
         },
         noId,
@@ -467,6 +474,8 @@ proposalSchema.index({ reference: 1 }, { unique: true });
 proposalSchema.index({ clientId: 1, _id: -1 });
 proposalSchema.index({ stage: 1, _id: -1 });
 proposalSchema.index({ type: 1, _id: -1 });
+// A4: the renewal-due scan reads placed cases by policy end date (not every scan touches all cases).
+proposalSchema.index({ stage: 1, policyEnd: 1 });
 
 // Cases in the Deleted bin are left out of every query (lists, worklists, the case and all its
 // work) unless the query names `deleted` itself, as the bin and the audit log do.

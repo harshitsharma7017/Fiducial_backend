@@ -22,8 +22,11 @@ import { withTransaction } from '../../lib/db.ts';
 import { decimal128ToString, toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
+  activityEntry,
+  actorRolesOf,
   advanceStageTo,
   closed,
   keepStage,
@@ -137,6 +140,7 @@ export async function uploadQuoteAttachment(
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: AUDIT_ACTIONS.QUOTE_ATTACHMENT_UPLOADED,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,
@@ -354,6 +358,7 @@ export async function recordQuote(
   const moveToQuoted =
     entry !== undefined && entry.status !== 'QUOTED' && canMoveInsurer(entry.status, 'QUOTED');
 
+  let savedVersion = 0;
   try {
     await withTransaction(async (session) => {
       const last = await QuoteModel.findOne(
@@ -364,6 +369,7 @@ export async function recordQuote(
         .session(session)
         .lean();
       const version = (last?.version ?? 0) + 1;
+      savedVersion = version;
       if (version > 1 && !input.reason) {
         throw validationError([
           { location: 'body', path: 'reason', message: 'Say why the quote was revised' },
@@ -419,7 +425,7 @@ export async function recordQuote(
               }
             : {}),
         },
-        $push: { activity: { at, actorId: new Types.ObjectId(actor.id), message } },
+        $push: { activity: activityEntry(actor, at, message) },
       };
       const updated = await ProposalModel.findOneAndUpdate(
         // The insurer must still be where it was when the quote was checked.
@@ -447,6 +453,7 @@ export async function recordQuote(
       await writeAudit(
         {
           userId: actor.id,
+          actorRoles: actorRolesOf(actor),
           action: AUDIT_ACTIONS.QUOTE_RECORDED,
           entity: AUDIT_ENTITIES.PROPOSAL,
           entityId: id,
@@ -477,5 +484,16 @@ export async function recordQuote(
     }
     throw error;
   }
+  // A4: after the quote commits, tell the case owner and creator a quote came in. One per insurer,
+  // option and version, so a retried save does not duplicate.
+  await notifyProposalEvent({
+    proposalId: id,
+    event: 'QUOTE_RECEIVED',
+    actorId: actor.id,
+    title: 'Quote received',
+    message: `${name} sent a quote for ${QUOTE_OPTION_LABELS[input.option]}.`,
+    audience: 'owners',
+    milestone: `quote-received:${id}:${insurerId}:${input.option}:v${savedVersion}`,
+  });
   return proposalQuotes(id, defaultGstRatePercent);
 }

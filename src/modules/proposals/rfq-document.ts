@@ -4,6 +4,7 @@ import {
   NO_RFQ_EDITS,
   applyRfqEdits,
   isAnnexureSection,
+  type RfqAttribution,
   type RfqEdits,
   type CatalogItem,
   type ProposalRecord,
@@ -11,13 +12,16 @@ import {
 import type ExcelJS from 'exceljs';
 import { notFound } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
+import { Types } from 'mongoose';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { openTemplate, saveWorkbook, sheetNamed } from '../documents/excel-template.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
-import { RfqStateModel } from '../rfq/rfq.model.ts';
+import { RfqStateModel, RfqVersionModel } from '../rfq/rfq.model.ts';
+import { rfqAttributionOf, rfqAttributionUserIds } from '../rfq/rfq-approval.ts';
+import { UserModel } from '../users/user.model.ts';
 import { fillRfqTemplate } from './rfq-template.ts';
 import { buildRfqWorkbookDocument, type RfqMasters } from './rfq-workbook.ts';
 
@@ -71,6 +75,7 @@ export async function rfqDocument(
   masters: RfqMasters & { addons: readonly CatalogItem<'addons'>[] },
   format: 'xlsx' | 'pdf',
   edits: RfqEdits = NO_RFQ_EDITS,
+  attribution?: RfqAttribution,
 ): Promise<RfqDocument> {
   // R-2: the edits made on the RFQ replace the Data Sheet's values on it.
   const record = applyRfqEdits(caseRecord, edits);
@@ -81,9 +86,9 @@ export async function rfqDocument(
   if (template) {
     workbook = await openTemplate(template.data);
     letterhead = letterheadOf(workbook);
-    fillRfqTemplate(workbook, record, client, masters, { title });
+    fillRfqTemplate(workbook, record, client, masters, { title, attribution });
   } else {
-    workbook = buildRfqWorkbookDocument(record, client, masters, { title });
+    workbook = buildRfqWorkbookDocument(record, client, masters, { title, attribution });
   }
   const layout: RfqLayout = template ? 'template' : 'built-in';
   const name = `RFQ-${record.reference}`;
@@ -117,6 +122,7 @@ export async function rfqFileFor(
   format: 'xlsx' | 'pdf',
   defaultGstRatePercent: string,
   edits?: RfqEdits,
+  attribution?: RfqAttribution,
 ): Promise<RfqDocument> {
   const client = await ClientModel.findById(record.client.id).lean();
   if (!client) throw notFound('The proposal’s client no longer exists');
@@ -130,11 +136,45 @@ export async function rfqFileFor(
     catalogItems('clauses'),
   ]);
   const saved = edits ?? (await RfqStateModel.findOne({ proposalId: record.id }).lean())?.edits;
+  // The caller may pass a specific version's attribution (per-version download); otherwise the
+  // latest version's attribution is used (the live case download and the mails).
+  const attributionForDoc = attribution ?? (await latestRfqAttribution(record.id));
   return rfqDocument(
     record,
     client,
     { gstRatePercent, products, sections, notes, addons, clauses },
     format,
     saved ?? NO_RFQ_EDITS,
+    attributionForDoc,
+  );
+}
+
+/**
+ * A2: the attribution for the latest RFQ version of a case (the one the case download and the
+ * mails represent) — its preparer and, once approved, its approver. Null when no version exists
+ * yet, so the document simply omits the block.
+ */
+export async function latestRfqAttribution(
+  proposalId: string,
+): Promise<RfqAttribution | undefined> {
+  const version = await RfqVersionModel.findOne(
+    { proposalId: new Types.ObjectId(proposalId) },
+    { version: 1, status: 1, createdBy: 1, events: 1 },
+  )
+    .sort({ version: -1 })
+    .lean();
+  if (!version) return undefined;
+  return rfqAttributionFor(version);
+}
+
+/** Resolves an attribution's creator and approver names + roles from the User collection. */
+export async function rfqAttributionFor(
+  version: Parameters<typeof rfqAttributionOf>[0],
+): Promise<RfqAttribution> {
+  const ids = rfqAttributionUserIds(version);
+  const users = await UserModel.find({ _id: { $in: ids } }, { name: 1, roles: 1 }).lean();
+  return rfqAttributionOf(
+    version,
+    new Map(users.map((user) => [user._id.toHexString(), { name: user.name, roles: user.roles }])),
   );
 }

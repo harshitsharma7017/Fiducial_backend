@@ -52,6 +52,8 @@ describe('GET /api/v1/audit', () => {
       actor: { id: admin.id, email: admin.email, name: 'Test User' },
       details: null,
     });
+    // A1: the audit entry carries the actor's current role(s) for display.
+    expect(items[0]?.actor).toMatchObject({ roles: ['ADMIN'], roleLabel: 'Admin' });
     expect(items[0]?.changes).toEqual([
       { field: 'email', before: null, after: email },
       { field: 'name', before: null, after: 'Ravi Kumar' },

@@ -23,8 +23,11 @@ import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
+import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
+  activityEntry,
+  actorRolesOf,
   closed,
   keepStage,
   loadDoc,
@@ -385,7 +388,7 @@ export async function recordClientApproval(
       { _id: proposal._id, stage: { $nin: ['PLACED', 'CLOSED'] } },
       {
         $set: { updatedBy: actorId, ...(moveStage ? { stageOverride: 'CLIENT_APPROVAL' } : {}) },
-        $push: { activity: { at: new Date(), actorId, message } },
+        $push: { activity: activityEntry(actor, new Date(), message) },
       },
       { returnDocument: 'after', session },
     ).lean();
@@ -399,6 +402,7 @@ export async function recordClientApproval(
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: AUDIT_ACTIONS.CLIENT_APPROVAL_RECORDED,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,
@@ -408,6 +412,16 @@ export async function recordClientApproval(
       },
       session,
     );
+  });
+  // A4: the client's decision on the QCR. Tell the case owner and creator which quote was accepted.
+  await notifyProposalEvent({
+    proposalId: id,
+    event: 'QCR_DECISION',
+    actorId: actor.id,
+    title: 'QCR decision recorded',
+    message: `The client accepted ${choice.company}, ${choice.branch} (${QUOTE_OPTION_LABELS[input.option]}).`,
+    audience: 'owners',
+    milestone: `qcr-decision:${id}:${input.insurerId}:${input.option}:${input.acceptedOn}`,
   });
   return getClientApproval(id, defaultGstRatePercent);
 }

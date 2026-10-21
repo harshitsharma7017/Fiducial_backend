@@ -20,6 +20,7 @@ import { withTransaction } from '../../lib/db.ts';
 import { Decimal, moneyString, toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
+import { notifyGhiCaseEvent } from '../notifications/proposal-notifications.ts';
 import { membersForDocuments } from './census.service.ts';
 import {
   advanceStage,
@@ -372,6 +373,15 @@ export async function addPayment(
       { paymentId: payment._id.toHexString(), ...paymentAudit(payment) },
       session,
     );
+  });
+  // A4: after the payment commits, tell the case owner and creator.
+  await notifyGhiCaseEvent({
+    caseId: id,
+    event: 'PAYMENT_RECORDED',
+    actorId: actor.id,
+    title: 'Payment recorded',
+    message: `A payment of ₹${moneyString(new Decimal(input.amount))} was recorded (${input.reference}).`,
+    milestone: `payment-recorded:${id}:${input.reference}:${input.paidOn}`,
   });
   return listPayments(id);
 }

@@ -16,10 +16,18 @@ import { withTransaction } from '../../lib/db.ts';
 import { conflict, notFound } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
-import { closed, loadDoc, recordOf, type Actor } from '../proposals/proposals.service.ts';
-import { rfqFileFor } from '../proposals/rfq-document.ts';
+import {
+  activityEntry,
+  actorRolesOf,
+  closed,
+  loadDoc,
+  recordOf,
+  type Actor,
+} from '../proposals/proposals.service.ts';
+import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
+import { rfqAttributionFor, rfqFileFor } from '../proposals/rfq-document.ts';
 import { UserModel } from '../users/user.model.ts';
-import { bufferOf, rfqEditsOf, rfqFingerprint, rfqStanding } from './rfq-approval.ts';
+import { rfqEditsOf, rfqFingerprint, rfqStanding } from './rfq-approval.ts';
 import {
   RfqStateModel,
   RfqVersionModel,
@@ -170,7 +178,9 @@ export async function generateRfq(
             fileName: `RFQ-${record.reference}-v${version}`,
             xlsx: xlsx.data,
             pdf: pdf.data,
-            events: [{ action: 'GENERATED', at, by: actorId, comment: null }],
+            events: [
+              { action: 'GENERATED', at, by: actorId, byRoles: actorRolesOf(actor), comment: null },
+            ],
             createdBy: actorId,
           },
         ],
@@ -178,12 +188,13 @@ export async function generateRfq(
       );
       await ProposalModel.updateOne(
         { _id: proposalId },
-        { $push: { activity: { at, actorId, message: `RFQ v${version} generated` } } },
+        { $push: { activity: activityEntry(actor, at, `RFQ v${version} generated`) } },
         { session },
       );
       await writeAudit(
         {
           userId: actor.id,
+          actorRoles: actorRolesOf(actor),
           action: AUDIT_ACTIONS.RFQ_GENERATED,
           entity: AUDIT_ENTITIES.PROPOSAL,
           entityId: id,
@@ -229,6 +240,7 @@ export async function rfqVersionFile(
   version: number,
   format: 'xlsx' | 'pdf',
   actor: Actor,
+  defaultGstRatePercent: string,
 ): Promise<{ fileName: string; contentType: string; data: Buffer }> {
   const doc = await versionDoc(id, version);
   await writeAudit({
@@ -239,13 +251,18 @@ export async function rfqVersionFile(
     after: { version, format },
     requestId: actor.requestId,
   });
-  return format === 'pdf'
-    ? { fileName: `${doc.fileName}.pdf`, contentType: 'application/pdf', data: bufferOf(doc.pdf) }
-    : {
-        fileName: `${doc.fileName}.xlsx`,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        data: bufferOf(doc.xlsx),
-      };
+  // A2: regenerate from the version's own frozen record and edits so the attribution block shows
+  // THIS version's preparer and approver (version-specific). The document body is unchanged —
+  // the record and edits are the snapshot kept with the version.
+  const attribution = await rfqAttributionFor(doc);
+  const file = await rfqFileFor(
+    doc.record as unknown as ProposalRecord,
+    format,
+    defaultGstRatePercent,
+    doc.edits,
+    attribution,
+  );
+  return { fileName: file.fileName, contentType: file.contentType, data: file.data };
 }
 
 const STEPS = {
@@ -294,7 +311,13 @@ export async function moveRfq(
   }
   const at = new Date();
   const actorId = new Types.ObjectId(actor.id);
-  const event: RfqEventDoc = { action: to, at, by: actorId, comment };
+  const event: RfqEventDoc = {
+    action: to,
+    at,
+    by: actorId,
+    byRoles: actorRolesOf(actor),
+    comment,
+  };
   await withTransaction(async (session) => {
     const updated = await RfqVersionModel.updateOne(
       { _id: doc._id, status: doc.status },
@@ -311,11 +334,11 @@ export async function moveRfq(
       { _id: doc.proposalId },
       {
         $push: {
-          activity: {
+          activity: activityEntry(
+            actor,
             at,
-            actorId,
-            message: `RFQ v${version} ${step.verb}${comment ? `: ${comment}` : ''}`,
-          },
+            `RFQ v${version} ${step.verb}${comment ? `: ${comment}` : ''}`,
+          ),
         },
       },
       { session },
@@ -323,6 +346,7 @@ export async function moveRfq(
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: step.audit,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,
@@ -333,5 +357,31 @@ export async function moveRfq(
       session,
     );
   });
+  // A4: after the move commits, notify the right people. Submitting asks the approval group;
+  // approving / returning tell the case owner and creator. Never before commit, never on failure.
+  if (to === 'SUBMITTED') {
+    await notifyProposalEvent({
+      proposalId: id,
+      event: 'APPROVAL_NEEDED',
+      actorId: actor.id,
+      title: 'RFQ needs approval',
+      message: `RFQ v${version} was submitted for approval.`,
+      audience: 'approvers',
+      milestone: `rfq-submitted:${id}:v${version}`,
+    });
+  } else {
+    await notifyProposalEvent({
+      proposalId: id,
+      event: to === 'APPROVED' ? 'APPROVED' : 'RETURNED',
+      actorId: actor.id,
+      title: to === 'APPROVED' ? 'RFQ approved' : 'RFQ returned for changes',
+      message:
+        to === 'APPROVED'
+          ? `RFQ v${version} was approved${comment ? `: ${comment}` : ''}.`
+          : `RFQ v${version} was returned${comment ? `: ${comment}` : ''}.`,
+      audience: 'owners',
+      milestone: `rfq-${to.toLowerCase()}:${id}:v${version}`,
+    });
+  }
   return rfqState(id);
 }

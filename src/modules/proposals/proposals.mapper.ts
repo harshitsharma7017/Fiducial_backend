@@ -9,11 +9,14 @@ import {
   hasRfq,
   isOverdue,
   productRangeText,
+  roleLabel,
+  RoleSchema,
   suggestProducts,
   wholeRupees,
   type CatalogItem,
   type Cover,
   type OtherSection,
+  type Role,
   type SectionWithLines,
   type ProposalRecord,
 } from '../../shared/index.ts';
@@ -46,7 +49,8 @@ export interface ProposalContext {
   clients: ReadonlyMap<string, ClientDoc>;
   locations: ReadonlyMap<string, ClientLocationDoc>;
   insurers: ReadonlyMap<string, InsurerDoc>;
-  users: ReadonlyMap<string, string>;
+  /** Actor display: the user's name and current roles (A1), by user id. */
+  users: ReadonlyMap<string, { name: string; roles: readonly Role[] }>;
   /** The product and coverage section masters, in their order. */
   products: readonly CatalogItem<'products'>[];
   sections: readonly CatalogItem<'sections'>[];
@@ -55,6 +59,13 @@ export interface ProposalContext {
 }
 
 const key = (id: Types.ObjectId) => id.toHexString();
+
+/** The role label from an activity entry's snapshot (valid roles only), or null when none. */
+function activityRole(stored: readonly string[] | undefined): string | null {
+  if (!stored || stored.length === 0) return null;
+  const valid = stored.filter((role): role is Role => RoleSchema.safeParse(role).success);
+  return valid.length > 0 ? roleLabel(valid) : null;
+}
 
 export async function loadContext(docs: readonly ProposalDoc[]): Promise<ProposalContext> {
   const clientIds = new Set(docs.map((doc) => key(doc.clientId)));
@@ -73,7 +84,7 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
     ClientModel.find({ _id: { $in: [...clientIds] } }).lean(),
     ClientLocationModel.find({ _id: { $in: [...locationIds] } }).lean(),
     InsurerModel.find({ _id: { $in: [...insurerIds] } }).lean(),
-    UserModel.find({ _id: { $in: [...userIds] } }, { name: 1 }).lean(),
+    UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, roles: 1 }).lean(),
     catalogItems('products'),
     catalogItems('sections'),
   ]);
@@ -81,7 +92,7 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
     clients: new Map(clients.map((doc) => [key(doc._id), doc])),
     locations: new Map(locations.map((doc) => [key(doc._id), doc])),
     insurers: new Map(insurers.map((doc) => [key(doc._id), doc])),
-    users: new Map(users.map((doc) => [key(doc._id), doc.name])),
+    users: new Map(users.map((doc) => [key(doc._id), { name: doc.name, roles: doc.roles }])),
     products,
     sections,
     now: new Date(),
@@ -200,7 +211,10 @@ function fireValues(doc: ProposalDoc['locations'][number]): FireItemValues[] {
 export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): ProposalRecord {
   const client = context.clients.get(key(doc.clientId));
   const userName = (id: Types.ObjectId | null) =>
-    id ? (context.users.get(key(id)) ?? 'Unknown user') : 'System';
+    id ? (context.users.get(key(id))?.name ?? 'Unknown user') : 'System';
+  // A1: the actor's current role label for timeline entries; null when the actor is unknown.
+  const userRole = (id: Types.ObjectId | null) =>
+    id ? roleLabel(context.users.get(key(id))?.roles) : null;
 
   const locations = doc.locations.map((entry) => {
     const location = context.locations.get(key(entry.locationId));
@@ -473,6 +487,9 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
       .map((entry) => ({
         at: entry.at.toISOString(),
         actor: userName(entry.actorId),
+        // A1: show the role snapshotted when the action occurred; fall back to the actor's current
+        // roles only for older entries that carry no snapshot.
+        actorRole: activityRole(entry.actorRoles) ?? userRole(entry.actorId),
         message: entry.message,
       })),
     createdAt: doc.createdAt.toISOString(),

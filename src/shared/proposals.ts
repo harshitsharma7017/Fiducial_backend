@@ -1096,7 +1096,15 @@ export const ProposalRecordSchema = z.object({
   /** The Data Sheet can no longer change: the RFQ has gone to at least one insurer. */
   locked: z.boolean(),
   insurers: z.array(ProposalInsurerSchema),
-  activity: z.array(z.object({ at: IsoDateTimeSchema, actor: z.string(), message: z.string() })),
+  activity: z.array(
+    z.object({
+      at: IsoDateTimeSchema,
+      actor: z.string(),
+      /** The actor's current role label (A1), or null when the actor is unknown. */
+      actorRole: z.string().nullable(),
+      message: z.string(),
+    }),
+  ),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,
 });

@@ -47,6 +47,7 @@ import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
 import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
 import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
 import { createMailRouter } from './modules/mail/mail.routes.ts';
+import { createNotificationsRouter } from './modules/notifications/notifications.routes.ts';
 import { transportFromEnv, type MailTransport } from './modules/mail/transport.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
 import { createUsersRouter } from './modules/users/users.routes.ts';
@@ -131,6 +132,8 @@ export function createApp({
   api.use('/email-templates', createEmailTemplatesRouter(jwt));
   api.use('/imports', createImportsRouter(jwt));
   api.use('/mail', createMailRouter({ ...jwt, transport }));
+  // A4: the signed-in user's in-app notifications.
+  api.use('/notifications', createNotificationsRouter(jwt));
   api.use('/proposals/:id', liveCaseOnly());
   api.use(
     '/proposals',

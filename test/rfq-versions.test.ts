@@ -305,6 +305,27 @@ describe('R-5: submit, approve or return; only an approved RFQ is sent', () => {
     expect(await AuditLogModel.countDocuments({ action: 'RFQ_APPROVED', entityId: caseId })).toBe(
       1,
     );
+    // A1: the timeline entry identifies the actual approver and their role at display time.
+    const afterApproval = await request(app)
+      .get(`/api/v1/proposals/${caseId}`)
+      .set(bearer(manager))
+      .expect(200);
+    const approvalEntry = (
+      afterApproval.body.activity as { message: string; actor: string; actorRole: string | null }[]
+    ).find((entry) => entry.message === 'RFQ v3 approved: OK to send');
+    expect(approvalEntry).toMatchObject({ actorRole: 'Approver' });
+    expect(typeof approvalEntry?.actor).toBe('string');
+
+    // A2: the approved RFQ v3 export carries "Prepared by" (the generator) and "Approved by"
+    // (the approver), each with their role — from the records, not whoever downloads it.
+    const v3 = await workbookOf(3);
+    const premiumText: string[] = [];
+    v3.getWorksheet('premium details')!.eachRow((row) =>
+      row.eachCell((cell) => premiumText.push(cell.text)),
+    );
+    const joined = premiumText.join('\n');
+    expect(joined).toMatch(/Prepared by \(RFQ v3\):.*Relationship Manager/);
+    expect(joined).toMatch(/Approved by:.*Approver/);
 
     // A change after approval needs a new version before anything more is sent.
     await request(app)

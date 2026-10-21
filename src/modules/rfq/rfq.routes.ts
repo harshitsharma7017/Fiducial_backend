@@ -24,7 +24,9 @@ import {
 } from './rfq.service.ts';
 
 function actorOf(req: Request) {
-  return { id: currentUser(req).id, requestId: req.requestId };
+  const user = currentUser(req);
+  // A1: carry the actor's roles so audit and timeline entries snapshot the role at action time.
+  return { id: user.id, roles: user.roles, requestId: req.requestId };
 }
 
 /**
@@ -76,7 +78,13 @@ export function createRfqRouter(options: { jwtSecret: string; gstRatePercent: st
     route(
       { params: RfqVersionParamsSchema, query: RfqVersionFileQuerySchema },
       async ({ params, query }, req, res) => {
-        const file = await rfqVersionFile(params.id, params.version, query.format, actorOf(req));
+        const file = await rfqVersionFile(
+          params.id,
+          params.version,
+          query.format,
+          actorOf(req),
+          options.gstRatePercent,
+        );
         res.setHeader('Content-Type', file.contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
         res.send(file.data);

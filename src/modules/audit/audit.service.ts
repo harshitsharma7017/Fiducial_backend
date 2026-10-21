@@ -8,6 +8,7 @@ import {
   type AuditLogQuery,
   type MasterType,
   type Paginated,
+  roleLabel,
 } from '../../shared/index.ts';
 import { Types, type QueryFilter, type mongo } from 'mongoose';
 import { validationError } from '../../lib/errors.ts';
@@ -25,6 +26,8 @@ import { AuditLogModel, type AuditLogDoc } from './audit.model.ts';
 
 export interface AuditEntry {
   userId?: string | null;
+  /** A1: the actor's role codes at the time of the action, snapshotted for honest history. */
+  actorRoles?: readonly string[];
   action: AuditAction;
   entity: AuditEntity;
   entityId?: string | null;
@@ -37,6 +40,8 @@ function toAuditDoc(entry: AuditEntry, at: Date) {
   return {
     at,
     userId: entry.userId ? new Types.ObjectId(entry.userId) : null,
+    // Only store a snapshot when one was supplied; older call sites leave it undefined.
+    actorRoles: entry.actorRoles && entry.actorRoles.length > 0 ? [...entry.actorRoles] : undefined,
     action: entry.action,
     entity: entry.entity,
     entityId: entry.entityId ?? null,
@@ -98,7 +103,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
 
   const [users, versions, locations, insurers, occupancies, pincodes, proposals] =
     await Promise.all([
-      UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1 }).lean(),
+      UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1, roles: 1 }).lean(),
       MasterVersionModel.find(
         { _id: { $in: [...versionIds] } },
         { type: 1, sourceFileName: 1 },
@@ -130,7 +135,14 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
   const labels = new Map<string, string>();
   for (const user of users) {
     const id = user._id.toHexString();
-    actors.set(id, { id, name: user.name, email: user.email });
+    // A1: carry the actor's current roles so the timeline can show "Name, Role".
+    actors.set(id, {
+      id,
+      name: user.name,
+      email: user.email,
+      roles: user.roles,
+      roleLabel: roleLabel(user.roles),
+    });
     labels.set(recordKey(AUDIT_ENTITIES.USER, id), user.email);
   }
   for (const version of versions) {

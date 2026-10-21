@@ -17,7 +17,9 @@ import type { MailTransport } from '../mail/transport.ts';
 import { approveQcr, getQcr, qcrDocument, saveQcr, sendQcr } from './qcr.service.ts';
 
 function actorOf(req: Request) {
-  return { id: currentUser(req).id, requestId: req.requestId };
+  const user = currentUser(req);
+  // A1: carry the actor's roles so audit and timeline entries snapshot the role at action time.
+  return { id: user.id, roles: user.roles, requestId: req.requestId };
 }
 
 /**

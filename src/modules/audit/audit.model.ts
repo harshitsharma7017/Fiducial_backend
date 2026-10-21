@@ -14,6 +14,12 @@ export interface AuditLogDoc {
   at: Date;
   /** Who acted. Null for unauthenticated events (failed sign-in) and CLI runs without --by. */
   userId: Types.ObjectId | null;
+  /**
+   * A1: the actor's role codes at the time of the action, snapshotted so a later role change does
+   * not misrepresent history. Undefined on entries written before this field existed; the display
+   * then falls back to the user's current roles.
+   */
+  actorRoles?: string[];
   action: AuditAction;
   entity: AuditEntity;
   entityId: string | null;
@@ -26,6 +32,8 @@ const auditLogSchema = new Schema<AuditLogDoc>(
   {
     at: { type: Date, required: true, default: () => new Date() },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // A1: role snapshot at the time of the action. Not required, so older entries stay valid.
+    actorRoles: { type: [String], default: undefined },
     action: { type: String, required: true, enum: Object.values(AUDIT_ACTIONS) },
     entity: { type: String, required: true, enum: Object.values(AUDIT_ENTITIES) },
     entityId: { type: String, default: null },

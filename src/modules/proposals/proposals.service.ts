@@ -31,6 +31,7 @@ import {
   type ProposalListQuery,
   type ProposalRecord,
   type ProposalStage,
+  type Role,
   type SetProposalInsurersRequest,
 } from '../../shared/index.ts';
 import { Types, type QueryFilter, type mongo } from 'mongoose';
@@ -63,9 +64,37 @@ import {
 export interface Actor {
   id: string;
   requestId: string | null;
+  /**
+   * A1: the actor's roles at the time of the action, snapshotted onto audit and timeline entries
+   * so a later role change never misrepresents the role held when the action occurred. Optional
+   * for backward compatibility; historical entries without it fall back to the user's roles now.
+   */
+  roles?: readonly Role[];
 }
 
 const money = (value: string | null) => (value === null ? null : toDecimal128(value));
+
+/**
+ * A1: a proposal timeline entry with the actor's role snapshot. Use at every activity `$push` for
+ * an approve / send / edit event so the role shown is the one held when the action occurred.
+ */
+export function activityEntry(
+  actor: Actor,
+  at: Date,
+  message: string,
+): { at: Date; actorId: Types.ObjectId; actorRoles: string[] | undefined; message: string } {
+  return {
+    at,
+    actorId: new Types.ObjectId(actor.id),
+    actorRoles: actor.roles && actor.roles.length > 0 ? [...actor.roles] : undefined,
+    message,
+  };
+}
+
+/** A1: the actor's role snapshot for an audit entry (undefined when the actor carries no roles). */
+export function actorRolesOf(actor: Actor): string[] | undefined {
+  return actor.roles && actor.roles.length > 0 ? [...actor.roles] : undefined;
+}
 
 function proposalNotFound(): AppError {
   return notFound('Proposal not found');

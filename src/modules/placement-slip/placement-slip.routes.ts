@@ -36,7 +36,9 @@ const UploadSchema = z.instanceof(Buffer, {
 });
 
 function actorOf(req: Request) {
-  return { id: currentUser(req).id, requestId: req.requestId };
+  const user = currentUser(req);
+  // A1: carry the actor's roles so audit and timeline entries snapshot the role at action time.
+  return { id: user.id, roles: user.roles, requestId: req.requestId };
 }
 
 /**

@@ -31,8 +31,11 @@ import { getEmailTemplate } from '../email-templates/email-templates.service.ts'
 import { MailLogModel } from '../mail/mail-log.model.ts';
 import { fitsAttachmentLimit, storeAttachment } from '../mail/mail-log.service.ts';
 import type { MailTransport } from '../mail/transport.ts';
+import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
+  activityEntry,
+  actorRolesOf,
   advanceStageTo,
   closed,
   loadDoc,
@@ -301,7 +304,7 @@ export async function approveQcr(
     );
     await ProposalModel.updateOne(
       { _id: new Types.ObjectId(id) },
-      { $push: { activity: { at, actorId, message: 'QCR approved' } } },
+      { $push: { activity: activityEntry(actor, at, 'QCR approved') } },
       { session },
     );
     // An approved QCR moves the case to QCR.
@@ -309,6 +312,7 @@ export async function approveQcr(
     await writeAudit(
       {
         userId: actor.id,
+        actorRoles: actorRolesOf(actor),
         action: AUDIT_ACTIONS.QCR_APPROVED,
         entity: AUDIT_ENTITIES.PROPOSAL,
         entityId: id,
@@ -318,6 +322,16 @@ export async function approveQcr(
       },
       session,
     );
+  });
+  // A4: after the QCR is approved, tell the case owner and creator it is ready to send.
+  await notifyProposalEvent({
+    proposalId: id,
+    event: 'APPROVED',
+    actorId: actor.id,
+    title: 'QCR approved',
+    message: 'The QCR was approved and is ready to send to the insured.',
+    audience: 'owners',
+    milestone: `qcr-approved:${id}:${fingerprint}`,
   });
   return getQcr(id, deps);
 }

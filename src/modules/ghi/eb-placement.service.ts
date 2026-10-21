@@ -20,6 +20,7 @@ import { Decimal, moneyString, toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { caseBands } from '../age-bands/case-bands.ts';
+import { notifyGhiCaseEvent } from '../notifications/proposal-notifications.ts';
 import { toEbCaseRecord } from './eb-cases.service.ts';
 import { ebPlacementSlipDocument, type PlacementSlipInput } from './eb-documents.ts';
 import { membersForEbDocuments, summaryOf } from './eb-members.service.ts';
@@ -389,6 +390,15 @@ export async function addEbPayment(
       session,
       scope,
     );
+  });
+  // A4: after the EB payment commits, tell the case owner and creator.
+  await notifyGhiCaseEvent({
+    caseId: id,
+    event: 'PAYMENT_RECORDED',
+    actorId: actor.id,
+    title: 'Payment recorded',
+    message: `A payment of ₹${moneyString(new Decimal(input.amount))} was recorded (${input.reference}).`,
+    milestone: `payment-recorded:${id}:${input.reference}:${input.paidOn}`,
   });
   return listEbPayments(scope, id);
 }
