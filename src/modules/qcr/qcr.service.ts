@@ -25,6 +25,7 @@ import { writeAudit } from '../audit/audit.service.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { openTemplate, saveWorkbook } from '../documents/excel-template.ts';
+import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import { getEmailTemplate } from '../email-templates/email-templates.service.ts';
@@ -359,11 +360,11 @@ async function qcrWorkbook(
     const workbook = await openTemplate(template.data);
     const letterhead = letterheadOf(workbook);
     fillQcrTemplate(workbook, record, client, masters, qcr, terms);
-    return { workbook, letterhead };
+    return { workbook, letterhead: await withBrokerLetterhead(letterhead) };
   }
   return {
     workbook: buildQcrWorkbookDocument(record, client, masters, qcr),
-    letterhead: { logo: null, address: null },
+    letterhead: await withBrokerLetterhead({ logo: null, address: null }),
   };
 }
 

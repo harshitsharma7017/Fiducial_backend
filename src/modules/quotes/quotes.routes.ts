@@ -6,6 +6,7 @@ import {
   QUOTE_ATTACHMENT_TYPES,
   QuoteAttachmentParamsSchema,
   QuoteAttachmentSchema,
+  QuoteExtractionSchema,
   QuoteAttachmentUploadQuerySchema,
   RecordQuoteRequestSchema,
 } from '../../shared/index.ts';
@@ -18,6 +19,7 @@ import { route } from '../../middleware/validate.ts';
 import {
   proposalQuotes,
   quoteAttachmentFile,
+  readQuoteAttachment,
   recordQuote,
   uploadQuoteAttachment,
 } from './quotes.service.ts';
@@ -100,6 +102,14 @@ export function createQuotesRouter(options: { jwtSecret: string; gstRatePercent:
     ),
   );
 
+  router.post(
+    '/:id/quote-attachments/:attachmentId/read',
+    edit,
+    route({ params: QuoteAttachmentParamsSchema }, async ({ params }, req, res) => {
+      res.json(await readQuoteAttachment(params.id, params.attachmentId, actorOf(req)));
+    }),
+  );
+
   router.get(
     '/:id/quote-attachments/:attachmentId',
     view,
@@ -174,6 +184,20 @@ documentRoute({
   request: { params: QuoteAttachmentParamsSchema },
   responses: {
     200: { description: 'The file', content: { 'application/octet-stream': binary } },
+    ...errorResponses(400, 401, 403, 404),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/quote-attachments/{attachmentId}/read',
+  tags: ['Quotes'],
+  summary: 'Read a quote PDF to pre-fill the quote form',
+  description:
+    'Needs proposals.edit. Reads the text of a kept PDF and returns candidate values (section premiums, net, GST, total, valid-until) each with the line it came from and a review state (HIGH, LOW, MISSING, INVALID), plus any arithmetic discrepancies. Saves nothing: staff review the values in the form and save through the quote route. Scanned PDFs, pictures and mails are not read (`manualEntryRequired`). Audited (QUOTE_PDF_READ), without the text.',
+  request: { params: QuoteAttachmentParamsSchema },
+  responses: {
+    200: { description: 'The candidate values', ...json(QuoteExtractionSchema) },
     ...errorResponses(400, 401, 403, 404),
   },
 });

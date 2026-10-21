@@ -11,6 +11,7 @@ import {
   DOCUMENT_FONT_FAMILY,
   DOCUMENT_LINE_HEIGHT,
   MARGIN,
+  WATERMARK,
 } from './document-theme.ts';
 import { cellText, printColumns, printRows } from './excel-template.ts';
 
@@ -75,6 +76,19 @@ export function letterheadOf(workbook: ExcelJS.Workbook): Letterhead {
     if (address) break;
   }
   return { logo, address };
+}
+
+/**
+ * A template fill in the document design (Invoice-2): the light tints the templates use for
+ * header rows become the light blue, dark fills become the navy, anything else is kept.
+ */
+function designFill(hex: string | undefined): string | undefined {
+  if (!hex) return undefined;
+  const [r = 0, g = 0, b = 0] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  if (luminance > 0.82) return DOCUMENT_COLORS.tableHeader;
+  if (luminance < 0.3) return DOCUMENT_COLORS.rule;
+  return hex;
 }
 
 function argbColour(argb: string | undefined, skip = 'FFFFFF'): string | undefined {
@@ -211,7 +225,8 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         : cell;
       const border = cell.border ?? {};
       const lastBorder = last.border ?? {};
-      const fill = cell.fill?.type === 'pattern' ? argbColour(cell.fill.fgColor?.argb) : undefined;
+      const fill =
+        cell.fill?.type === 'pattern' ? designFill(argbColour(cell.fill.fgColor?.argb)) : undefined;
       const horizontal = cell.alignment?.horizontal;
       const text = displayText(cell);
       const isNumber =
@@ -313,7 +328,9 @@ export async function workbookToPdf(
       font: DOCUMENT_FONT_FAMILY,
       fontSize: DOCUMENT_FONT.body,
       lineHeight: DOCUMENT_LINE_HEIGHT,
+      color: DOCUMENT_COLORS.ink,
     },
+    watermark: { ...WATERMARK },
     header: () => documentHeader(logoImage, address),
     footer: (page: number, pages: number) => documentFooter(options.footer, page, pages),
     content,

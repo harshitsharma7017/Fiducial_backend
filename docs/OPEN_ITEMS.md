@@ -445,6 +445,16 @@ analysis `proposals.view`, recording years and saving reports `proposals.edit`, 
   format with the same code.
 - Saved renewal reports keep their figures as saved; a later correction of a recorded year changes only new analyses.
 
+## Quote PDF auto-fill (Q1)
+
+On the property quote form, "Fill the form from this PDF" reads a kept PDF (`POST /proposals/{id}/quote-attachments/{attachmentId}/read`, `proposals.edit`) with `pdfjs-dist` 4.10.38 (the one package added; it needs Node 20 or later) and puts candidate premiums (Fire with and without terrorism, other sections) and the valid-until date in the form. Nothing is saved: each value is listed with the line it came from and how sure the reader was, and the quote cannot be saved until the person ticks that they checked the values. The PDF's net, GST and total are shown for comparison, and any mismatch is reported but never corrected. Each read is audited (`QUOTE_PDF_READ`, without the text).
+
+| ID   | Item                                      | Effect until answered                                                                                                                                                                 |
+| ---- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QA-1 | Real insurers' quote layouts              | UNVERIFIED. Tested on a synthetic layout only. A line with two amounts (for example sum insured and premium) takes the last and is marked "check"; a section not found is left empty. |
+| QA-2 | Scanned PDFs, pictures and mails          | Not read (no OCR engine): the screen says so and the figures are entered by hand.                                                                                                     |
+| QA-3 | Sum insured, terms, deductibles, capacity | Not filled; only premiums and the valid-until date are.                                                                                                                               |
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

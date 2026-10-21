@@ -288,6 +288,8 @@ describe('audit vocabulary', () => {
     ]);
     // N12 adds the VIEW kind: claim data read, and access refused.
     expect(auditActionsOfKind('VIEW')).toEqual([
+      // The quote PDF auto-fill reads a stored attachment and changes nothing.
+      'QUOTE_PDF_READ',
       'CLAIM_VIEWED',
       'CLAIMS_LISTED',
       'TPA_CLAIM_VIEWED',

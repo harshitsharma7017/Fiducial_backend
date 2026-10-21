@@ -17,6 +17,7 @@ import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { openTemplate, saveWorkbook, sheetNamed } from '../documents/excel-template.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
+import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
 import { RfqStateModel, RfqVersionModel } from '../rfq/rfq.model.ts';
@@ -90,6 +91,7 @@ export async function rfqDocument(
   } else {
     workbook = buildRfqWorkbookDocument(record, client, masters, { title, attribution });
   }
+  letterhead = await withBrokerLetterhead(letterhead);
   const layout: RfqLayout = template ? 'template' : 'built-in';
   const name = `RFQ-${record.reference}`;
   if (format === 'pdf') {

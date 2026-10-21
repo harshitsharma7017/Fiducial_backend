@@ -13,6 +13,7 @@ import {
   type ProposalRecord,
   type QuoteAttachment,
   type QuoteAttachmentType,
+  type QuoteExtraction,
   type QuoteVersion,
   type RecordQuoteRequest,
 } from '../../shared/index.ts';
@@ -22,6 +23,7 @@ import { withTransaction } from '../../lib/db.ts';
 import { decimal128ToString, toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { extractQuote } from './quote-extraction.ts';
 import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
@@ -496,4 +498,38 @@ export async function recordQuote(
     milestone: `quote-received:${id}:${insurerId}:${input.option}:v${savedVersion}`,
   });
   return proposalQuotes(id, defaultGstRatePercent);
+}
+
+/**
+ * Reads a kept attachment for the quote form's auto-fill (Q1): candidate values only, nothing
+ * saved. The audit entry says which file and how much was recognised, never its text.
+ */
+export async function readQuoteAttachment(
+  id: string,
+  attachmentId: string,
+  actor: Actor,
+): Promise<QuoteExtraction> {
+  const file = await quoteAttachmentFile(id, attachmentId);
+  const extraction = await extractQuote({
+    id: attachmentId,
+    contentType: file.contentType,
+    data: file.data,
+  });
+  await writeAudit({
+    userId: actor.id,
+    actorRoles: actorRolesOf(actor),
+    action: AUDIT_ACTIONS.QUOTE_PDF_READ,
+    entity: AUDIT_ENTITIES.PROPOSAL,
+    entityId: id,
+    before: null,
+    after: {
+      attachmentId,
+      fileName: file.fileName,
+      source: extraction.source,
+      sectionsRead: extraction.sections.length,
+      manualEntryRequired: extraction.manualEntryRequired,
+    },
+    requestId: actor.requestId,
+  });
+  return extraction;
 }

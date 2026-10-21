@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';
 import { seedMasters } from './helpers/masters.ts';
+import { SYNTHETIC_QUOTE_ROWS, textPdf } from './helpers/quote-pdf.ts';
 import { approveRfq } from './helpers/rfq.ts';
 
 // Insurers' quotes (Q-1 to Q-5): entry per insurer and option, terms and deviations, the
@@ -293,5 +294,66 @@ describe('Q-5: a declined insurer, with its reason, is left out of the QCR', () 
     });
     // Its quotes stay on record.
     expect(after.body.insurers[1].quotes[1].versions).toHaveLength(1);
+  });
+});
+
+describe('Q1: reading a quote PDF to pre-fill the form', () => {
+  const read = (attachmentId: string, token = manager) =>
+    request(app)
+      .post(`/api/v1/proposals/${caseId}/quote-attachments/${attachmentId}/read`)
+      .set(bearer(token));
+
+  it('returns candidate values with their source lines, saves nothing, and audits without the text', async () => {
+    const before = await request(app)
+      .get(`/api/v1/proposals/${caseId}/quotes`)
+      .set(bearer(manager))
+      .expect(200);
+    const pdf = await upload(fort(), await textPdf(SYNTHETIC_QUOTE_ROWS), 'Fort quote.pdf').expect(
+      201,
+    );
+    const response = await read(pdf.body.id as string).expect(200);
+    expect(response.body).toMatchObject({
+      source: 'PDF_TEXT',
+      attachmentId: pdf.body.id,
+      manualEntryRequired: false,
+      netPremium: { value: '102500.50', state: 'HIGH' },
+      totalPremium: { value: '120950.59' },
+      gstRatePercent: { value: '18' },
+      validUntil: { value: '2026-12-31' },
+      discrepancies: [],
+    });
+    const money = response.body.sections.find(
+      (section: { code: string }) => section.code === 'MONEY',
+    );
+    // The line holds the sum insured and the premium: the last is taken, marked for a closer look.
+    expect(money.premium).toMatchObject({ value: '2500.00', state: 'LOW' });
+    expect(money.premium.raw).toContain('Money in Transit');
+
+    // Reading saved no quote and changed nothing.
+    const after = await request(app)
+      .get(`/api/v1/proposals/${caseId}/quotes`)
+      .set(bearer(manager))
+      .expect(200);
+    expect(after.body.insurers.map((item: { quotes: unknown }) => item.quotes)).toEqual(
+      before.body.insurers.map((item: { quotes: unknown }) => item.quotes),
+    );
+    const entry = await AuditLogModel.findOne({
+      action: 'QUOTE_PDF_READ',
+      'after.attachmentId': pdf.body.id,
+    }).lean();
+    expect(entry?.after).toMatchObject({ source: 'PDF_TEXT', sectionsRead: 2 });
+    expect(JSON.stringify(entry)).not.toContain('120950');
+  });
+
+  it('asks for manual entry for a mail, needs proposals.edit and the right case', async () => {
+    const mail = await upload(fort(), EML, 'Re RFQ.eml', 'application/octet-stream').expect(201);
+    const response = await read(mail.body.id as string).expect(200);
+    expect(response.body).toMatchObject({ source: 'NONE', manualEntryRequired: true });
+    const viewer = (await tokenFor(app, ['MANAGER'])).token;
+    await read(mail.body.id as string, viewer).expect(403);
+    await request(app)
+      .post(`/api/v1/proposals/${caseId}/quote-attachments/${'f'.repeat(24)}/read`)
+      .set(bearer(manager))
+      .expect(404);
   });
 });

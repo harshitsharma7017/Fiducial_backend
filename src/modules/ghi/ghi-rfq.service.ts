@@ -19,6 +19,7 @@ import { withTransaction } from '../../lib/db.ts';
 import { toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { openTemplate } from '../documents/excel-template.ts';
+import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
@@ -78,12 +79,15 @@ const fingerprintOf = (doc: Pick<GhiCaseDoc, 'requirementsRevision' | 'censusRev
 /** The letterhead of the client's uploaded RFQ format, when there is one. */
 export async function caseLetterhead(): Promise<Letterhead> {
   const template = await templateFile('RFQ');
-  if (!template) return { logo: null, address: null };
-  try {
-    return letterheadOf(await openTemplate(template.data));
-  } catch {
-    return { logo: null, address: null };
+  let own: Letterhead = { logo: null, address: null };
+  if (template) {
+    try {
+      own = letterheadOf(await openTemplate(template.data));
+    } catch {
+      // An unreadable RFQ format: the broker's header from the Placement Slip is used.
+    }
   }
+  return withBrokerLetterhead(own);
 }
 
 function toVersion(

@@ -15,6 +15,7 @@ import {
   DOCUMENT_FONT_FAMILY,
   DOCUMENT_LINE_HEIGHT,
   MARGIN,
+  WATERMARK,
 } from '../documents/document-theme.ts';
 import {
   documentFooter,
@@ -188,7 +189,9 @@ export async function buildCoverageLetter(input: CoverageLetterInput): Promise<B
       font: DOCUMENT_FONT_FAMILY,
       fontSize: DOCUMENT_FONT.body,
       lineHeight: DOCUMENT_LINE_HEIGHT,
+      color: DOCUMENT_COLORS.ink,
     },
+    watermark: { ...WATERMARK },
     header: () => documentHeader(logoImage, input.letterhead.address),
     footer: (page: number, pages: number) =>
       documentFooter(
