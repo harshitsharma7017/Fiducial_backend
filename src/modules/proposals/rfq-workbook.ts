@@ -13,6 +13,7 @@ import {
   SUM_INSURED_LINE,
   annexureColumnLabel,
   isAnnexureSection,
+  isSectionShown,
   rfqAttributionRows,
   type AnnexureColumn,
   type AnnexureSection,
@@ -157,9 +158,10 @@ function premiumDetails(
     const first = sheet.rowCount + 1;
     const fire = option === 1 ? record.fire.proposed1 : record.fire.proposed2;
     money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
-    for (const section of record.sections) {
+    // B5: only sections marked required appear; Not-required ones are omitted entirely.
+    for (const section of record.sections.filter(isSectionShown)) {
       const value = option === 1 ? section.proposed1 : section.proposed2;
-      const row = sheet.addRow([section.name, section.included ? amount(value) : 'Not required']);
+      const row = sheet.addRow([section.name, amount(value)]);
       money(row, [2, 3, 4]);
     }
     const last = sheet.rowCount;
@@ -352,7 +354,7 @@ export function schedule(
       sheet.addRow(['Stock kept at open space', `${name}: ${location.openStock}`]);
   }
 
-  const included = record.sections.filter((section) => section.included);
+  const included = record.sections.filter(isSectionShown);
   for (const section of included) {
     sheet.addRow([]);
     sheet.addRow([section.name]).font = { bold: true };
@@ -399,11 +401,7 @@ export function schedule(
     }
     covers(section.covers, section.proposed2 !== null);
   }
-  const excluded = record.sections.filter((section) => !section.included);
-  if (excluded.length > 0) {
-    sheet.addRow([]);
-    labelled(sheet, 'Not required', excluded.map((s) => s.name).join(', '), span);
-  }
+  // B5: the "Not required: …" line is removed; Not-required sections are simply omitted.
   if (record.notes) labelled(sheet, 'Notes', record.notes, span);
 
   const notes = masters.notes.filter(

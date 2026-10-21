@@ -113,11 +113,34 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
       const total = rows[2];
       if (quote?.lowest && total) total.getCell(firstColumn + index).fill = LOWEST_FILL;
     });
-    const extras = quotes.flatMap((quote) =>
-      quote?.terrorismExtra ? [`${name(quote.insurerId)}: ₹${quote.terrorismExtra}`] : [],
-    );
-    if (extras.length > 0)
-      labelled(sheet, 'Terrorism, extra net premium:', extras.join('; '), span);
+    // B2: the terrorism cover's own extra net premium, and the total premium including terrorism,
+    // per insurer — shown as their own rows so the comparison (Fire without terrorism) and the
+    // premium with terrorism are both clear. Only insurers that quoted both Fire figures have them.
+    if (
+      quotes.some((quote) => quote?.terrorismExtra !== null && quote?.terrorismExtra !== undefined)
+    ) {
+      const terrorismRow = sheet.addRow([
+        'Terrorism, extra net premium',
+        ...(renewal ? [null, null] : []),
+        null,
+        ...quotes.map((quote) => amount(quote?.terrorismExtra ?? null)),
+      ]);
+      money(
+        terrorismRow,
+        Array.from({ length: span - 1 }, (_, index) => index + 2),
+      );
+      const totalWithRow = sheet.addRow([
+        'Total Premium (including terrorism)',
+        ...(renewal ? [null, null] : []),
+        null,
+        ...quotes.map((quote) => amount(quote?.totalsWithTerrorism?.total ?? null)),
+      ]);
+      totalWithRow.font = { italic: true };
+      money(
+        totalWithRow,
+        Array.from({ length: span - 1 }, (_, index) => index + 2),
+      );
+    }
     for (const difference of option.differences) {
       labelled(
         sheet,

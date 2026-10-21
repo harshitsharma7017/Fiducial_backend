@@ -319,7 +319,9 @@ describe('new-business proposals', () => {
     expect(rows).toContainEqual(['Fire', 2700000]);
     expect(rows).toContainEqual(['Burglary', 700000]);
     expect(rows).toContainEqual(['Burglary', 900000]); // Option 2
-    expect(rows).toContainEqual(['Money', 'Not required']);
+    // B5: a section marked not required (Money here) is omitted entirely, not shown as "Not required".
+    expect(rows).not.toContainEqual(['Money', 'Not required']);
+    expect(rows.some((row) => row[0] === 'Money')).toBe(false);
     const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
     expect(schedule).toContain('Proposal Test Textiles');
     expect(schedule).toContain('27AAPFU0939F1ZV');
@@ -335,6 +337,80 @@ describe('new-business proposals', () => {
       .get(`/api/v1/proposals/${proposal.id}/rfq`)
       .set(bearer(readOnly))
       .expect(403);
+  });
+
+  it('B1: Proposed Option 2 is saved, reloaded and rendered, including a valid zero', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const save = (body: object) =>
+      request(app)
+        .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+        .set(bearer(manager))
+        .send(body);
+    // Fire STOCKS: Option 1 60,00,000, Option 2 a valid zero. Money: Option 1 5,00,000, Option 2
+    // 8,00,000. FLOP included with a non-zero Option 2 via its single sum-insured line.
+    const body = {
+      dueDate: '2026-11-20',
+      policyStart: '',
+      policyEnd: '',
+      locations: [
+        {
+          locationId: plant1,
+          fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '6000000' }],
+          hypothecation: '',
+          openStock: '',
+          risk: risk(),
+        },
+      ],
+      fireOption2: [{ group: 'STOCKS', amount: '0' }],
+      sections: [
+        { code: 'MONEY', included: true, proposed1: '500000', proposed2: '800000' },
+        { code: 'BURGLARY', included: false, proposed1: '', proposed2: '' },
+      ],
+      claims: [],
+      notes: null,
+    };
+    const saved = await save(body).expect(200);
+    // Option 2 on the API record: Fire line keeps the valid zero; Money keeps 8,00,000.
+    const stocks = saved.body.fire.groups.find((g: { group: string }) => g.group === 'STOCKS');
+    expect(stocks).toMatchObject({ proposed1: '6000000', proposed2: '0' });
+    expect(saved.body.fire.proposed2).toBe('0');
+    const money = saved.body.sections.find((s: { code: string }) => s.code === 'MONEY');
+    expect(money).toMatchObject({ proposed1: '500000', proposed2: '800000' });
+
+    // Reload: Option 2 survives the round trip, zero included.
+    const reloaded = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}`)
+      .set(bearer(manager))
+      .expect(200);
+    const stocks2 = reloaded.body.fire.groups.find((g: { group: string }) => g.group === 'STOCKS');
+    expect(stocks2.proposed2).toBe('0');
+    expect(reloaded.body.sections.find((s: { code: string }) => s.code === 'MONEY').proposed2).toBe(
+      '800000',
+    );
+
+    // The built-in RFQ schedule renders Option 2 (column 5): the Money sum insured's Option 2.
+    await approveRfq(app, proposal.id, manager, approver);
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq?format=xlsx`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const schedule = workbook.getWorksheet('schedule')!;
+    const rows = schedule
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
+    // Fire STOCKS line: Option 1 (col 3) 60,00,000; Option 2 (col 4) the valid zero shows as 0.
+    const stockRow = rows.find((r) => typeof r[1] === 'string' && r[1].includes('stock'));
+    expect(stockRow?.[2]).toBe(6000000);
+    // Money's sum insured line carries Option 2 8,00,000 (built-in columns 3 and 4).
+    expect(rows.some((r) => r[2] === 500000 && r[3] === 800000)).toBe(true);
   });
 
   it('D-3 and D-7: prints Fire & Burglary as the client’s Data Sheet, with exact totals', async () => {

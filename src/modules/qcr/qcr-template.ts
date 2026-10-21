@@ -232,12 +232,14 @@ function fillPremiumComparison(
           ? `${insurer.company}, ${insurer.branch}${quote?.lowest ? '\n(lowest total)' : ''}`
           : null,
       );
-      if (quote?.lowest) {
+      // B3: long insurer names wrap within their column so they are not clipped in the PDF; the
+      // lowest column is also tinted and bold.
+      if (insurer) {
         const cell = sheet.getCell(namesRow, column);
         restyle(cell, {
-          fill: LOWEST_FILL,
-          font: { ...cell.font, bold: true },
-          alignment: { ...cell.alignment, wrapText: true },
+          ...(quote?.lowest ? { fill: LOWEST_FILL } : {}),
+          font: { ...cell.font, bold: quote?.lowest ?? false },
+          alignment: { ...cell.alignment, wrapText: true, vertical: 'top' },
         });
       }
     });
@@ -252,17 +254,19 @@ function fillPremiumComparison(
       if (!first) first = row;
       last = row;
       const section = data.sections.find((item) => item.code === code);
-      if (renewal) {
-        setValue(sheet, row, existingSum, amount(section?.existingSumInsured ?? null), {
-          rupees: true,
-        });
-        setValue(sheet, row, existingPremium, amount(section?.existingPremium ?? null), {
-          rupees: true,
-        });
-      }
+      // B5: a section not in the comparison (not marked required) is omitted — its row is hidden,
+      // never shown as "Not required". It carries no figure, so the Net Premium SUM is unaffected.
       if (!section) {
-        setValue(sheet, row, sumColumn, 'Not required');
+        sheet.getRow(row).hidden = true;
         continue;
+      }
+      if (renewal) {
+        setValue(sheet, row, existingSum, amount(section.existingSumInsured ?? null), {
+          rupees: true,
+        });
+        setValue(sheet, row, existingPremium, amount(section.existingPremium ?? null), {
+          rupees: true,
+        });
       }
       setValue(sheet, row, sumColumn, amount(section.sumInsured), { rupees: true });
       insurerColumns.forEach((column, position) => {

@@ -81,7 +81,13 @@ export const QcrOptionSchema = z.object({
       premiums: z.array(z.object({ code: z.enum(SECTION_CODES), premium: z.string().nullable() })),
       /** Fire was quoted with terrorism only. */
       fireWithTerrorism: z.boolean(),
+      /** The comparison totals: Fire without terrorism where quoted so (the client's basis). */
       totals: TotalsSchema,
+      /**
+       * The totals including terrorism (net, GST, total), when the insurer quoted Fire both with
+       * and without terrorism; null when only one Fire figure was given. B2.
+       */
+      totalsWithTerrorism: TotalsSchema.nullable(),
       /** The extra net premium for terrorism on Fire, when both were quoted. */
       terrorismExtra: z.string().nullable(),
       deviations: z.array(z.string()),

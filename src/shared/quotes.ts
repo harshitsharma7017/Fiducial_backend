@@ -15,9 +15,9 @@ export const QUOTE_OPTIONS = ['EXISTING', 'P1', 'P2'] as const;
 export const QuoteOptionSchema = z.enum(QUOTE_OPTIONS);
 export type QuoteOption = z.infer<typeof QuoteOptionSchema>;
 export const QUOTE_OPTION_LABELS: Record<QuoteOption, string> = {
-  EXISTING: 'Existing sum insured',
-  P1: 'Proposed Option 1',
-  P2: 'Proposed Option 2',
+  EXISTING: 'Existing',
+  P1: 'Proposed – Option 1',
+  P2: 'Proposed – Option 2',
 };
 
 /** Files accepted as the insurer's proof: its mail (.eml, .msg), a PDF, or a picture of it. */

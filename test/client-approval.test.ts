@@ -291,7 +291,7 @@ describe('Client approval', () => {
     const after = await record();
     expect([after.stage, after.nextStage]).toEqual(['CLIENT_APPROVAL', 'PLACEMENT_SLIP']);
     expect(after.activity.map((entry: { message: string }) => entry.message)).toContain(
-      'Client approval recorded: Test General, Fort, Proposed Option 1, Fire without terrorism, total ₹1,19,770.00; confirmed by Ravi Mehta on 07 Oct 2026',
+      'Client approval recorded: Test General, Fort, Proposed – Option 1, Fire without terrorism, total ₹1,19,770.00; confirmed by Ravi Mehta on 07 Oct 2026',
     );
     const download = await request(app)
       .get(`/api/v1/proposals/${caseId}/client-approval/files/${fileId}`)

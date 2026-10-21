@@ -3,6 +3,7 @@ import {
   BURGLARY_BASIS_LABELS,
   BURGLARY_BASIS_PERCENT,
   hasBasis,
+  isSectionShown,
   wholeRupees,
   FIRE_GROUP_LABELS,
   FIRE_GROUPS,
@@ -739,14 +740,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     const first = numbered[0];
     if (first === undefined) continue;
     const last = context.existingOf(section.code);
-    if (!section.included) {
-      writeFigures(first, last?.sumInsured, null, null);
-      const cell = sheet.getCell(first, option1Column);
-      if (isCovered(cell)) {
-        const text = cellText(cell.master);
-        const figures = text.includes(' — ') ? text.slice(text.indexOf(' — ')) : '';
-        cell.master.value = `Not required${figures}`;
-      } else cell.value = 'Not required';
+    // B5: a section not marked required is omitted — its whole block (title, numbered lines,
+    // optional basis rows and add-on rows) is hidden, never shown as "Not required".
+    if (!isSectionShown(section)) {
+      for (let row = block.title; row <= block.end; row += 1) sheet.getRow(row).hidden = true;
       continue;
     }
     const lines = SECTION_LINES[section.code as SectionWithLines] as

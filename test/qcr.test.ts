@@ -235,7 +235,20 @@ describe('QC-1, QC-2: the comparison', () => {
       terrorismExtra: '20000.00',
       lowest: true,
     });
+    // B2: each insurer's own terrorism extra and total including terrorism, from its two Fire
+    // figures — never copied between insurers, never a fabricated zero.
+    expect(a.totalsWithTerrorism).toEqual({
+      net: '121500.00',
+      gst: '21870.00',
+      total: '143370.00',
+    });
     expect(b).toMatchObject({ totals: { net: '111000.00', total: '130980.00' }, lowest: false });
+    expect(b.terrorismExtra).toBe('5000.00');
+    expect(b.totalsWithTerrorism).toEqual({
+      net: '116000.00',
+      gst: '20880.00',
+      total: '136880.00',
+    });
     expect(p1.differences).toContainEqual({
       topic: 'Capacity',
       values: [
@@ -345,6 +358,28 @@ describe('QC-4, QC-5: the export', () => {
     ]);
   });
 
+  it('B2, B5: the built-in QCR shows terrorism rows and omits Not-required sections', async () => {
+    const file = await binary(
+      request(app).get(`/api/v1/proposals/${caseId}/qcr/document?format=xlsx`).set(bearer(manager)),
+    ).expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as ArrayBuffer);
+    const premium = workbook.getWorksheet('premium details')!;
+    const labels = premium
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) && typeof row[1] === 'string' ? [row[1]] : []));
+    // B5: only Fire and the included Money appear; Burglary and the rest are omitted.
+    expect(labels).toContain('Fire');
+    expect(labels).toContain('Money');
+    expect(labels).not.toContain('Burglary');
+    // B2: the built-in QCR shows the terrorism extra and the total including terrorism.
+    expect(labels).toContain('Terrorism, extra net premium');
+    expect(labels).toContain('Total Premium (including terrorism)');
+    // B5: no aggregate "Not required" line in the schedule.
+    const schedule = workbook.getWorksheet('schedule')!;
+    expect(JSON.stringify(schedule.getSheetValues())).not.toContain('Not required');
+  });
+
   it('fills the client’s QCR template in its layout, with the figures as formulas', async () => {
     await request(app)
       .post('/api/v1/templates/QCR?fileName=Fiducial_QCR%20format.xlsx')
@@ -385,7 +420,7 @@ describe('QC-4, QC-5: the export', () => {
       'Cheque / payment in favour of: Test General Insurance Co Ltd',
     );
     expect(premium.getCell('A72').text).toMatch(
-      /^Our recommendation: Test General, Fort, Proposed Option 1\. Lowest premium/,
+      /^Our recommendation: Test General, Fort, Proposed – Option 1\. Lowest premium/,
     );
     expect(premium.getCell('A73').text).toBe('Remarks: Changed');
 
@@ -400,5 +435,28 @@ describe('QC-4, QC-5: the export', () => {
     const text = (pdf.body as Buffer).toString('latin1');
     expect(text.startsWith('%PDF')).toBe(true);
     expect(text.match(/\/MediaBox \[0 0 595\.28 841\.89\]/g)?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('B2: terrorism premium per insurer', () => {
+  it('shows no terrorism extra when the insurer quoted a single Fire figure (no fabricated zero)', async () => {
+    // This runs last: it revises insurer B's P1 to a single Fire figure (no without-terrorism).
+    await quote(B(), 'P1', ['118000', null], '1000', { reason: 'Single Fire figure' });
+    const body = await qcr();
+    const p1 = body.options.find((o: { option: string }) => o.option === 'P1');
+    const b = p1.quotes.find((q: { insurerId: string }) => q.insurerId === B());
+    // No separate without-terrorism figure: terrorism is unknown, shown as absent, not ₹0.
+    expect(b.fireWithTerrorism).toBe(true);
+    expect(b.terrorismExtra).toBeNull();
+    expect(b.totalsWithTerrorism).toBeNull();
+    expect(b.totals).toEqual({ net: '119000.00', gst: '21420.00', total: '140420.00' });
+    // Insurer A keeps its own terrorism extra, independent of B.
+    const a = p1.quotes.find((q: { insurerId: string }) => q.insurerId === A());
+    expect(a.terrorismExtra).toBe('20000.00');
+    expect(a.totalsWithTerrorism).toEqual({
+      net: '121500.00',
+      gst: '21870.00',
+      total: '143370.00',
+    });
   });
 });

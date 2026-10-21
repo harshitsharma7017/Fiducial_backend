@@ -233,7 +233,10 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(schedule.getCell('D17').value).toBe(50000000);
     expect(schedule.getCell('D18').value).toBe(50000000);
     expect(schedule.getCell('D56').value).toBe(100000);
-    expect(schedule.getCell('D28').value).toBe('Not required');
+    // B5: a section marked not required (Burglary here) is omitted — its row is hidden, never
+    // shown as "Not required".
+    expect(schedule.getCell('D28').value).not.toBe('Not required');
+    expect(schedule.getRow(28).hidden).toBe(true);
     // The client's working notes beside the print area are not sent to insurers.
     expect(schedule.getCell('F6').value).toBeNull();
     const premium = filled.getWorksheet('premium details')!;
@@ -262,7 +265,9 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     // EEI's "As per Annexure" spans the figure columns: the total joins it, the merge stays.
     expect(schedule.getCell('B79').value).toBe('As per Annexure — Option 1 ₹15,00,000');
     expect((schedule.model as { merges: string[] }).merges).toContain('B79:D79');
-    expect(schedule.getCell('B84').value).toBe('Not required');
+    // B5: a section marked not required is omitted — its row is hidden, never "Not required".
+    expect(schedule.getCell('B84').value).not.toBe('Not required');
+    expect(schedule.getRow(84).hidden).toBe(true);
     // EEI: five items in a grid of three rows.
     const annexure = filled.getWorksheet('Annexure')!;
     const eei = [19, 20, 21, 22, 23].map((row) => [

@@ -137,8 +137,16 @@ export function buildComparison(
             : (entry?.premium ?? null);
         return { code: section.code, premium };
       });
+      // The comparison totals use Fire WITHOUT terrorism where the insurer quoted it so (else
+      // Fire with terrorism, when that is all it gave); this is the client's comparison basis.
       const totals = quoteTotals(premiums, version.gstRatePercent).withTerrorism;
       const without = version.totals.withoutTerrorism;
+      // B2: the terrorism cover's own net premium — the difference between Fire with and without
+      // terrorism, exactly as the insurer's two Fire figures give it. Null only when the insurer
+      // quoted a single Fire figure (no separate without-terrorism premium), so nothing is invented.
+      const terrorismExtra = without
+        ? fromPaise(toPaise(version.totals.withTerrorism.net) - toPaise(without.net))
+        : null;
       return {
         insurerId,
         quoteId: version.id,
@@ -146,9 +154,10 @@ export function buildComparison(
         premiums,
         fireWithTerrorism: Boolean(fire?.premium) && !fire?.premiumWithoutTerrorism,
         totals,
-        terrorismExtra: without
-          ? fromPaise(toPaise(version.totals.withTerrorism.net) - toPaise(without.net))
-          : null,
+        // B2: the totals WITH terrorism (net, GST, total), when the insurer quoted both Fire
+        // figures, so the QCR shows the premium including terrorism alongside the comparison total.
+        totalsWithTerrorism: without ? version.totals.withTerrorism : null,
+        terrorismExtra,
         deviations: version.deviations,
         lowest: false,
       };

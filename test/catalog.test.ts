@@ -534,7 +534,10 @@ describe('product and cover masters', () => {
     ).toBe(true);
     expect(lines).toContain('Addon coverages | Theft');
     expect(lines).toContain('Riot Strike Malicious Damage');
-    expect(lines).toContain('Money Insurance | Not required');
+    // B5: a section marked not required (Money here) is omitted from the schedule, not shown as
+    // "Not required".
+    expect(lines).not.toContain('Money Insurance | Not required');
+    expect(lines.some((line) => line.startsWith('Money Insurance'))).toBe(false);
     expect(
       lines.some((line) =>
         line.startsWith('Policy to be chosen | Up to ₹5 Cr sum insured: Bharat Sookshma'),

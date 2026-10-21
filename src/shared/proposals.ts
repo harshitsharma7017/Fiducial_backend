@@ -387,6 +387,21 @@ export function hasBasis(code: string): code is (typeof BASIS_SECTIONS)[number] 
   return (BASIS_SECTIONS as readonly string[]).includes(code);
 }
 
+/**
+ * B5: whether a coverage section is shown in summaries, option lists and the generated documents
+ * (RFQ, QCR, Placement Slip, exports). The one authoritative rule, used by every surface so they
+ * agree: a section appears only when it is explicitly marked required (`included === true`). A
+ * section that is not required is omitted entirely; nothing is inferred from a zero sum insured or
+ * from missing quotes. Fire is always shown and is not one of these optional sections.
+ *
+ * Legacy records: `included` is a required boolean on every persisted section, so there is no
+ * ambiguous "missing status" to resolve — a section that was never configured is simply absent
+ * from the proposal and so is not shown as a priced row, which is the same outcome.
+ */
+export function isSectionShown(section: { included: boolean }): boolean {
+  return section.included === true;
+}
+
 /** Fire's add-on covers on the RFQ until the coverage section master gives them. */
 export const DEFAULT_FIRE_COVERS = [
   'Earthquake',
