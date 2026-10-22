@@ -524,6 +524,55 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
   }
 }
 
+/**
+ * D1: lists each building of the case as an indented sub-row beneath the schedule's "All Building…"
+ * line, with its own sum insured, so the client RFQ shows the building breakdown (not only the
+ * group total). Display-only: the Building line keeps the group total and the Fire total is
+ * unchanged, so no sum is duplicated. Buildings are kept with their location (the name is prefixed
+ * with the location when the case has more than one). A building with a zero sum insured is still
+ * listed, as the Data Sheet does. Nothing is inserted when the case has no buildings, so the
+ * template's single Building row is left exactly as before.
+ */
+function itemiseBuildings(
+  sheet: ExcelJS.Worksheet,
+  record: ProposalRecord,
+  columns: {
+    buildingLine: () => number | null;
+    descriptionColumn: number;
+    sumInsuredColumn: number;
+  },
+): void {
+  const multiLocation = record.locations.length > 1;
+  const entries = record.locations.flatMap((location) =>
+    location.buildings.map((building, index) => {
+      const name = building.name?.trim() ? building.name.trim() : `Building ${index + 1}`;
+      const label =
+        multiLocation && location.location ? `${location.location.name}: ${name}` : name;
+      return { label, sumInsured: building.sumInsured };
+    }),
+  );
+  if (entries.length === 0) return;
+  const buildingRow = columns.buildingLine();
+  if (buildingRow === null) return;
+
+  // Insert the sub-rows directly below the Building line, styled like it, then fill them.
+  insertRows(sheet, buildingRow + 1, entries.length, buildingRow);
+  entries.forEach((entry, offset) => {
+    const row = buildingRow + 1 + offset;
+    // Clear any style/merge carried from the Building line across the row's printed columns.
+    const printed = printColumns(sheet);
+    clearCells(sheet, { from: row, to: row }, { from: printed.from, to: printed.to });
+    setValue(sheet, row, columns.descriptionColumn, entry.label);
+    const description = sheet.getCell(row, columns.descriptionColumn);
+    restyle(description, {
+      alignment: { ...description.alignment, wrapText: true, indent: 2 },
+      font: { ...description.font, bold: false },
+    });
+    // The building's own sum insured in the Option 1 column (buildings have no per-option figure).
+    setValue(sheet, row, columns.sumInsuredColumn, amount(entry.sumInsured), { rupees: true });
+  });
+}
+
 export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   const { record, client, masters, renewal } = context;
   const existing = record.existing;
@@ -661,6 +710,19 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       );
     }
   }
+
+  // D1: itemise the buildings under the "All Building…" line. The client template has one Building
+  // row carrying the group total (buildings + civil-structure sub-items); the individual buildings
+  // are listed as indented sub-rows beneath it, each with its own sum insured, as in the Data
+  // Sheet. This representation is display-only: the Building line keeps the group total and the
+  // Fire total is unchanged, so nothing is double-counted. Buildings stay tied to their location
+  // (the name is prefixed with the location when the case has more than one).
+  itemiseBuildings(sheet, record, {
+    buildingLine: () => findLine('BUILDING'),
+    descriptionColumn: 2,
+    sumInsuredColumn: option1Column,
+  });
+
   const total = findRow(sheet, FIRE_TOTAL_LABEL, { column: 2, from: fireRow, prefix: true });
   if (total)
     writeFigures(

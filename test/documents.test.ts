@@ -69,6 +69,11 @@ interface SheetOptions {
   manyItems?: boolean;
   /** B5: Money is required (the default) or marked not required, keeping its figures. */
   moneyIncluded?: boolean;
+  /** D1: buildings to add per location, by location index. */
+  buildings?: Record<
+    number,
+    { name: string; sqFt?: string; ratePerSqFt?: string; amount?: string }[]
+  >;
 }
 
 async function proposal(options: SheetOptions = {}) {
@@ -104,8 +109,15 @@ function saveDataSheet(id: string, options: SheetOptions = {}) {
       dueDate: '2026-12-01',
       policyStart: '2026-12-01',
       policyEnd: '2027-11-30',
-      locations: (options.manyItems ? locationIds : [locationIds[0]]).map((locationId) => ({
+      locations: (options.manyItems ? locationIds : [locationIds[0]]).map((locationId, index) => ({
         locationId,
+        // D1: buildings per location when the test provides them.
+        buildings: (options.buildings?.[index] ?? []).map((building) => ({
+          name: building.name,
+          sqFt: building.sqFt ?? '',
+          ratePerSqFt: building.ratePerSqFt ?? '',
+          amount: building.amount ?? '',
+        })),
         fire: [
           { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '50000000' },
           ...(options.manyItems
@@ -351,5 +363,69 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
       .sort({ at: -1 })
       .lean();
     expect(audit?.after).toMatchObject({ format: 'pdf' });
+  });
+
+  it('D1: itemises each building under the Building line of the client RFQ template', async () => {
+    await upload(CLIENT_RFQ).expect(200);
+    // Two locations: Plant 1 has a typed building and an area × rate building plus a compound
+    // wall; Plant 2 has one building and a zero-valued building (kept, as the Data Sheet does).
+    const id = await proposal({
+      manyItems: true,
+      buildings: {
+        0: [
+          { name: 'Main block', amount: '5000000' },
+          { name: 'Warehouse', sqFt: '2000', ratePerSqFt: '1500' },
+        ],
+        1: [
+          { name: 'Shed A', amount: '250000' },
+          { name: 'Empty shed', amount: '0' },
+        ],
+      },
+    });
+    const filled = await load((await rfq(id, 'xlsx').expect(200)).body as Buffer);
+    const schedule = filled.getWorksheet('schedule')!;
+    const rows: [unknown, unknown, unknown][] = [];
+    schedule.eachRow((row) =>
+      rows.push([row.getCell(2).value, row.getCell(4).value, row.getCell(5).value]),
+    );
+    const descriptions = rows.map((row) => (typeof row[0] === 'string' ? row[0] : ''));
+    const buildingLine = descriptions.findIndex((text) => text.startsWith('All Building'));
+    expect(buildingLine).toBeGreaterThanOrEqual(0);
+    // The Building line keeps the group total (buildings 82.5 L + 50,000 stocks? no: + nothing
+    // else here; the group is 3 buildings 8,250,000). Plant 1 buildings 8,000,000, Plant 2 250,000.
+    expect(rows[buildingLine]?.[1]).toBe(8250000);
+    // Immediately beneath it, each building is an indented sub-row with its location and own SI.
+    expect(rows[buildingLine + 1]).toEqual(['Plant 1: Main block', 5000000, null]);
+    expect(rows[buildingLine + 2]).toEqual(['Plant 1: Warehouse', 3000000, null]);
+    expect(rows[buildingLine + 3]).toEqual(['Plant 2: Shed A', 250000, null]);
+    // A zero-valued building is still listed (0 shows as null/0 in the figure cell, name kept).
+    expect(rows[buildingLine + 4]?.[0]).toBe('Plant 2: Empty shed');
+    // The next real Fire line (Furniture) follows the building sub-rows — nothing is dropped.
+    expect(descriptions[buildingLine + 5]?.startsWith('Furniture')).toBe(true);
+    // The Fire total is unchanged and authoritative (from the record), not a sum of the sub-rows
+    // — so itemising buildings never double-counts. manyItems = 3 locations: STOCKS 50,000,000 × 3
+    // + OTHER 750,000 × 3 + buildings 8,250,000.
+    const record = (
+      await request(app).get(`/api/v1/proposals/${id}`).set(bearer(manager)).expect(200)
+    ).body;
+    // STOCKS 50,000,000 × 3 + OTHER 750,000 × 3 + buildings 8,250,000 = 160,500,000.
+    expect(record.fire.proposed1).toBe('160500000');
+    const totalLine = descriptions.findIndex((text) => text.startsWith('Total Sum Insured - Fire'));
+    expect(rows[totalLine]?.[1]).toBe(160500000);
+  });
+
+  it('D1: one building at one location is itemised with no location prefix', async () => {
+    await upload(CLIENT_RFQ).expect(200);
+    const id = await proposal({ buildings: { 0: [{ name: 'Main block', amount: '4000000' }] } });
+    const filled = await load((await rfq(id, 'xlsx').expect(200)).body as Buffer);
+    const schedule = filled.getWorksheet('schedule')!;
+    const rows: [unknown, unknown][] = [];
+    schedule.eachRow((row) => rows.push([row.getCell(2).value, row.getCell(4).value]));
+    const buildingLine = rows.findIndex(
+      (row) => typeof row[0] === 'string' && row[0].startsWith('All Building'),
+    );
+    // Single location: the building name has no location prefix.
+    expect(rows[buildingLine + 1]).toEqual(['Main block', 4000000]);
+    expect(rows[buildingLine]?.[1]).toBe(4000000);
   });
 });

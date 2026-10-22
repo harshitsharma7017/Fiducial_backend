@@ -1,11 +1,14 @@
 import { OTHER_SECTIONS, RISK_DETAIL_FIELDS } from '../src/shared/index.ts';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { istDay } from '../src/lib/ist-day.ts';
 import { NotificationModel } from '../src/modules/notifications/notification.model.ts';
 import { scanRenewalsDue } from '../src/modules/notifications/renewal-reminders.ts';
 import { ProposalModel } from '../src/modules/proposals/proposal.model.ts';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';
 import { seedMasters } from './helpers/masters.ts';
+import { approveRfq } from './helpers/rfq.ts';
 
 // A4: in-app notifications are generated from real business events, delivered to the right
 // recipients, scoped per user, idempotent, and never created for a failed operation.
@@ -293,5 +296,188 @@ describe('A4: notifications from business events', () => {
     const before = await NotificationModel.countDocuments({ event: 'RENEWAL_DUE' });
     await scanRenewalsDue(30);
     expect(await NotificationModel.countDocuments({ event: 'RENEWAL_DUE' })).toBe(before);
+  });
+});
+
+// A4: the QCR-approval and client-decision events share the Property-proposal notify path with the
+// RFQ events above. They are driven here end to end on a dedicated case so the owner's APPROVED
+// (QCR) and QCR_DECISION notifications are asserted directly, not only inferred from the wiring.
+describe('A4: QCR approval and client decision notify the case owner', () => {
+  const PDF = Buffer.from('%PDF-1.4\n%%EOF\n');
+  let qcrCaseId: string;
+
+  beforeAll(async () => {
+    const client = await request(app)
+      .post('/api/v1/clients')
+      .set(bearer(admin))
+      .send({
+        name: 'Notify QCR Mills',
+        // No GSTIN: the case-level unique GSTIN is already used by the first client in this file.
+        gstin: null,
+        address: {
+          line1: '2 Rd',
+          line2: '',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pincode: '400001',
+        },
+        contacts: [{ name: 'Ravi', designation: null, email: 'ravi2@mills.example', phone: null }],
+        natureOfBusiness: 'Weaving',
+        occupancyCode: '2001',
+      })
+      .expect(201);
+    const location = await request(app)
+      .post(`/api/v1/clients/${client.body.id as string}/locations`)
+      .set(bearer(admin))
+      .send({
+        name: 'Plant 1',
+        line1: 'Plot 1',
+        line2: null,
+        city: 'Mumbai',
+        pincode: '400001',
+        occupancyCode: null,
+      })
+      .expect(201);
+    // The manager owns the case; a separate approver approves the QCR.
+    const created = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager.token))
+      .send({
+        type: 'NEW',
+        clientId: client.body.id,
+        locationIds: [location.body.id],
+        dueDate: '2026-11-20',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
+      .expect(201);
+    qcrCaseId = created.body.id as string;
+    await request(app)
+      .put(`/api/v1/proposals/${qcrCaseId}/data-sheet`)
+      .set(bearer(manager.token))
+      .send({
+        dueDate: '2026-11-20',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+        locations: [
+          {
+            locationId: location.body.id,
+            fire: [{ key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '60000000' }],
+            hypothecation: null,
+            openStock: null,
+            risk: Object.fromEntries(RISK_DETAIL_FIELDS.map((field) => [field.key, 'Yes'])),
+          },
+        ],
+        fireOption2: [],
+        sections: OTHER_SECTIONS.map((code) => ({
+          code,
+          included: false,
+          proposed1: null,
+          proposed2: null,
+        })),
+        claims: [],
+        notes: null,
+      })
+      .expect(200);
+    await request(app)
+      .put(`/api/v1/proposals/${qcrCaseId}/insurers`)
+      .set(bearer(manager.token))
+      .send({ insurerIds: [A()] })
+      .expect(200);
+    // RFQ approved and sent, then a quote recorded for the one insurer on P1.
+    await approveRfq(app, qcrCaseId, manager.token, approver.token);
+    await request(app)
+      .post(`/api/v1/proposals/${qcrCaseId}/rfq/sent`)
+      .set(bearer(manager.token))
+      .send({ insurerIds: [A()] })
+      .expect(200);
+    const pdf = await request(app)
+      .post(`/api/v1/proposals/${qcrCaseId}/insurers/${A()}/quote-attachments?fileName=q.pdf`)
+      .set(bearer(placement.token))
+      .set('Content-Type', 'application/pdf')
+      .send(PDF)
+      .expect(201);
+    await request(app)
+      .post(`/api/v1/proposals/${qcrCaseId}/insurers/${A()}/quotes`)
+      .set(bearer(placement.token))
+      .send({
+        option: 'P1',
+        sections: [
+          { code: 'FIRE', sumInsured: null, premium: '100000', premiumWithoutTerrorism: '90000' },
+        ],
+        attachmentIds: [pdf.body.id],
+      })
+      .expect(201);
+  });
+
+  it('QCR approval (APPROVED) notifies the owner, not the approver who did it', async () => {
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${qcrCaseId}/qcr`)
+      .set(bearer(manager.token))
+      .send({
+        recommendedInsurerId: A(),
+        recommendedOption: 'P1',
+        recommendation: null,
+        remarks: null,
+        paymentInFavourOf: 'Test General Insurance Co Ltd',
+      })
+      .expect(200);
+    // The approver (not the owner) approves the QCR.
+    await request(app)
+      .post(`/api/v1/proposals/${qcrCaseId}/qcr/approve`)
+      .set(bearer(approver.token))
+      .send({ fingerprint: saved.body.fingerprint })
+      .expect(200);
+    // The case owner is notified the QCR is approved.
+    const toOwner = await notificationsOf(manager.token);
+    expect(toOwner.items.some((n) => n.event === 'APPROVED' && n.proposalId === qcrCaseId)).toBe(
+      true,
+    );
+    // The approver who performed the action is not notified of their own action for this case.
+    const toApprover = await notificationsOf(approver.token);
+    expect(toApprover.items.some((n) => n.event === 'APPROVED' && n.proposalId === qcrCaseId)).toBe(
+      false,
+    );
+  });
+
+  it('a client decision (QCR_DECISION) notifies the case owner', async () => {
+    // Send the approved QCR, then record the client's decision (needs the client's proof file).
+    await request(app)
+      .post(`/api/v1/proposals/${qcrCaseId}/qcr/email`)
+      .set(bearer(manager.token))
+      .send({ sendId: randomUUID(), to: ['ravi2@mills.example'], format: 'pdf' })
+      .expect(200);
+    const file = await request(app)
+      .post(
+        `/api/v1/proposals/${qcrCaseId}/client-approval/files?fileName=${encodeURIComponent('Client reply.pdf')}`,
+      )
+      .set(bearer(manager.token))
+      .set('Content-Type', 'application/pdf')
+      .send(PDF)
+      .expect(201);
+    // The placement exec (not the owner) records the decision, so the owner is notified.
+    // Accepted today (IST) so the date is never in the future relative to the run clock.
+    await request(app)
+      .put(`/api/v1/proposals/${qcrCaseId}/client-approval`)
+      .set(bearer(placement.token))
+      .send({
+        insurerId: A(),
+        option: 'P1',
+        withTerrorism: false,
+        acceptedOn: istDay(new Date()),
+        confirmedBy: 'Ravi Mehta',
+        note: 'Accepted by mail',
+        attachmentIds: [file.body.id],
+      })
+      .expect(200);
+    const toOwner = await notificationsOf(manager.token);
+    expect(
+      toOwner.items.some((n) => n.event === 'QCR_DECISION' && n.proposalId === qcrCaseId),
+    ).toBe(true);
+    // The acting placement exec is not notified of their own action.
+    const toActor = await notificationsOf(placement.token);
+    expect(
+      toActor.items.some((n) => n.event === 'QCR_DECISION' && n.proposalId === qcrCaseId),
+    ).toBe(false);
   });
 });

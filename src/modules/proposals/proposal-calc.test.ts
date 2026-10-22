@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildingSumInsured,
+  buildingsTotal,
+  contentsTotals,
   fireTotals,
   itemSumInsured,
   missingForRfq,
   stageOf,
+  sumOf,
+  type LocationValues,
 } from './proposal-calc.ts';
+import type { FireGroup } from '../../shared/index.ts';
 
 const item = (key: string, values: Partial<Record<'sqFt' | 'ratePerSqFt' | 'amount', string>>) =>
   ({
@@ -126,5 +131,147 @@ describe('missingForRfq and stageOf', () => {
     expect(stageOf(['x'], false)).toBe('DRAFT');
     expect(stageOf([], false)).toBe('DATA_SHEET');
     expect(stageOf([], true)).toBe('RFQ_SENT');
+  });
+});
+
+// D3 (client-confirmed Option A): Burglary Sum Insured = Total Fire Sum Insured − Building Sum
+// Insured, where "Building" is the dynamic buildings only. Plinth & Foundation (and the other
+// civil-structure items, Compound wall and False ceiling) are NOT deducted — they stay in the
+// Burglary base. The calc below mirrors how the mapper derives the Burglary contents.
+describe('contentsTotals (D3 — Burglary Option A)', () => {
+  /** Burglary contents for a set of locations, as the mapper computes it (Option A). */
+  const burglaryContents = (
+    locations: readonly LocationValues[],
+    option2: ReadonlyMap<FireGroup, string | null> = new Map(),
+  ) => contentsTotals(fireTotals(locations, option2), sumOf(locations.map(buildingsTotal)));
+
+  it('Test 1: deducts only the building; Plinth & Foundation stays in the base', () => {
+    // Total Fire 10,000,000 = building 4,000,000 + Plinth & Foundation 1,000,000 + stocks 5,000,000.
+    const location: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [
+        item('PLINTH_FOUNDATION', { amount: '1000000' }),
+        item('STOCKS', { amount: '5000000' }),
+      ],
+    };
+    const totals = fireTotals([location], new Map());
+    expect(totals.proposed1.toFixed()).toBe('10000000');
+    // Burglary = Total Fire (10,000,000) − building (4,000,000) = 6,000,000. P&F not deducted.
+    expect(burglaryContents([location]).proposed1.toFixed()).toBe('6000000');
+  });
+
+  it('Test 2: changing only Plinth & Foundation changes the Fire total but, for a fixed Fire total, Burglary follows Total Fire − building', () => {
+    const withPnf = (pnf: string): LocationValues => ({
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [item('PLINTH_FOUNDATION', { amount: pnf }), item('STOCKS', { amount: '5000000' })],
+    });
+    // Burglary is Total Fire − building. P&F is never separately deducted, so it is always part of
+    // Burglary: raising P&F raises both the Fire total and Burglary by the same amount.
+    const a = withPnf('1000000');
+    const b = withPnf('2000000');
+    expect(burglaryContents([a]).proposed1.toFixed()).toBe('6000000'); // 10,000,000 − 4,000,000
+    expect(burglaryContents([b]).proposed1.toFixed()).toBe('7000000'); // 11,000,000 − 4,000,000
+    // Holding the Total Fire fixed (shift 1,000,000 from P&F to stocks) leaves Burglary unchanged.
+    const shifted: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [
+        item('PLINTH_FOUNDATION', { amount: '2000000' }),
+        item('STOCKS', { amount: '4000000' }),
+      ],
+    };
+    expect(fireTotals([shifted], new Map()).proposed1.toFixed()).toBe('10000000');
+    expect(burglaryContents([shifted]).proposed1.toFixed()).toBe('6000000');
+  });
+
+  it('Test 3: aggregates buildings across multiple buildings and locations, deducted exactly once', () => {
+    const plant1: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '3000000' }), building({ amount: '1000000' })],
+      fire: [item('STOCKS', { amount: '2000000' })],
+    };
+    const plant2: LocationValues = {
+      name: 'Plant 2',
+      buildings: [building({ amount: '2000000' })],
+      fire: [item('STOCKS', { amount: '1500000' })],
+    };
+    // Total Fire = buildings (3,000,000 + 1,000,000 + 2,000,000) + stocks (2,000,000 + 1,500,000)
+    // = 9,500,000. Buildings total = 6,000,000, deducted once → Burglary = 3,500,000.
+    expect(fireTotals([plant1, plant2], new Map()).proposed1.toFixed()).toBe('9500000');
+    expect(burglaryContents([plant1, plant2]).proposed1.toFixed()).toBe('3500000');
+  });
+
+  it('Test 4: Plinth & Foundation stays in the Fire total (unchanged) and in the Burglary base', () => {
+    const location: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [
+        item('COMPOUND_WALL', { amount: '500000' }),
+        item('PLINTH_FOUNDATION', { amount: '1000000' }),
+        item('STOCKS', { amount: '5000000' }),
+      ],
+    };
+    // Fire total is unchanged by D3: building 4,000,000 + compound wall 500,000 + P&F 1,000,000 +
+    // stocks 5,000,000 = 10,500,000. The BUILDING group line still sums its civil items + buildings.
+    const totals = fireTotals([location], new Map());
+    expect(totals.proposed1.toFixed()).toBe('10500000');
+    const buildingGroup = totals.groups.find((g) => g.group === 'BUILDING');
+    expect(buildingGroup?.proposed1.toFixed()).toBe('5500000'); // 4,000,000 + 500,000 + 1,000,000
+    // Burglary (Option A) = Total Fire − buildings = 10,500,000 − 4,000,000 = 6,500,000, i.e. the
+    // compound wall and P&F remain in the Burglary base.
+    expect(burglaryContents([location]).proposed1.toFixed()).toBe('6500000');
+  });
+
+  it('Test 5: zero and missing building values — nothing is deducted, no misleading amount', () => {
+    // No buildings at all: Burglary equals the full Fire total.
+    const noBuildings: LocationValues = {
+      name: 'Plant 1',
+      fire: [
+        item('PLINTH_FOUNDATION', { amount: '1000000' }),
+        item('STOCKS', { amount: '5000000' }),
+      ],
+    };
+    expect(burglaryContents([noBuildings]).proposed1.toFixed()).toBe('6000000');
+    // A zero-valued / empty building contributes 0 and does not reduce the base.
+    const zeroBuilding: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '0' }), building({})],
+      fire: [item('STOCKS', { amount: '5000000' })],
+    };
+    expect(sumOf([zeroBuilding].map(buildingsTotal)).toFixed()).toBe('0');
+    expect(burglaryContents([zeroBuilding]).proposed1.toFixed()).toBe('5000000');
+  });
+
+  it('Option 2: keeps each Fire line’s second figure in the Burglary base (null when none given)', () => {
+    const location: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [
+        item('PLINTH_FOUNDATION', { amount: '1000000' }),
+        item('STOCKS', { amount: '5000000' }),
+      ],
+    };
+    // No Option 2 anywhere → Burglary Option 2 is null.
+    expect(burglaryContents([location]).proposed2).toBeNull();
+    // A STOCKS Option 2 of 7,000,000 flows into the Burglary Option 2 (civil items stay in base).
+    const option2 = new Map<FireGroup, string | null>([['STOCKS', '7000000']]);
+    expect(burglaryContents([location], option2).proposed2?.toFixed()).toBe('7000000');
+  });
+
+  it('Option 2: the Building line’s typed second figure is not pulled into Burglary', () => {
+    const location: LocationValues = {
+      name: 'Plant 1',
+      buildings: [building({ amount: '4000000' })],
+      fire: [item('STOCKS', { amount: '5000000' })],
+    };
+    // The BUILDING line's Option 2 (its single typed figure includes the building) stays out of
+    // Burglary; only the STOCKS Option 2 counts. Burglary Option 2 = 7,000,000.
+    const option2 = new Map<FireGroup, string | null>([
+      ['BUILDING', '9000000'],
+      ['STOCKS', '7000000'],
+    ]);
+    expect(burglaryContents([location], option2).proposed2?.toFixed()).toBe('7000000');
   });
 });

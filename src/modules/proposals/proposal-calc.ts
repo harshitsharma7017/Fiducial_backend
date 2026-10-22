@@ -108,18 +108,38 @@ export function fireTotals(
 }
 
 /**
- * The contents Burglary covers (C-3): "all the contents as per Fire section except building".
- * Option 1 is every location's items but buildings; Option 2 adds the contents lines given a
- * second figure, as the Fire Option 2 total does (null when none is).
+ * The contents Burglary covers (C-3, D3). The client confirmed **Option A**:
+ *
+ *   Burglary Sum Insured = Total Fire Sum Insured − Building Sum Insured
+ *
+ * where "Building Sum Insured" is the dynamic buildings only (D1). The civil-structure sub-items of
+ * the Building line — Compound wall, False ceiling and **Plinth & Foundation** — are NOT deducted;
+ * they stay in the Burglary base. So contents = every Fire group's sum insured minus just the
+ * buildings. Option 2 does the same for the second figure when one is entered (buildings never
+ * carry an Option 2, so only the typed line figures contribute).
+ *
+ * `buildingsTotal` is the aggregate sum insured of every building across every location, passed in
+ * so the deduction is applied exactly once.
  */
-export function contentsTotals(totals: FireTotals): {
+export function contentsTotals(
+  totals: FireTotals,
+  buildingsTotal: Decimal,
+): {
   proposed1: Decimal;
   proposed2: Decimal | null;
 } {
-  const contents = totals.groups.filter((line) => line.group !== 'BUILDING');
-  const seconds = contents.flatMap((line) => (line.proposed2 === null ? [] : [line.proposed2]));
+  // Option A: Total Fire minus the buildings. Compound wall / False ceiling / Plinth & Foundation
+  // (the Building group's fixed civil-structure items) remain in the Burglary base.
+  const proposed1 = totals.proposed1.minus(buildingsTotal);
+  // Option 2 is entered per Fire line, not per item: the BUILDING line's Option 2 is one typed
+  // figure that represents the whole building line (buildings included) and cannot be split into a
+  // buildings-only part, so it stays excluded from the Burglary base — the same as before D3.
+  // Burglary Option 2 therefore sums the second figures of the non-building lines only.
+  const seconds = totals.groups.flatMap((line) =>
+    line.group !== 'BUILDING' && line.proposed2 !== null ? [line.proposed2] : [],
+  );
   return {
-    proposed1: sumOf(contents.map((line) => line.proposed1)),
+    proposed1,
     proposed2: seconds.length > 0 ? sumOf(seconds) : null,
   };
 }

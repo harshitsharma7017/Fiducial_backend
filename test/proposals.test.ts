@@ -911,9 +911,11 @@ describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
     expect(location.buildingsTotal).toBe('8250000');
     const building = saved.body.fire.groups.find((g: { group: string }) => g.group === 'BUILDING');
     expect(building.proposed1).toBe('8350000');
-    // D1: Burglary (the Fire contents) excludes every building and the compound wall.
+    // D3 (Option A): Burglary = Total Fire − buildings. Only the dynamic buildings are deducted;
+    // the Building line's civil-structure item (the compound wall) stays in the Burglary base.
+    // So contents = STOCKS 1,000,000 + Compound wall 100,000 = 1,100,000 (buildings 8,250,000 out).
     const burglary = saved.body.sections.find((s: { code: string }) => s.code === 'BURGLARY');
-    expect(burglary.proposed1).toBe('1000000');
+    expect(burglary.proposed1).toBe('1100000');
     // The location's Fire total includes buildings.
     expect(location.fireTotal).toBe('9350000');
   });

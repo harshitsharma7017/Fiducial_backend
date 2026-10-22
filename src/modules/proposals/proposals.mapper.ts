@@ -303,7 +303,11 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   const byCode = new Map(doc.sections.map((section) => [section.code, section]));
   const existing = existingColumn(doc);
   const coverNames = new Map(context.sections.map((section) => [section.code, section.addons]));
-  const contents = contentsTotals(totals);
+  // D3 (Option A): Burglary contents = Total Fire − buildings (the dynamic buildings only).
+  // The buildings aggregate across every location is deducted exactly once; the Building line's
+  // civil-structure items (Compound wall, False ceiling, Plinth & Foundation) stay in the base.
+  const allBuildingsTotal = sumOf(locations.map((location) => buildingsTotal(location)));
+  const contents = contentsTotals(totals, allBuildingsTotal);
   const sections = orderedSections(context).flatMap(({ code, name, active }) => {
     const section = byCode.get(code);
     const included = section?.included ?? false;
