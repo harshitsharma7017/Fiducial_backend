@@ -65,7 +65,13 @@ function structure(workbook: ExcelJS.Workbook) {
   });
 }
 
-async function proposal(options: { manyItems?: boolean } = {}) {
+interface SheetOptions {
+  manyItems?: boolean;
+  /** B5: Money is required (the default) or marked not required, keeping its figures. */
+  moneyIncluded?: boolean;
+}
+
+async function proposal(options: SheetOptions = {}) {
   const created = await request(app)
     .post('/api/v1/proposals')
     .set(bearer(manager))
@@ -77,6 +83,11 @@ async function proposal(options: { manyItems?: boolean } = {}) {
       policyEnd: '2027-11-30',
     })
     .expect(201);
+  await saveDataSheet(created.body.id as string, options);
+  return created.body.id as string;
+}
+
+function saveDataSheet(id: string, options: SheetOptions = {}) {
   const item = (n: number) => ({
     description: `Item ${n}`,
     quantity: '',
@@ -86,8 +97,8 @@ async function proposal(options: { manyItems?: boolean } = {}) {
     year: '2021',
     sumInsured: String(n * 100000),
   });
-  await request(app)
-    .put(`/api/v1/proposals/${created.body.id as string}/data-sheet`)
+  return request(app)
+    .put(`/api/v1/proposals/${id}/data-sheet`)
     .set(bearer(manager))
     .send({
       dueDate: '2026-12-01',
@@ -108,7 +119,9 @@ async function proposal(options: { manyItems?: boolean } = {}) {
       fireOption2: [],
       sections: OTHER_SECTIONS.map((code) => ({
         code,
-        included: code === 'MONEY' || (options.manyItems === true && code === 'EEI'),
+        included:
+          (code === 'MONEY' && options.moneyIncluded !== false) ||
+          (options.manyItems === true && code === 'EEI'),
         proposed1: code === 'MONEY' ? '600000' : null,
         proposed2: null,
         lines: code === 'MONEY' ? { cashInSafe: '100000' } : {},
@@ -118,7 +131,6 @@ async function proposal(options: { manyItems?: boolean } = {}) {
       notes: null,
     })
     .expect(200);
-  return created.body.id as string;
 }
 
 function rfq(id: string, format: 'xlsx' | 'pdf') {
@@ -244,11 +256,52 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     // Money's sum insured is its cash in safe + single carrying limit (here the safe alone).
     expect(premium.getCell('D14').value).toBe(100000);
     expect(premium.getCell('C24').value).toMatchObject({ formula: 'C23*0.18' });
+    // B5: in the premium table only Fire and the required Money are shown; every other section's
+    // row is hidden, never written as "Not required". The GST and Total formulas stay as they were.
+    const premiumRows = Array.from({ length: 14 }, (_, index) => 9 + index);
+    expect(premiumRows.filter((row) => !premium.getRow(row).hidden)).toEqual([9, 14]);
+    expect(premium.getCell('A9').text.trim()).toBe('Fire');
+    expect(premium.getCell('D9').value).toBe(50000000);
+    for (const row of premiumRows) expect(premium.getCell(row, 4).value).not.toBe('Not required');
+    expect(JSON.stringify(premium.getSheetValues())).not.toContain('Not required');
+    expect(premium.getCell('C25').value).toMatchObject({ formula: 'SUM(C23:C24)' });
     const risk = filled.getWorksheet('risk details')!;
     expect(risk.getCell('D2').value).toBe('Plant 1');
     expect(risk.getCell('D3').value).toBe('Fire fighting arrangement answer');
     expect(risk.getCell('E3').value).toBeNull();
     expect(risk.getCell('C1').value).toBeNull();
+  });
+
+  it('B5: marking a section not required hides its premium row and keeps its figures; marking it required again shows it', async () => {
+    const id = await proposal();
+    const premiumOf = async () =>
+      (await load((await rfq(id, 'xlsx').expect(200)).body as Buffer)).getWorksheet(
+        'premium details',
+      )!;
+    expect((await premiumOf()).getRow(14).hidden).toBeFalsy();
+
+    await saveDataSheet(id, { moneyIncluded: false });
+    const hidden = await premiumOf();
+    expect(hidden.getRow(14).hidden).toBe(true);
+    expect(hidden.getCell('D14').value).not.toBe('Not required');
+    expect(hidden.getRow(9).hidden).toBeFalsy();
+    // Nothing is deleted: Money keeps its figures while it is not required.
+    const record = await request(app)
+      .get(`/api/v1/proposals/${id}`)
+      .set(bearer(manager))
+      .expect(200);
+    const money = (
+      record.body.sections as Array<{ code: string; included: boolean; proposed1: string | null }>
+    ).find((section) => section.code === 'MONEY');
+    expect(money).toMatchObject({ included: false, proposed1: '100000' });
+
+    await saveDataSheet(id, { moneyIncluded: true });
+    const shown = await premiumOf();
+    expect(shown.getRow(14).hidden).toBeFalsy();
+    expect(shown.getCell('D14').value).toBe(100000);
+    // The PDF is drawn from the same workbook: the hidden row is not printed.
+    const pdf = await rfq(id, 'pdf').expect(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
   });
 
   it('adds rows only where the case needs them, moving merges and the print area with them', async () => {

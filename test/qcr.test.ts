@@ -55,6 +55,7 @@ let manager: string;
 let approver: string;
 let caseId: string;
 const insurers: string[] = [];
+let locationId: string;
 const A = () => insurers[0] ?? '';
 const B = () => insurers[1] ?? '';
 const C = () => insurers[2] ?? '';
@@ -92,6 +93,36 @@ async function quote(
       ...extra,
     })
     .expect(201);
+}
+
+/** The case's Data Sheet; B5: Money required (as the case starts) or marked not required. */
+function saveDataSheet(moneyIncluded: boolean) {
+  return request(app)
+    .put(`/api/v1/proposals/${caseId}/data-sheet`)
+    .set(bearer(manager))
+    .send({
+      dueDate: '2026-11-20',
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
+      locations: [
+        {
+          locationId,
+          fire: [{ key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '60000000' }],
+          hypothecation: null,
+          openStock: null,
+          risk: Object.fromEntries(RISK_DETAIL_FIELDS.map((field) => [field.key, 'Yes'])),
+        },
+      ],
+      fireOption2: [{ group: 'STOCKS', amount: '70000000' }],
+      sections: OTHER_SECTIONS.map((code) => ({
+        code,
+        included: code === 'MONEY' && moneyIncluded,
+        proposed1: code === 'MONEY' ? '500000' : null,
+        proposed2: null,
+      })),
+      claims: [],
+      notes: null,
+    });
 }
 
 const qcr = async () =>
@@ -134,6 +165,7 @@ beforeAll(async () => {
       occupancyCode: null,
     })
     .expect(201);
+  locationId = location.body.id as string;
   for (const branch of ['Fort', 'Andheri', 'Thane']) {
     const insurer = await request(app)
       .post('/api/v1/insurers')
@@ -160,33 +192,7 @@ beforeAll(async () => {
     })
     .expect(201);
   caseId = created.body.id as string;
-  await request(app)
-    .put(`/api/v1/proposals/${caseId}/data-sheet`)
-    .set(bearer(manager))
-    .send({
-      dueDate: '2026-11-20',
-      policyStart: '2026-12-01',
-      policyEnd: '2027-11-30',
-      locations: [
-        {
-          locationId: location.body.id,
-          fire: [{ key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '60000000' }],
-          hypothecation: null,
-          openStock: null,
-          risk: Object.fromEntries(RISK_DETAIL_FIELDS.map((field) => [field.key, 'Yes'])),
-        },
-      ],
-      fireOption2: [{ group: 'STOCKS', amount: '70000000' }],
-      sections: OTHER_SECTIONS.map((code) => ({
-        code,
-        included: code === 'MONEY',
-        proposed1: code === 'MONEY' ? '500000' : null,
-        proposed2: null,
-      })),
-      claims: [],
-      notes: null,
-    })
-    .expect(200);
+  await saveDataSheet(true).expect(200);
   await request(app)
     .put(`/api/v1/proposals/${caseId}/insurers`)
     .set(bearer(manager))
@@ -458,5 +464,63 @@ describe('B2: terrorism premium per insurer', () => {
       gst: '21870.00',
       total: '143370.00',
     });
+  });
+});
+
+describe('B5: inclusion cannot change once the RFQ has gone to an insurer', () => {
+  it('refuses to mark a section not required after quotes are saved, so the QCR rows and totals stay consistent', async () => {
+    const before = await qcr();
+    // The Data Sheet locks when the RFQ goes out (quotes can only come after), so a section
+    // cannot become Not required under saved quotes: the QCR never hides a quoted section.
+    const refused = await saveDataSheet(false).expect(409);
+    expect(refused.body.message).toBe(
+      'The RFQ has gone to an insurer, so the Data Sheet can no longer change.',
+    );
+    const after = await qcr();
+    expect(after.options).toEqual(before.options);
+    const p1 = after.options.find((o: { option: string }) => o.option === 'P1');
+    expect(p1.sections.map((section: { code: string }) => section.code)).toEqual(['FIRE', 'MONEY']);
+    // Each insurer's totals agree with its rows: the comparison total plus the terrorism extra
+    // is the total including terrorism (net).
+    for (const quote of p1.quotes as Array<{
+      premiums: { premium: string | null }[];
+      totals: { net: string };
+      terrorismExtra: string | null;
+      totalsWithTerrorism: { net: string } | null;
+    }>) {
+      const rows = quote.premiums.reduce((sum, row) => sum + Number(row.premium ?? 0), 0);
+      expect(Number(quote.totals.net)).toBeCloseTo(rows, 2);
+      if (quote.terrorismExtra !== null && quote.totalsWithTerrorism) {
+        expect(Number(quote.totals.net) + Number(quote.terrorismExtra)).toBeCloseTo(
+          Number(quote.totalsWithTerrorism.net),
+          2,
+        );
+      }
+    }
+    // Not quoted is not Not required: an insurer that leaves a required section blank keeps the
+    // row (with no premium) and a deviation; a declined insurer stays declined, out of the QCR.
+    await quote(B(), 'EXISTING', ['95000', '90000'], '');
+    const existing = (await qcr()).options.find((o: { option: string }) => o.option === 'EXISTING');
+    expect(existing.sections.map((section: { code: string }) => section.code)).toEqual([
+      'FIRE',
+      'MONEY',
+    ]);
+    const blank = existing.quotes.find((q: { insurerId: string }) => q.insurerId === B());
+    expect(blank.premiums).toContainEqual({ code: 'MONEY', premium: null });
+    expect(blank.deviations).toContain('Money: not quoted');
+    const statuses = (
+      await request(app).get(`/api/v1/proposals/${caseId}/quotes`).set(bearer(manager)).expect(200)
+    ).body.insurers.map((i: { insurerId: string; status: string }) => [i.insurerId, i.status]);
+    expect(statuses).toContainEqual([C(), 'DECLINED']);
+    expect((await qcr()).insurers.map((i: { insurerId: string }) => i.insurerId)).not.toContain(
+      C(),
+    );
+    // The section's figures are kept on the case.
+    const record = (
+      await request(app).get(`/api/v1/proposals/${caseId}`).set(bearer(manager)).expect(200)
+    ).body;
+    expect(
+      record.sections.find((section: { code: string }) => section.code === 'MONEY'),
+    ).toMatchObject({ included: true, proposed1: '500000' });
   });
 });

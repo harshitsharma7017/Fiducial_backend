@@ -371,12 +371,19 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
       const code = PREMIUM_ROWS.get(label);
       if (!code) continue;
       const section = code === 'FIRE' ? null : record.sections.find((s) => s.code === code);
+      // B5: a section not marked required is omitted from the premium table — its row is hidden,
+      // never written as "Not required" (as the schedule hides its block). The row carries no
+      // figure and the Net Premium row has no formula over it, so no total changes. Fire is
+      // always shown.
+      if (code !== 'FIRE' && !(section && isSectionShown(section))) {
+        sheet.getRow(row).hidden = true;
+        continue;
+      }
       const last = context.existingOf(code);
       if (renewal && existingSumColumn)
         setValue(sheet, row, existingSumColumn, amount(last?.sumInsured), { rupees: true });
       if (renewal && existingPremiumColumn)
         setValue(sheet, row, existingPremiumColumn, amount(last?.premium), { rupees: true });
-      const included = code === 'FIRE' || Boolean(section?.included);
       const value =
         plan.option === 'EXISTING'
           ? (last?.sumInsured ?? null)
@@ -387,7 +394,7 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
             : plan.option === 'P1'
               ? (section?.proposed1 ?? null)
               : (section?.proposed2 ?? null);
-      setValue(sheet, row, sumColumn, included ? amount(value) : 'Not required', { rupees: true });
+      setValue(sheet, row, sumColumn, amount(value), { rupees: true });
     }
     // GST at the proposal's rate (the template says 18%).
     const gstRow = findRow(sheet, 'Add: GST', { from: top, to: end, prefix: true });
