@@ -115,6 +115,60 @@ describe('mail settings', () => {
   });
 });
 
+describe('quote reading (Q1) settings', () => {
+  it('uses the built-in reader by default and needs no key for it', () => {
+    const env = loadEnv(VALID);
+    expect(env.OCR_PROVIDER).toBe('none');
+    expect(env.GEMINI_API_KEY).toBeUndefined();
+    expect(env.GEMINI_MODEL).toBe('gemini-3.8-flash');
+    expect(env.GEMINI_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it('reads the Gemini settings', () => {
+    const env = loadEnv({
+      ...VALID,
+      OCR_PROVIDER: 'gemini',
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_MODEL: 'gemini-3.6-flash',
+      GEMINI_TIMEOUT_MS: '30000',
+    });
+    expect(env).toMatchObject({
+      OCR_PROVIDER: 'gemini',
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_MODEL: 'gemini-3.6-flash',
+      GEMINI_TIMEOUT_MS: 30_000,
+    });
+  });
+
+  it('fails fast when Gemini is chosen without a key', () => {
+    expect(() => loadEnv({ ...VALID, OCR_PROVIDER: 'gemini' })).toThrow(
+      /GEMINI_API_KEY: Required when OCR_PROVIDER=gemini/,
+    );
+    expect(() => loadEnv({ ...VALID, OCR_PROVIDER: 'gemini', GEMINI_API_KEY: '  ' })).toThrow(
+      /GEMINI_API_KEY/,
+    );
+  });
+
+  it('refuses an unknown provider, a bad model code and a bad timeout, without echoing the key', () => {
+    let error: unknown;
+    try {
+      loadEnv({
+        ...VALID,
+        OCR_PROVIDER: 'tesseract',
+        GEMINI_API_KEY: 'secret-gemini-key-value',
+        GEMINI_MODEL: 'models/../x y',
+        GEMINI_TIMEOUT_MS: '10',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ConfigError);
+    const message = (error as ConfigError).message;
+    expect(message).toMatch(/OCR_PROVIDER[\s\S]*GEMINI_MODEL[\s\S]*GEMINI_TIMEOUT_MS/);
+    expect(message).not.toContain('secret-gemini-key-value');
+  });
+});
+
 describe('loadScriptEnv', () => {
   it('needs only the database URI', () => {
     expect(loadScriptEnv({ MONGODB_URI: VALID.MONGODB_URI }).MONGODB_URI).toBe(VALID.MONGODB_URI);

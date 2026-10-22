@@ -45,6 +45,18 @@ export const OCR_SOURCES = ['PDF_TEXT', 'OCR_IMAGE', 'NONE'] as const;
 export const OcrSourceSchema = z.enum(OCR_SOURCES);
 export type OcrSource = z.infer<typeof OcrSourceSchema>;
 
+/**
+ * Who read the file: the built-in text-PDF reader (nothing leaves the server), or Google's Gemini
+ * API (the file or its text was sent to Google). Shown to staff and kept in the audit trail.
+ */
+export const OCR_READERS = ['BUILT_IN', 'GEMINI'] as const;
+export const OcrReaderSchema = z.enum(OCR_READERS);
+export type OcrReader = z.infer<typeof OcrReaderSchema>;
+export const OCR_READER_LABELS: Record<OcrReader, string> = {
+  BUILT_IN: 'the built-in PDF reader',
+  GEMINI: 'Gemini (Google’s external AI service)',
+};
+
 /** One candidate field: the raw text the engine saw and the normalized value, with its state. */
 export const OcrFieldSchema = z.object({
   /** The raw snippet the value came from (shown to staff so they can verify), or null. */
@@ -66,6 +78,7 @@ export type OcrSection = z.infer<typeof OcrSectionSchema>;
 /** The complete candidate set for one uploaded quote, mapped onto the existing quote model. */
 export const QuoteExtractionSchema = z.object({
   source: OcrSourceSchema,
+  reader: OcrReaderSchema.default('BUILT_IN'),
   /** The attachment this was extracted from, so a save references the same proof file. */
   attachmentId: z.string(),
   insurerName: OcrFieldSchema,
@@ -83,7 +96,7 @@ export const QuoteExtractionSchema = z.object({
   /** True when no engine could read the document and the staff must enter everything by hand. */
   manualEntryRequired: z.boolean(),
 });
-export type QuoteExtraction = z.infer<typeof QuoteExtractionSchema>;
+export type QuoteExtraction = z.output<typeof QuoteExtractionSchema>;
 
 // ---------------------------------------------------------------------------------------------
 // Pure normalization helpers

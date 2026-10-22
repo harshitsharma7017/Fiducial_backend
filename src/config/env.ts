@@ -1,6 +1,10 @@
 import { MAIL_TRANSPORTS } from '../shared/index.ts';
 import { z } from 'zod';
 
+/** Who reads quote files for the auto-fill (Q1): the built-in text-PDF reader, or Gemini. */
+export const OCR_PROVIDERS = ['none', 'gemini'] as const;
+export type OcrProvider = (typeof OCR_PROVIDERS)[number];
+
 /** Express "trust proxy": false, true, a hop count, or a list such as "loopback, 10.0.0.0/8". */
 const TrustProxySchema = z
   .string()
@@ -84,6 +88,22 @@ export const EnvSchema = z
     /** How often the renewal-due scan runs, in minutes (0 with RENEWAL_REMINDER_DAYS=0 is off). */
     RENEWAL_SCAN_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(360),
     /**
+     * Q1: who reads insurers' quote files for the quote form's auto-fill. none: the built-in reader
+     * (text PDFs only, nothing leaves the server). gemini: Google's Gemini API reads text PDFs,
+     * scanned PDFs and pictures; the file or its text is sent to Google.
+     */
+    OCR_PROVIDER: z.enum(OCR_PROVIDERS).default('none'),
+    /** Server-side only; required when OCR_PROVIDER=gemini. Never sent to the browser or logged. */
+    GEMINI_API_KEY: z.string().trim().min(1).optional(),
+    /** A stable Gemini model that reads PDFs and pictures and answers to a JSON schema. */
+    GEMINI_MODEL: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9.-]{2,80}$/, 'Must be a model code such as gemini-3.8-flash')
+      .default('gemini-3.8-flash'),
+    /** How long one request to Gemini may take before it is abandoned. */
+    GEMINI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(180_000).default(60_000),
+    /**
      * How RFQ mails leave: smtp delivers them, outbox only keeps them in the mail log, off refuses
      * to send. Unset means outbox, except off in production, so nothing is mailed by accident.
      */
@@ -123,6 +143,13 @@ export const EnvSchema = z
           });
         }
       }
+    }
+    if (env.OCR_PROVIDER === 'gemini' && env.GEMINI_API_KEY === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GEMINI_API_KEY'],
+        message: 'Required when OCR_PROVIDER=gemini',
+      });
     }
     if (env.SMTP_PASSWORD !== undefined && env.SMTP_USER === undefined) {
       ctx.addIssue({

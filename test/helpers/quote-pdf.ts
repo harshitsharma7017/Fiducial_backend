@@ -50,3 +50,15 @@ export const SYNTHETIC_QUOTE_ROWS = [
   ['Total Premium payable', '1,20,950.59'],
   ['This quotation is valid till 31/12/2026'],
 ];
+
+/** A text PDF with one page per entry, each page's lines printed one under the other. */
+export async function pagedPdf(pages: string[][]): Promise<Buffer> {
+  const definition = {
+    defaultStyle: { font: 'Roboto', fontSize: 10 },
+    content: pages.map((lines, index) => ({
+      stack: lines,
+      ...(index < pages.length - 1 ? { pageBreak: 'after' } : {}),
+    })),
+  } as Parameters<typeof pdfmake.createPdf>[0];
+  return Buffer.from(await pdfmake.createPdf(definition).getBuffer());
+}

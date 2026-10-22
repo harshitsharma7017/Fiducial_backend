@@ -11,10 +11,12 @@ const REDACT_PATHS = [
   'passwordHash',
   'accessToken',
   'token',
+  'apiKey',
   '*.password',
   '*.passwordHash',
   '*.accessToken',
   '*.token',
+  '*.apiKey',
 ];
 
 export function createLogger(options: { level: LevelWithSilent; name?: string }): Logger {

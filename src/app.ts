@@ -44,6 +44,7 @@ import { createPlacementSlipRouter } from './modules/placement-slip/placement-sl
 import { createCoverageConfirmationRouter } from './modules/coverage-confirmation/coverage-confirmation.routes.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
+import { quoteReaderFromEnv, type QuoteReader } from './modules/quotes/quote-reader.ts';
 import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
 import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
 import { createMailRouter } from './modules/mail/mail.routes.ts';
@@ -59,6 +60,8 @@ export interface AppDependencies {
   existingPolicySource?: ExistingPolicySource;
   /** How mail leaves; from the config when not given (tests pass a fake). */
   mailTransport?: MailTransport;
+  /** Q1: who reads quote files for the auto-fill; from OCR_PROVIDER when not given (tests pass a fake). */
+  quoteReader?: QuoteReader;
 }
 
 /** Builds the Express app without listening, so tests can drive it with Supertest. */
@@ -67,8 +70,10 @@ export function createApp({
   logger,
   existingPolicySource,
   mailTransport,
+  quoteReader,
 }: AppDependencies): Express {
   const transport = mailTransport ?? transportFromEnv(config, logger);
+  const reader = quoteReader ?? quoteReaderFromEnv(config, logger);
   const policySource =
     existingPolicySource ??
     (config.EXISTING_POLICY_API_URL
@@ -144,7 +149,10 @@ export function createApp({
       mailTransport: transport,
     }),
   );
-  api.use('/proposals', createQuotesRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  api.use(
+    '/proposals',
+    createQuotesRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT, quoteReader: reader }),
+  );
   api.use('/proposals', createRfqRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use(
     '/proposals',

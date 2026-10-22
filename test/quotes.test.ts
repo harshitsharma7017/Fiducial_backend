@@ -2,6 +2,12 @@ import { OTHER_SECTIONS, RISK_DETAIL_FIELDS } from '../src/shared/index.ts';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
+import { createLogger } from '../src/lib/logger.ts';
+import {
+  geminiQuoteReader,
+  type GeminiAnswer,
+  type GeminiRequest,
+} from '../src/modules/quotes/gemini-quote-reader.ts';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';
 import { seedMasters } from './helpers/masters.ts';
 import { SYNTHETIC_QUOTE_ROWS, textPdf } from './helpers/quote-pdf.ts';
@@ -355,5 +361,224 @@ describe('Q1: reading a quote PDF to pre-fill the form', () => {
       .post(`/api/v1/proposals/${caseId}/quote-attachments/${'f'.repeat(24)}/read`)
       .set(bearer(manager))
       .expect(404);
+  });
+});
+
+describe('Q1 with OCR_PROVIDER=gemini (a fake Gemini: nothing leaves the machine)', () => {
+  // Gemini's answer for the synthetic quote, each value with its line as the excerpt.
+  const fact = (value: string | null, evidence: string | null = value) => ({
+    status: value === null ? 'NOT_FOUND' : 'FOUND',
+    value,
+    page: value === null ? null : 1,
+    evidence,
+  });
+  const ANSWER = {
+    insurerName: fact('Fiducial Test Insurance Co. Ltd.'),
+    insuredName: fact(null),
+    quoteReference: fact('FTI/2026/0457', 'Quotation No: FTI/2026/0457'),
+    validUntil: fact('31/12/2026', 'This quotation is valid till 31/12/2026'),
+    sections: [
+      {
+        section: 'FIRE',
+        premium: fact(
+          '1,00,000.50',
+          'Fire and Special Perils (with terrorism) 6,00,00,000 1,00,000.50',
+        ),
+        premiumWithoutTerrorism: fact(
+          '90,000.00',
+          'Fire and Special Perils (without terrorism) 6,00,00,000 90,000.00',
+        ),
+      },
+      {
+        section: 'MONEY',
+        premium: fact('2,500.00', 'Money in Transit 5,00,000 2,500.00'),
+        premiumWithoutTerrorism: fact(null),
+      },
+    ],
+    netPremium: fact('1,02,500.50', 'Net Premium (before GST) 1,02,500.50'),
+    gstRatePercent: fact('18%', 'GST @ 18% 18,450.09'),
+    gstAmount: fact('18,450.09', 'GST @ 18% 18,450.09'),
+    gstParts: [],
+    totalPremium: fact('1,20,950.59', 'Total Premium payable 1,20,950.59'),
+    issues: [],
+  };
+  const requests: GeminiRequest[] = [];
+  let next: () => Promise<GeminiAnswer> = () =>
+    Promise.resolve({ text: JSON.stringify(ANSWER), finishReason: 'STOP' });
+  const geminiApp = createTestApp({}, undefined, undefined, {
+    ...geminiQuoteReader({
+      model: 'gemini-test-model',
+      logger: createLogger({ level: 'silent' }),
+      retryDelaysMs: [0, 0],
+      generate: (request) => {
+        requests.push(request);
+        return next();
+      },
+    }),
+  });
+  const read = (attachmentId: string, token = manager, target = caseId) =>
+    request(geminiApp)
+      .post(`/api/v1/proposals/${target}/quote-attachments/${attachmentId}/read`)
+      .set(bearer(token));
+  const snapshot = async () => ({
+    quotes: (await request(app).get(`/api/v1/proposals/${caseId}/quotes`).set(bearer(manager)))
+      .body as {
+      insurers: Array<{ status: string; quotes: Array<{ option: string; versions: unknown[] }> }>;
+    },
+    stage: (await request(app).get(`/api/v1/proposals/${caseId}`).set(bearer(manager))).body
+      .stage as string,
+  });
+
+  it('returns Gemini’s candidates for review, saves and approves nothing, and audits the external read', async () => {
+    const pdf = await upload(fort(), await textPdf(SYNTHETIC_QUOTE_ROWS), 'Fort gemini.pdf').expect(
+      201,
+    );
+    const before = await snapshot();
+    requests.length = 0;
+    const response = await read(pdf.body.id as string).expect(200);
+    expect(requests).toHaveLength(1);
+    expect(response.body).toMatchObject({
+      reader: 'GEMINI',
+      source: 'PDF_TEXT',
+      attachmentId: pdf.body.id,
+      manualEntryRequired: false,
+      insurerName: { value: 'Fiducial Test Insurance Co. Ltd.', state: 'HIGH' },
+      netPremium: { value: '102500.50', state: 'HIGH' },
+      totalPremium: { value: '120950.59', state: 'HIGH' },
+      validUntil: { value: '2026-12-31' },
+      discrepancies: [],
+    });
+    // Nothing recorded, no insurer moved, no stage changed: the staff still review and save.
+    expect(await snapshot()).toEqual(before);
+    const entry = await AuditLogModel.findOne({
+      action: 'QUOTE_PDF_READ',
+      'after.attachmentId': pdf.body.id,
+    }).lean();
+    expect(entry?.after).toMatchObject({
+      reader: 'GEMINI',
+      outcome: 'READ',
+      source: 'PDF_TEXT',
+      sentExternally: true,
+      sectionsRead: 2,
+    });
+    expect(JSON.stringify(entry)).not.toMatch(/120950|1,20,950|Fiducial Test Insurance/);
+  });
+
+  it('sends nothing to Gemini without proposals.edit, sign-in, or for another case’s file', async () => {
+    const pdf = await upload(fort(), await textPdf(SYNTHETIC_QUOTE_ROWS), 'Fort auth.pdf').expect(
+      201,
+    );
+    requests.length = 0;
+    const viewer = (await tokenFor(app, ['MANAGER'])).token;
+    await read(pdf.body.id as string, viewer).expect(403);
+    await request(geminiApp)
+      .post(`/api/v1/proposals/${caseId}/quote-attachments/${pdf.body.id as string}/read`)
+      .expect(401);
+    await read('f'.repeat(24)).expect(404);
+    await read(pdf.body.id as string, manager, 'e'.repeat(24)).expect(404);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('does not send a mail to Gemini', async () => {
+    const mail = await upload(fort(), EML, 'Gemini RFQ.eml', 'application/octet-stream').expect(
+      201,
+    );
+    requests.length = 0;
+    const response = await read(mail.body.id as string).expect(200);
+    expect(response.body).toMatchObject({
+      reader: 'GEMINI',
+      source: 'NONE',
+      manualEntryRequired: true,
+    });
+    expect(requests).toHaveLength(0);
+    const entry = await AuditLogModel.findOne({
+      action: 'QUOTE_PDF_READ',
+      'after.attachmentId': mail.body.id,
+    }).lean();
+    expect(entry?.after).toMatchObject({ reader: 'GEMINI', sentExternally: false });
+  });
+
+  it('on failure keeps the file, says why, audits it, and lets the staff retry; a quote is still recorded once', async () => {
+    const pdf = await upload(fort(), await textPdf(SYNTHETIC_QUOTE_ROWS), 'Fort retry.pdf').expect(
+      201,
+    );
+    const attachmentId = pdf.body.id as string;
+    const before = await snapshot();
+    next = () => Promise.resolve({ text: '{"broken": ', finishReason: 'STOP' });
+    const failed = await read(attachmentId).expect(503);
+    expect(failed.body).toEqual({
+      code: 'UPSTREAM_UNAVAILABLE',
+      message:
+        'The reading service (Gemini) gave an answer that could not be used. Try again, or enter the figures by hand.',
+      details: { reader: 'GEMINI', reason: 'MALFORMED' },
+    });
+    const audit = await AuditLogModel.findOne({
+      action: 'QUOTE_PDF_READ',
+      'after.attachmentId': attachmentId,
+      'after.outcome': 'FAILED',
+    }).lean();
+    expect(audit?.after).toMatchObject({
+      reader: 'GEMINI',
+      reason: 'MALFORMED',
+      sentExternally: true,
+    });
+    // The file is kept, unchanged.
+    const download = await request(app)
+      .get(`/api/v1/proposals/${caseId}/quote-attachments/${attachmentId}`)
+      .set(bearer(manager))
+      .expect(200);
+    expect(download.headers['content-type']).toBe('application/pdf');
+
+    // The retry works, and reading twice records nothing.
+    next = () => Promise.resolve({ text: JSON.stringify(ANSWER), finishReason: 'STOP' });
+    const extraction = (await read(attachmentId).expect(200)).body as {
+      netPremium: { value: string };
+      sections: Array<{ code: string; premium: { value: string } }>;
+    };
+    await read(attachmentId).expect(200);
+    expect(await snapshot()).toEqual(before);
+
+    // The staff save through the usual quote route: exactly one new version.
+    const versions = (body: Awaited<ReturnType<typeof snapshot>>) =>
+      body.quotes.insurers[0]!.quotes.find((item) => item.option === 'P1')?.versions.length ?? 0;
+    await quote(fort(), {
+      option: 'P1',
+      reason: 'Insurer’s revised PDF, read by Gemini and checked',
+      sections: [
+        {
+          code: 'FIRE',
+          sumInsured: null,
+          premium: '100000.50',
+          premiumWithoutTerrorism: '90000.00',
+        },
+        {
+          code: 'MONEY',
+          sumInsured: null,
+          premium: extraction.sections.find((item) => item.code === 'MONEY')!.premium.value,
+        },
+      ],
+      attachmentIds: [attachmentId],
+    }).expect(201);
+    expect(versions(await snapshot())).toBe(versions(before) + 1);
+  });
+
+  it('keeps the built-in reader (nothing sent anywhere) when OCR_PROVIDER is unset', async () => {
+    const pdf = await upload(
+      fort(),
+      await textPdf(SYNTHETIC_QUOTE_ROWS),
+      'Fort builtin.pdf',
+    ).expect(201);
+    requests.length = 0;
+    const response = await request(app)
+      .post(`/api/v1/proposals/${caseId}/quote-attachments/${pdf.body.id as string}/read`)
+      .set(bearer(manager))
+      .expect(200);
+    expect(response.body).toMatchObject({ reader: 'BUILT_IN', source: 'PDF_TEXT' });
+    expect(requests).toHaveLength(0);
+    const entry = await AuditLogModel.findOne({
+      action: 'QUOTE_PDF_READ',
+      'after.attachmentId': pdf.body.id,
+    }).lean();
+    expect(entry?.after).toMatchObject({ reader: 'BUILT_IN', sentExternally: false });
   });
 });

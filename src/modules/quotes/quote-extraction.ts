@@ -16,9 +16,10 @@ import {
 // lines are matched to the quote form's fields. The result is only a set of candidates for staff
 // to review: nothing is saved, a value that cannot be read cleanly is left empty or marked low,
 // and the insurer's own figures are never "corrected". Scanned PDFs, pictures and mails are not
-// read (no OCR engine): the staff enter those by hand.
+// read here: the staff enter those by hand, unless OCR_PROVIDER=gemini (gemini-quote-reader.ts).
 
-const MAX_PAGES = 30;
+/** Pages read from a PDF; a longer PDF is not read in full. */
+export const MAX_PAGES = 30;
 const MIN_TEXT_CHARACTERS = 40;
 
 // ---------------------------------------------------------------------------------------------
@@ -27,6 +28,16 @@ const MIN_TEXT_CHARACTERS = 40;
 
 /** The lines of text of a PDF, top to bottom; null when the file cannot be opened as a PDF. */
 export async function pdfLines(data: Buffer): Promise<string[] | null> {
+  return (await pdfPages(data))?.pages.flat() ?? null;
+}
+
+/**
+ * The lines of text of each of the first MAX_PAGES pages of a PDF, and how many pages it has;
+ * null when the file cannot be opened as a PDF.
+ */
+export async function pdfPages(
+  data: Buffer,
+): Promise<{ numPages: number; pages: string[][] } | null> {
   try {
     const task = pdfjs.getDocument({
       data: new Uint8Array(data),
@@ -38,9 +49,11 @@ export async function pdfLines(data: Buffer): Promise<string[] | null> {
       verbosity: 0,
     });
     const document = await task.promise;
-    const lines: string[] = [];
+    const pages: string[][] = [];
     try {
       for (let number = 1; number <= Math.min(document.numPages, MAX_PAGES); number += 1) {
+        const lines: string[] = [];
+        pages.push(lines);
         const page = await document.getPage(number);
         const content = await page.getTextContent();
         const rows: Array<{ y: number; parts: Array<{ x: number; text: string }> }> = [];
@@ -64,10 +77,10 @@ export async function pdfLines(data: Buffer): Promise<string[] | null> {
         }
         page.cleanup();
       }
+      return { numPages: document.numPages, pages };
     } finally {
       await document.destroy();
     }
-    return lines;
   } catch {
     return null;
   }
@@ -154,7 +167,8 @@ export function dateIn(text: string): { raw: string; iso: string } | null {
   return null;
 }
 
-const missing = (): OcrField => field(null, null);
+/** A field nothing was found for. */
+export const missing = (): OcrField => field(null, null);
 
 /** The last amount of the lines' matches; several different candidates make it low confidence. */
 function pick(candidates: ReadonlyArray<{ line: string; amounts: ReturnType<typeof amountsOn> }>) {
@@ -265,6 +279,7 @@ export function parseQuoteLines(lines: readonly string[], attachmentId: string):
 
   const extraction: QuoteExtraction = {
     source: 'PDF_TEXT',
+    reader: 'BUILT_IN',
     attachmentId,
     insurerName: missing(),
     insuredName: missing(),
@@ -283,8 +298,14 @@ export function parseQuoteLines(lines: readonly string[], attachmentId: string):
   return extraction;
 }
 
-const nothing = (attachmentId: string, reason: string): QuoteExtraction => ({
+/** Nothing read: the staff enter every value by hand, for the reason given. */
+export const nothing = (
+  attachmentId: string,
+  reason: string,
+  reader: QuoteExtraction['reader'] = 'BUILT_IN',
+): QuoteExtraction => ({
   source: 'NONE',
+  reader,
   attachmentId,
   insurerName: missing(),
   insuredName: missing(),
@@ -309,7 +330,9 @@ export async function extractQuote(attachment: {
   if (attachment.contentType !== 'application/pdf') {
     return nothing(
       attachment.id,
-      'Only PDF quotes are read automatically. Enter the figures from this file by hand.',
+      attachment.contentType.startsWith('image/')
+        ? 'Pictures are read only when a reading service is set up. Enter the figures by hand.'
+        : 'Only PDF quotes are read automatically. Enter the figures from this file by hand.',
     );
   }
   const lines = await pdfLines(attachment.data);

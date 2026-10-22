@@ -21,9 +21,9 @@ import { createHash } from 'node:crypto';
 import { Types } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { decimal128ToString, toDecimal128 } from '../../lib/decimal.ts';
-import { conflict, notFound, validationError } from '../../lib/errors.ts';
+import { AppError, conflict, notFound, validationError } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
-import { extractQuote } from './quote-extraction.ts';
+import { builtInQuoteReader, type QuoteReader } from './quote-reader.ts';
 import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
@@ -501,35 +501,50 @@ export async function recordQuote(
 }
 
 /**
- * Reads a kept attachment for the quote form's auto-fill (Q1): candidate values only, nothing
- * saved. The audit entry says which file and how much was recognised, never its text.
+ * Reads a kept attachment for the quote form's auto-fill (Q1) with the reader OCR_PROVIDER chose:
+ * candidate values only, nothing saved. The audit entry says which file, which reader, whether
+ * the file left the server and how much was recognised, never its text or values. A reader that
+ * fails is audited too (the file may have been sent) and the error goes back for a retry.
  */
 export async function readQuoteAttachment(
   id: string,
   attachmentId: string,
   actor: Actor,
+  reader: QuoteReader = builtInQuoteReader,
 ): Promise<QuoteExtraction> {
   const file = await quoteAttachmentFile(id, attachmentId);
-  const extraction = await extractQuote({
-    id: attachmentId,
-    contentType: file.contentType,
-    data: file.data,
-  });
-  await writeAudit({
-    userId: actor.id,
-    actorRoles: actorRolesOf(actor),
-    action: AUDIT_ACTIONS.QUOTE_PDF_READ,
-    entity: AUDIT_ENTITIES.PROPOSAL,
-    entityId: id,
-    before: null,
-    after: {
-      attachmentId,
-      fileName: file.fileName,
-      source: extraction.source,
-      sectionsRead: extraction.sections.length,
-      manualEntryRequired: extraction.manualEntryRequired,
-    },
-    requestId: actor.requestId,
+  const audit = (after: Record<string, unknown>) =>
+    writeAudit({
+      userId: actor.id,
+      actorRoles: actorRolesOf(actor),
+      action: AUDIT_ACTIONS.QUOTE_PDF_READ,
+      entity: AUDIT_ENTITIES.PROPOSAL,
+      entityId: id,
+      before: null,
+      after: { attachmentId, fileName: file.fileName, reader: reader.name, ...after },
+      requestId: actor.requestId,
+    });
+  let extraction: QuoteExtraction;
+  try {
+    extraction = await reader.read({
+      id: attachmentId,
+      contentType: file.contentType,
+      data: file.data,
+    });
+  } catch (error) {
+    const reason =
+      error instanceof AppError && error.code === ERROR_CODES.UPSTREAM_UNAVAILABLE
+        ? ((error.details as { reason?: string } | undefined)?.reason ?? 'UNAVAILABLE')
+        : 'ERROR';
+    await audit({ outcome: 'FAILED', reason, sentExternally: reader.external });
+    throw error;
+  }
+  await audit({
+    outcome: 'READ',
+    source: extraction.source,
+    sentExternally: reader.external && extraction.source !== 'NONE',
+    sectionsRead: extraction.sections.length,
+    manualEntryRequired: extraction.manualEntryRequired,
   });
   return extraction;
 }

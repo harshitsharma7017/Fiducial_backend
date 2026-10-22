@@ -16,6 +16,7 @@ import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
+import type { QuoteReader } from './quote-reader.ts';
 import {
   proposalQuotes,
   quoteAttachmentFile,
@@ -38,7 +39,11 @@ function actorOf(req: Request) {
  * Insurers' quotes on a case (Q-1 to Q-5), under /api/v1/proposals: reading needs
  * proposals.view; recording quotes and their attachments proposals.edit.
  */
-export function createQuotesRouter(options: { jwtSecret: string; gstRatePercent: string }): Router {
+export function createQuotesRouter(options: {
+  jwtSecret: string;
+  gstRatePercent: string;
+  quoteReader: QuoteReader;
+}): Router {
   const router = Router();
   router.use(authenticate(options));
   const view = requirePermission('proposals.view');
@@ -106,7 +111,14 @@ export function createQuotesRouter(options: { jwtSecret: string; gstRatePercent:
     '/:id/quote-attachments/:attachmentId/read',
     edit,
     route({ params: QuoteAttachmentParamsSchema }, async ({ params }, req, res) => {
-      res.json(await readQuoteAttachment(params.id, params.attachmentId, actorOf(req)));
+      res.json(
+        await readQuoteAttachment(
+          params.id,
+          params.attachmentId,
+          actorOf(req),
+          options.quoteReader,
+        ),
+      );
     }),
   );
 
@@ -192,12 +204,12 @@ documentRoute({
   method: 'post',
   path: '/api/v1/proposals/{id}/quote-attachments/{attachmentId}/read',
   tags: ['Quotes'],
-  summary: 'Read a quote PDF to pre-fill the quote form',
+  summary: 'Read a quote file to pre-fill the quote form',
   description:
-    'Needs proposals.edit. Reads the text of a kept PDF and returns candidate values (section premiums, net, GST, total, valid-until) each with the line it came from and a review state (HIGH, LOW, MISSING, INVALID), plus any arithmetic discrepancies. Saves nothing: staff review the values in the form and save through the quote route. Scanned PDFs, pictures and mails are not read (`manualEntryRequired`). Audited (QUOTE_PDF_READ), without the text.',
+    'Needs proposals.edit. Reads a kept quote file and returns candidate values (section premiums, net, GST, total, valid-until) each with the text it came from and a review state (HIGH, LOW, MISSING, INVALID), plus any arithmetic discrepancies. Saves nothing: staff review the values in the form and save through the quote route. With OCR_PROVIDER=none (`reader` BUILT_IN) only text PDFs are read on the server. With OCR_PROVIDER=gemini (`reader` GEMINI) text PDFs (as their text), scanned PDFs and PNG/JPEG pictures (as the file) are sent to Google’s Gemini API; values from a picture or scan are always LOW. Mails are never read (`manualEntryRequired`). 503 (UPSTREAM_UNAVAILABLE) when Gemini is busy, unavailable, too slow or gives an unusable answer; retry, or enter by hand. Audited (QUOTE_PDF_READ, with the reader, the outcome and whether the file left the server), without the text or values.',
   request: { params: QuoteAttachmentParamsSchema },
   responses: {
     200: { description: 'The candidate values', ...json(QuoteExtractionSchema) },
-    ...errorResponses(400, 401, 403, 404),
+    ...errorResponses(400, 401, 403, 404, 503),
   },
 });
