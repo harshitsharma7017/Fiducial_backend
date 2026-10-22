@@ -116,19 +116,33 @@ export const GeminiQuoteSchema = z.object({
     .max(GST_PARTS.length)
     .describe('CGST / SGST / UTGST / IGST amounts when printed separately; otherwise empty.'),
   totalPremium: FactSchema.describe('The total premium payable, including GST.'),
+  // Not bounded: extra notes are dropped when mapping (MAX_NOTES), not a reason to fail the read.
   issues: z
     .array(z.string())
-    .max(MAX_NOTES)
     .describe(
       'Short sentences on ambiguous or conflicting figures, totals that do not add up, and covers not in the section list.',
     ),
 });
 export type GeminiQuote = z.infer<typeof GeminiQuoteSchema>;
 
-const { $schema: _dialect, ...RESPONSE_JSON_SCHEMA } = z.toJSONSchema(GeminiQuoteSchema, {
+/** A copy of a JSON schema without its maxItems bounds. */
+function withoutMaxItems(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(withoutMaxItems);
+  if (node === null || typeof node !== 'object') return node;
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([key]) => key !== 'maxItems')
+      .map(([key, value]) => [key, withoutMaxItems(value)]),
+  );
+}
+
+// What Gemini is sent. Gemini refuses this schema with its array bounds (400 INVALID_ARGUMENT,
+// found in the live test of 22 Oct 2026), so maxItems is left out here; GeminiQuoteSchema still
+// enforces the bounds on the answer.
+const { $schema: _dialect, ...generated } = z.toJSONSchema(GeminiQuoteSchema, {
   target: 'draft-2020-12',
 });
-export { RESPONSE_JSON_SCHEMA };
+export const RESPONSE_JSON_SCHEMA = withoutMaxItems(generated) as Record<string, unknown>;
 
 export const SYSTEM_INSTRUCTION = `You read insurance quotations for an Indian insurance broker. Your answer pre-fills a form that the broker's staff check against the document before anything is saved.
 

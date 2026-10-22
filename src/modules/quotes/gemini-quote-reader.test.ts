@@ -550,3 +550,25 @@ describe('choosing the reader from OCR_PROVIDER', () => {
     );
   });
 });
+
+describe('the schema Gemini is sent', () => {
+  // Found live on 22 Oct 2026: Gemini answers 400 INVALID_ARGUMENT to the schema with maxItems.
+  it('has no array bounds, wide integer ranges or $schema, which Gemini refuses', () => {
+    const sent = JSON.stringify(RESPONSE_JSON_SCHEMA);
+    expect(sent).not.toContain('maxItems');
+    expect(sent).not.toContain('$schema');
+    expect(sent).not.toContain('9007199254740991');
+    expect(sent).toContain('"maximum":30');
+  });
+
+  it('still bounds the answer on the server, and trims extra notes instead of failing', () => {
+    const answer = syntheticAnswer();
+    const tooManySections = Array.from({ length: 29 }, () => answer.sections[1]!);
+    expect(parseGeminiAnswer(answerOf({ ...answer, sections: tooManySections }))).toBe('MALFORMED');
+    const notes = Array.from({ length: 12 }, (_, index) => `Note ${index + 1}.`);
+    const parsed = parseGeminiAnswer(answerOf({ ...answer, issues: notes }));
+    expect(parsed).not.toBe('MALFORMED');
+    const result = mapGeminiQuote(parsed as GeminiQuote, { attachmentId: ID, pages: null });
+    expect(result.discrepancies.filter((item) => item.startsWith('Gemini noted:'))).toHaveLength(8);
+  });
+});

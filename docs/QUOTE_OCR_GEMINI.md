@@ -171,8 +171,10 @@ cd ../Fiducial_frontend
 npx vitest run src/components/proposals/quotes                  # review UI
 ```
 
-Optional live test (one real call with the synthetic quote, never a real insurer's document; costs
-a request and sends that synthetic text to Google):
+Optional live test (two real calls with synthetic quotes, never a real insurer's document: the
+standard quote, and one with conflicting totals and missing fields; each result is validated against
+`QuoteExtractionSchema` and printed as a summary of synthetic values; costs two requests and sends
+that synthetic text to Google):
 
 ```
 cd Fiducial_backend
@@ -182,12 +184,33 @@ GEMINI_API_KEY=<key> npm run test:live:gemini
 It is skipped unless `GEMINI_LIVE_TEST=1` (set by the script) and a key are both present, and it is
 not matched by `npm test`.
 
+## Live validation, 22 Oct 2026
+
+Run with `npm run test:live:gemini` (key from `.env`; output checked for the key: not present).
+
+- **First run: both requests refused, `400 INVALID_ARGUMENT`.** A plain request with the same key
+  and model succeeded, and the full response schema was accepted once its `maxItems` bounds were
+  removed: Gemini refuses the schema with array bounds. Fixed by sending the schema without
+  `maxItems` (`RESPONSE_JSON_SCHEMA`); the bounds are still enforced on the answer by
+  `GeminiQuoteSchema`. Unit tests now check the schema that is sent. Mocked tests could not catch
+  this: only Google validates the schema.
+- **After the fix: the synthetic text quote passed.** Authenticated, answered in about 14 s,
+  validated against `QuoteExtractionSchema`. Every value matched the quote and was verified against
+  the PDF's text (HIGH); the unprinted insured name stayed MISSING; no discrepancies.
+- **The conflicting-totals quote was not read:** the key hit `429 RESOURCE_EXHAUSTED`, quota
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier` (20 requests a day), mostly used by the
+  diagnosis above. The bounded retries behaved as designed (three attempts, then "busy").
+- **The key used is on Google's free (unpaid) tier.** Under Google's terms for unpaid use, content
+  may be used to improve Google's products and read by human reviewers, and confidential data
+  should not be sent. Do not read real insurer quotes with this key; use a paid-tier key approved
+  for confidential data.
+
 ## Limitations
 
 - Accuracy on real insurers' quotes is **unverified**: only synthetic fixtures have been used. The
   client's 3–5 sample quotes are still needed.
-- No live call to Gemini was made during development; the request format follows the installed
-  SDK's types and Google's documentation.
+- Live validation (22 Oct 2026, synthetic quotes only) covered the text-PDF path only. The
+  scanned-PDF/picture path (file sent inline) and the conflicting-totals case have not been run live.
 - Quotes over 30 pages and mails are not read.
 - A PDF that has text on every page is sent as text: a table drawn as an image inside such a PDF is
   not seen.
