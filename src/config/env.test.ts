@@ -120,7 +120,7 @@ describe('quote reading (Q1) settings', () => {
     const env = loadEnv(VALID);
     expect(env.OCR_PROVIDER).toBe('none');
     expect(env.GEMINI_API_KEY).toBeUndefined();
-    expect(env.GEMINI_MODEL).toBe('gemini-3.8-flash');
+    expect(env.GEMINI_MODEL).toBe('gemini-3.5-flash');
     expect(env.GEMINI_TIMEOUT_MS).toBe(60_000);
   });
 

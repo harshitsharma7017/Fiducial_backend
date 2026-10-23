@@ -268,6 +268,20 @@ export function hideRow(sheet: ExcelJS.Worksheet, row: number): void {
   sheet.getRow(row).hidden = true;
 }
 
+/**
+ * Hides the rows from `from` up to (not including) `to`, clearing their values first so no blank
+ * framed row is printed. Documents leave out what is empty: when a titled block (for example
+ * "Warranties / Conditions") has fewer lines than the template reserved, the unused rows between
+ * it and the next title are hidden rather than shown empty. Does nothing when the range is empty.
+ */
+export function hideRowsBetween(sheet: ExcelJS.Worksheet, from: number, to: number): void {
+  const columns = { from: 1, to: Math.max(sheet.columnCount, 1) };
+  for (let row = from; row < to; row += 1) {
+    clearCells(sheet, { from: row, to: row }, columns);
+    hideRow(sheet, row);
+  }
+}
+
 /** Copies a column's look (cell styles and width) to another column. */
 export function copyColumnStyle(
   sheet: ExcelJS.Worksheet,

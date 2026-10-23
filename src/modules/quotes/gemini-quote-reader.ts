@@ -1,4 +1,4 @@
-import { ApiError, GoogleGenAI, type Part } from '@google/genai';
+import { ApiError, GoogleGenAI, ThinkingLevel, type Part } from '@google/genai';
 import {
   ERROR_CODES,
   MAX_QUOTE_ATTACHMENT_BYTES,
@@ -194,6 +194,9 @@ export function geminiSdkGenerate(options: {
         responseMimeType: 'application/json',
         responseJsonSchema: request.responseJsonSchema,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
+        // Reading printed figures needs little reasoning. The model's default (high) thinking
+        // took over a minute even for a one-page quote, past the request's deadline.
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     });
     return {

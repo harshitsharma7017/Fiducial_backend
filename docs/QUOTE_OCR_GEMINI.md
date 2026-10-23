@@ -54,19 +54,19 @@ Gemini's own answer format never leaves `gemini-quote-reader.ts`; the rest of th
    OCR_PROVIDER=gemini
    GEMINI_API_KEY=<the key>
    # optional
-   GEMINI_MODEL=gemini-3.8-flash
+   GEMINI_MODEL=gemini-3.5-flash
    GEMINI_TIMEOUT_MS=60000
    ```
 
 3. Restart the API. With `OCR_PROVIDER=gemini` and no key, the API refuses to start and says
    `GEMINI_API_KEY: Required when OCR_PROVIDER=gemini` (the key's value is never printed).
 
-| Variable            | Default            | Notes                                                                                                                                                     |
-| ------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OCR_PROVIDER`      | `none`             | `none` or `gemini`.                                                                                                                                       |
-| `GEMINI_API_KEY`    | —                  | Required with `gemini`. Server-side only; sent to Google in the `x-goog-api-key` header by the SDK.                                                       |
-| `GEMINI_MODEL`      | `gemini-3.8-flash` | A stable Gemini model (listed as stable, no shutdown date, on Google's models page in October 2026). Check Google's deprecations page before changing it. |
-| `GEMINI_TIMEOUT_MS` | `60000`            | Per request, 5,000–180,000.                                                                                                                               |
+| Variable            | Default            | Notes                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OCR_PROVIDER`      | `none`             | `none` or `gemini`.                                                                                                                                                                                                                                                                                                                                                   |
+| `GEMINI_API_KEY`    | —                  | Required with `gemini`. Server-side only; sent to Google in the `x-goog-api-key` header by the SDK.                                                                                                                                                                                                                                                                   |
+| `GEMINI_MODEL`      | `gemini-3.5-flash` | A stable Gemini model. On 23 Oct 2026 `gemini-3.8-flash` (the earlier default), `gemini-3.7-flash` and `gemini-flash-latest` took over a minute or failed (503/504) even on a one-line request, while `gemini-3.5-flash` read the synthetic test quotes in about 4 seconds. Check Google's deprecations page, and run `npm run test:live:gemini`, before changing it. |
+| `GEMINI_TIMEOUT_MS` | `60000`            | Per request, 5,000–180,000.                                                                                                                                                                                                                                                                                                                                           |
 
 SDK: `@google/genai` 2.27.0 (`models.generateContent`, `responseMimeType: application/json`,
 `responseJsonSchema`), pinned exactly like the other dependencies.

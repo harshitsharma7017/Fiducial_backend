@@ -15,6 +15,7 @@ import {
   findRow,
   findRows,
   hideRow,
+  hideRowsBetween,
   insertRows,
   labelKey,
   printColumns,
@@ -430,6 +431,9 @@ function fillConditions(
     restyle(sheet.getCell(row, printed.from), { alignment: { wrapText: true, vertical: 'top' } });
     sheet.getRow(row).height = Math.max(15, Math.ceil(line.length / 110) * 15);
   });
+  // Rows the template reserved but no insurer filled are hidden, so no blank framed row prints
+  // (the whole block when no insurer stated deductibles or conditions).
+  hideRowsBetween(sheet, title + 1 + lines.length, title + 1 + Math.max(lines.length, free));
 }
 
 /** Fills the client's QCR template in place. */

@@ -99,8 +99,8 @@ export const EnvSchema = z
     GEMINI_MODEL: z
       .string()
       .trim()
-      .regex(/^[a-z0-9][a-z0-9.-]{2,80}$/, 'Must be a model code such as gemini-3.8-flash')
-      .default('gemini-3.8-flash'),
+      .regex(/^[a-z0-9][a-z0-9.-]{2,80}$/, 'Must be a model code such as gemini-3.5-flash')
+      .default('gemini-3.5-flash'),
     /** How long one request to Gemini may take before it is abandoned. */
     GEMINI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(180_000).default(60_000),
     /**

@@ -12,6 +12,7 @@ import {
   findColumn,
   findRow,
   hideRow,
+  hideRowsBetween,
   insertRows,
   labelKey,
   printColumns,
@@ -320,10 +321,14 @@ function mergeAcross(sheet: ExcelJS.Worksheet, row: number, from: number, to: nu
   sheet.mergeCells(row, from, row, to);
 }
 
-/** Writes lines under a schedule title, up to the next title, adding rows when they do not fit. */
+/**
+ * Writes lines under a schedule title, up to the next title, adding rows when they do not fit.
+ * Any rows the template reserved but these lines do not use are hidden, so an empty block (no
+ * conditions, no deductibles) prints no blank framed rows.
+ */
 function linesBelow(sheet: ExcelJS.Worksheet, title: string, next: string, lines: string[]) {
   const titleRow = findRow(sheet, title);
-  if (!titleRow || lines.length === 0) return;
+  if (!titleRow) return;
   const nextRow = findRow(sheet, next, { from: titleRow + 1 }) ?? titleRow + 1 + lines.length;
   const free = nextRow - titleRow - 1;
   if (lines.length > free)
@@ -336,6 +341,8 @@ function linesBelow(sheet: ExcelJS.Worksheet, title: string, next: string, lines
     restyle(sheet.getCell(row, printed.from), { alignment: { wrapText: true, vertical: 'top' } });
     sheet.getRow(row).height = Math.max(15, Math.ceil(line.length / 110) * 15);
   });
+  // Leftover reserved rows (including the whole block when there are no lines) are hidden.
+  hideRowsBetween(sheet, titleRow + 1 + lines.length, titleRow + 1 + Math.max(lines.length, free));
 }
 
 function fillScheduleExtras(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: PlacementSlip) {
