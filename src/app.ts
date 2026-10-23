@@ -51,7 +51,10 @@ import { createMailRouter } from './modules/mail/mail.routes.ts';
 import { createNotificationsRouter } from './modules/notifications/notifications.routes.ts';
 import { transportFromEnv, type MailTransport } from './modules/mail/transport.ts';
 import { createMastersRouter } from './modules/masters/masters.routes.ts';
+import { createRolesRouter } from './modules/roles/roles.routes.ts';
 import { createUsersRouter } from './modules/users/users.routes.ts';
+import { publicAccess } from './middleware/require-permission.ts';
+import { route } from './middleware/validate.ts';
 
 export interface AppDependencies {
   config: Env;
@@ -129,6 +132,8 @@ export function createApp({
   api.use('/health', createHealthRouter());
   api.use('/auth', createAuthRouter(config));
   api.use('/users', createUsersRouter(jwt));
+  // Database-driven roles and their permissions (docs/RBAC.md).
+  api.use('/roles', createRolesRouter(jwt));
   api.use('/masters', createMastersRouter(jwt));
   api.use('/clients', createClientsRouter(jwt));
   api.use('/insurers', createInsurersRouter(jwt));
@@ -215,9 +220,14 @@ export function createApp({
   app.use('/api/v1', api);
 
   const openApiDocument = buildOpenApiDocument();
-  app.get('/api/openapi.json', (_req, res) => {
-    res.json(openApiDocument);
-  });
+  // Public by design (audit F-09 is still open): the API description, served without sign-in.
+  app.get(
+    '/api/openapi.json',
+    publicAccess('OpenAPI description of the API'),
+    route({}, (_input, _req, res) => {
+      res.json(openApiDocument);
+    }),
+  );
   app.use(
     '/api/docs',
     swaggerUi.serve,

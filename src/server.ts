@@ -11,6 +11,7 @@ import { linkEmployeeIdentities } from './modules/employees/employee-link.ts';
 import { ensureDefaultFamilyPlans } from './modules/family-plans/default-plans.ts';
 import { ensureDefaultAgeBandSets } from './modules/age-bands/age-bands.service.ts';
 import { transportFromEnv } from './modules/mail/transport.ts';
+import { ensureSystemRoles } from './modules/roles/roles.service.ts';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -37,6 +38,15 @@ process.on('unhandledRejection', (reason) => {
 try {
   await connectDatabase(config.MONGODB_URI);
   await ensureIndexes();
+  // The five legacy roles as system roles, once; existing roles are never changed (docs/RBAC.md).
+  const roles = await ensureSystemRoles();
+  if (roles.created.length > 0) logger.info({ created: roles.created }, 'Created system roles');
+  if (roles.usersWithUnknownRoles.length > 0) {
+    logger.warn(
+      { users: roles.usersWithUnknownRoles.map((user) => user.id) },
+      'Users hold role keys that have no role; those roles grant nothing',
+    );
+  }
   await ensureEmailTemplates();
   await ensureClaimEmailTemplates();
   // Employee Benefits (N2, N1): the seven default family plans, then existing GHI members linked

@@ -5,7 +5,7 @@ import {
   GhiRfqStateSchema,
   RfqSelectionSummaryResponseSchema,
   emptyGhiRequirements,
-  type Role,
+  type LegacyRole as Role,
 } from '../src/shared/index.ts';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';

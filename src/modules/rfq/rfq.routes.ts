@@ -31,15 +31,15 @@ function actorOf(req: Request) {
 
 /**
  * The RFQ's edits, versions and approval (R-1, R-2, R-5), under /api/v1/proposals: viewing needs
- * proposals.view; editing, generating and submitting proposals.edit; approving and returning
- * proposals.approve; a version's file proposals.export.
+ * property.view; editing, generating and submitting property.edit; approving and returning
+ * property.approve; a version's file property.export.
  */
 export function createRfqRouter(options: { jwtSecret: string; gstRatePercent: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('proposals.view');
-  const edit = requirePermission('proposals.edit');
-  const approve = requirePermission('proposals.approve');
+  const view = requirePermission('property.view');
+  const edit = requirePermission('property.edit');
+  const approve = requirePermission('property.approve');
 
   router.get(
     '/:id/rfq/versions',
@@ -74,7 +74,7 @@ export function createRfqRouter(options: { jwtSecret: string; gstRatePercent: st
   );
   router.get(
     '/:id/rfq/versions/:version/file',
-    requirePermission('proposals.export'),
+    requirePermission('property.export'),
     route(
       { params: RfqVersionParamsSchema, query: RfqVersionFileQuerySchema },
       async ({ params, query }, req, res) => {
@@ -135,7 +135,7 @@ documentRoute({
   tags: ['RFQ'],
   summary: 'The RFQ’s edits, versions and whether it may be sent',
   description:
-    'Needs proposals.view. Versions newest first with their history (generated, submitted, approved, returned, with comments). `sendable` is true only while the latest version is approved and the case and edits are unchanged since it was generated; `blocked` says why not.',
+    'Needs property.view. Versions newest first with their history (generated, submitted, approved, returned, with comments). `sendable` is true only while the latest version is approved and the case and edits are unchanged since it was generated; `blocked` says why not.',
   request: { params: ProposalIdParamsSchema },
   responses: { ...state, ...errorResponses(400, 401, 403, 404) },
 });
@@ -145,7 +145,7 @@ documentRoute({
   tags: ['RFQ'],
   summary: 'Save the edits made on the RFQ',
   description:
-    'Needs proposals.edit. The heading, the notes for insurers, risk details and the claims table as the RFQ prints them, in place of the Data Sheet’s; they show in the next version. Audited (RFQ_EDITED).',
+    'Needs property.edit. The heading, the notes for insurers, risk details and the claims table as the RFQ prints them, in place of the Data Sheet’s; they show in the next version. Audited (RFQ_EDITED).',
   request: { params: ProposalIdParamsSchema, body: json(RfqEditsSchema) },
   responses: { ...state, ...errorResponses(400, 401, 403, 404, 409) },
 });
@@ -155,7 +155,7 @@ documentRoute({
   tags: ['RFQ'],
   summary: 'Generate the next RFQ version',
   description:
-    'Needs proposals.edit. Generates v1, v2, v3… from the case and the edits, keeping the Excel and PDF made now and the case as it was. 409 DATA_SHEET_INCOMPLETE while the Data Sheet is incomplete. Audited (RFQ_GENERATED).',
+    'Needs property.edit. Generates v1, v2, v3… from the case and the edits, keeping the Excel and PDF made now and the case as it was. 409 DATA_SHEET_INCOMPLETE while the Data Sheet is incomplete. Audited (RFQ_GENERATED).',
   request: { params: ProposalIdParamsSchema },
   responses: {
     201: { description: 'The RFQ’s edits, versions and standing', ...json(RfqStateSchema) },
@@ -167,7 +167,7 @@ documentRoute({
   path: '/api/v1/proposals/{id}/rfq/versions/{version}',
   tags: ['RFQ'],
   summary: 'One RFQ version, for its preview',
-  description: 'Needs proposals.view. The case and edits it was generated from, and its history.',
+  description: 'Needs property.view. The case and edits it was generated from, and its history.',
   request: { params: RfqVersionParamsSchema },
   responses: {
     200: { description: 'The version', ...json(RfqVersionSchema) },
@@ -180,7 +180,7 @@ documentRoute({
   tags: ['RFQ'],
   summary: 'Download an RFQ version (Excel or PDF)',
   description:
-    'Needs proposals.export. The file as generated for the version. Audited (RFQ_DOWNLOADED).',
+    'Needs property.export. The file as generated for the version. Audited (RFQ_DOWNLOADED).',
   request: { params: RfqVersionParamsSchema, query: RfqVersionFileQuerySchema },
   responses: {
     200: {
@@ -193,17 +193,17 @@ documentRoute({
 for (const [step, permission, text] of [
   [
     'submit',
-    'proposals.edit',
+    'property.edit',
     'Submits the latest version, a draft, for approval; an optional comment.',
   ],
   [
     'approve',
-    'proposals.approve',
+    'property.approve',
     'Approves the latest version, once submitted; an optional comment. Only an approved RFQ is sent to insurers.',
   ],
   [
     'return',
-    'proposals.approve',
+    'property.approve',
     'Returns the latest version, once submitted, with the comment saying what to change.',
   ],
 ] as const) {

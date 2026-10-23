@@ -295,7 +295,7 @@ export interface TpaClaimDoc {
   sourceStatus: string;
   rejectionReason: string | null;
   settlementDate: string | null;
-  /** N12: kept in full; masked in every response and file unless the user is claims.admin. */
+  /** N12: kept in full; masked in every response and file unless the user holds claims.view_bank. */
   bankAccount?: string | null;
   /** N11: why the claim is not on the board (unmapped status, not matched, missing details). */
   boardNote?: string | null;

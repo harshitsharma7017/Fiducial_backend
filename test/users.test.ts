@@ -1,4 +1,4 @@
-import { ROLES, type Role } from '../src/shared/index.ts';
+import { ROLES, legacyPermissionsOf, type LegacyRole as Role } from '../src/shared/index.ts';
 import express from 'express';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -53,10 +53,19 @@ describe('requirePermission', () => {
   const probe = (roles: Role[] | null) => {
     const probeApp = express();
     probeApp.use((req, _res, next) => {
-      if (roles) req.user = { id: 'x', email: 'x@example.com', name: 'X', roles };
+      if (roles) {
+        req.user = {
+          id: 'x',
+          email: 'x@example.com',
+          name: 'X',
+          roles,
+          // As authenticate() resolves them for the migrated legacy roles.
+          permissions: new Set(legacyPermissionsOf(roles)),
+        };
+      }
       next();
     });
-    probeApp.get('/approve', requirePermission('proposals.approve'), (_req, res) => {
+    probeApp.get('/approve', requirePermission('property.approve'), (_req, res) => {
       res.json({ ok: true });
     });
     probeApp.use(errorHandler());

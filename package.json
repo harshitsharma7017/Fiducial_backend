@@ -20,6 +20,8 @@
     "test:live:gemini": "GEMINI_LIVE_TEST=1 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.live.config.ts",
     "seed:admin": "node --env-file-if-exists=.env src/scripts/seed-admin.ts",
     "seed:admin:prod": "node --env-file-if-exists=.env dist/scripts/seed-admin.js",
+    "roles:migrate": "node --env-file-if-exists=.env src/scripts/migrate-roles.ts",
+    "roles:migrate:prod": "node --env-file-if-exists=.env dist/scripts/migrate-roles.js",
     "import:masters": "node --env-file-if-exists=.env src/scripts/import-masters.ts",
     "import:masters:prod": "node --env-file-if-exists=.env dist/scripts/import-masters.js",
     "clean:cases": "node --env-file-if-exists=.env src/scripts/clean-case-data.ts",

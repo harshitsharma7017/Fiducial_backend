@@ -2,6 +2,7 @@ import { MailStatusSchema } from '../../shared/index.ts';
 import { Router } from 'express';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
+import { route } from '../../middleware/validate.ts';
 import { requirePermission } from '../../middleware/require-permission.ts';
 import { mailStatusOf, type MailTransport } from './transport.ts';
 
@@ -9,9 +10,13 @@ import { mailStatusOf, type MailTransport } from './transport.ts';
 export function createMailRouter(options: { jwtSecret: string; transport: MailTransport }): Router {
   const router = Router();
   router.use(authenticate(options));
-  router.get('/status', requirePermission('settings.view'), (_req, res) => {
-    res.json(mailStatusOf(options.transport));
-  });
+  router.get(
+    '/status',
+    requirePermission('settings.view'),
+    route({}, (_input, _req, res) => {
+      res.json(mailStatusOf(options.transport));
+    }),
+  );
   return router;
 }
 

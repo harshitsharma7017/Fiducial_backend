@@ -6,8 +6,9 @@ import {
   OTHER_SECTION_LABELS,
   PROPOSAL_STAGES,
   PROPOSAL_STAGE_LABELS,
-  ROLES,
   ADDON_LIST_LABELS,
+  casePermission,
+  type CaseLine,
   SUM_INSURED_LINES,
   formatDate,
   formatRupeesShort,
@@ -16,7 +17,6 @@ import {
   hasRfq,
   isAnnexureSection,
   occupancyCoverDefaults,
-  can,
   wholeRupees,
   type AuditAction,
   type CreateProposalRequest,
@@ -48,6 +48,7 @@ import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
+import { usersWithPermission } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import type { ExistingPolicyResult, ExistingPolicySource } from './existing-policy-source.ts';
 import { approvedRfq } from '../rfq/rfq-approval.ts';
@@ -111,15 +112,15 @@ export function closed(): AppError {
   return conflict(ERROR_CODES.PROPOSAL_LOCKED, 'This case is closed.');
 }
 
-/** Roles whose users can be assigned a case: those who may edit proposals. */
-const OWNER_ROLES = ROLES.filter((role) => can([role], 'proposals.edit'));
-
-/** Active staff who can be assigned a case, by name. */
-export async function listOwners(): Promise<ProposalOwnersResponse> {
-  const users = await UserModel.find(
-    { active: true, roles: { $in: OWNER_ROLES } },
-    { name: 1, email: 1 },
-  )
+/**
+ * Active staff who can be assigned a case of the line of business, by name: those whose active
+ * roles may edit its cases.
+ */
+export async function listOwners(line: CaseLine = 'PROPERTY'): Promise<ProposalOwnersResponse> {
+  const users = await UserModel.find(await usersWithPermission(casePermission(line, 'edit')), {
+    name: 1,
+    email: 1,
+  })
     .sort({ name: 1 })
     .lean();
   return {
@@ -483,8 +484,7 @@ export async function createProposal(
   if (input.ownerId) {
     const owner = await UserModel.exists({
       _id: ownerId,
-      active: true,
-      roles: { $in: OWNER_ROLES },
+      ...(await usersWithPermission('property.edit')),
     });
     if (!owner) {
       throw validationError([

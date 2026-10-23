@@ -42,9 +42,9 @@ function actorOf(req: Request) {
 }
 
 /**
- * The placement slip of a case, under /api/v1/proposals: viewing needs proposals.view, the
- * remarks, the policy or cover note and its files proposals.edit, approval proposals.approve, the
- * download proposals.export and the mail to the insurer proposals.send.
+ * The placement slip of a case, under /api/v1/proposals: viewing needs property.view, the
+ * remarks, the policy or cover note and its files property.edit, approval property.approve, the
+ * download property.export and the mail to the insurer property.send.
  */
 export function createPlacementSlipRouter(options: {
   jwtSecret: string;
@@ -54,11 +54,11 @@ export function createPlacementSlipRouter(options: {
   const router = Router();
   router.use(authenticate(options));
   const deps = { defaultGstRatePercent: options.gstRatePercent, transport: options.mailTransport };
-  const edit = requirePermission('proposals.edit');
+  const edit = requirePermission('property.edit');
 
   router.get(
     '/:id/placement-slip',
-    requirePermission('proposals.view'),
+    requirePermission('property.view'),
     route({ params: ProposalIdParamsSchema }, async ({ params }, _req, res) => {
       res.json(await getPlacementSlip(params.id, deps));
     }),
@@ -77,7 +77,7 @@ export function createPlacementSlipRouter(options: {
 
   router.post(
     '/:id/placement-slip/approve',
-    requirePermission('proposals.approve'),
+    requirePermission('property.approve'),
     route(
       { params: ProposalIdParamsSchema, body: ApprovePlacementSlipRequestSchema },
       async ({ params, body }, req, res) => {
@@ -88,7 +88,7 @@ export function createPlacementSlipRouter(options: {
 
   router.get(
     '/:id/placement-slip/document',
-    requirePermission('proposals.export'),
+    requirePermission('property.export'),
     route(
       { params: ProposalIdParamsSchema, query: PlacementSlipDocumentQuerySchema },
       async ({ params, query }, req, res) => {
@@ -103,7 +103,7 @@ export function createPlacementSlipRouter(options: {
 
   router.post(
     '/:id/placement-slip/email',
-    requirePermission('proposals.send'),
+    requirePermission('property.send'),
     route(
       { params: ProposalIdParamsSchema, body: SendPlacementSlipRequestSchema },
       async ({ params, body }, req, res) => {
@@ -131,7 +131,7 @@ export function createPlacementSlipRouter(options: {
 
   router.get(
     '/:id/placement-slip/files/:fileId',
-    requirePermission('proposals.view'),
+    requirePermission('property.view'),
     route({ params: PlacementFileParamsSchema }, async ({ params }, _req, res) => {
       const file = await placementFile(params.id, params.fileId);
       res.setHeader('Content-Type', file.contentType);
@@ -167,7 +167,7 @@ documentRoute({
   tags: TAGS,
   summary: 'The placement slip of a case',
   description:
-    'Needs proposals.view. From the quote the client accepted (the version and premium the client approval kept): the sections placed with the sum insured of the option accepted and the insurer’s premium, net, GST and total, capacity, deductibles and conditions; the broker’s remarks; the approval (current only while nothing changed since); what still stops approval; the mails to the insurer; the policy or cover note recorded; and why it cannot be worked on now, if so.',
+    'Needs property.view. From the quote the client accepted (the version and premium the client approval kept): the sections placed with the sum insured of the option accepted and the insurer’s premium, net, GST and total, capacity, deductibles and conditions; the broker’s remarks; the approval (current only while nothing changed since); what still stops approval; the mails to the insurer; the policy or cover note recorded; and why it cannot be worked on now, if so.',
   request: { params: ProposalIdParamsSchema },
   responses: {
     200: { description: 'The placement slip', ...json(PlacementSlipSchema) },
@@ -181,7 +181,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Save the remarks printed on the placement slip',
   description:
-    'Needs proposals.edit. Any change voids an approval. 409 until the client approval is recorded, and on a closed case. Audited (PLACEMENT_SLIP_SAVED).',
+    'Needs property.edit. Any change voids an approval. 409 until the client approval is recorded, and on a closed case. Audited (PLACEMENT_SLIP_SAVED).',
   request: { params: ProposalIdParamsSchema, body: json(SavePlacementSlipRequestSchema) },
   responses: {
     200: { description: 'The placement slip', ...json(PlacementSlipSchema) },
@@ -195,7 +195,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Approve the placement slip',
   description:
-    'Needs proposals.approve. Approves the fingerprint the approver saw: 409 PLACEMENT_SLIP_CHANGED when it changed since, 409 PLACEMENT_SLIP_INCOMPLETE while the client approval or the client’s Placement Slip format is missing. Audited (PLACEMENT_SLIP_APPROVED).',
+    'Needs property.approve. Approves the fingerprint the approver saw: 409 PLACEMENT_SLIP_CHANGED when it changed since, 409 PLACEMENT_SLIP_INCOMPLETE while the client approval or the client’s Placement Slip format is missing. Audited (PLACEMENT_SLIP_APPROVED).',
   request: { params: ProposalIdParamsSchema, body: json(ApprovePlacementSlipRequestSchema) },
   responses: {
     200: { description: 'The placement slip', ...json(PlacementSlipSchema) },
@@ -209,7 +209,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Download the placement slip (Excel or PDF)',
   description:
-    'Needs proposals.export. The client’s Placement Slip format filled (409 PLACEMENT_SLIP_INCOMPLETE until it is uploaded or the client approval recorded); the PDF is A4 with the letterhead. A draft can be downloaded to review; X-Placement-Slip-Status says which. Audited (PLACEMENT_SLIP_DOWNLOADED).',
+    'Needs property.export. The client’s Placement Slip format filled (409 PLACEMENT_SLIP_INCOMPLETE until it is uploaded or the client approval recorded); the PDF is A4 with the letterhead. A draft can be downloaded to review; X-Placement-Slip-Status says which. Audited (PLACEMENT_SLIP_DOWNLOADED).',
   request: { params: ProposalIdParamsSchema, query: PlacementSlipDocumentQuerySchema },
   responses: {
     200: { description: 'The file', content: { 'application/octet-stream': binary } },
@@ -223,7 +223,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Email the approved placement slip to the insurer',
   description:
-    'Needs proposals.send. Only an approved slip, unchanged since approval (409 PLACEMENT_SLIP_NOT_APPROVED; 409 MAIL_DISABLED when mail is off). One mail to the chosen addresses of the insurer the client accepted, from the Placement slip email template, with the slip attached; logged in the case’s mail log and audited. Moves the case to Placement Slip when it is before it. Repeating a sendId never mails twice.',
+    'Needs property.send. Only an approved slip, unchanged since approval (409 PLACEMENT_SLIP_NOT_APPROVED; 409 MAIL_DISABLED when mail is off). One mail to the chosen addresses of the insurer the client accepted, from the Placement slip email template, with the slip attached; logged in the case’s mail log and audited. Moves the case to Placement Slip when it is before it. Repeating a sendId never mails twice.',
   request: { params: ProposalIdParamsSchema, body: json(SendPlacementSlipRequestSchema) },
   responses: {
     200: { description: 'The outcome and the slip', ...json(PlacementSlipSendResponseSchema) },
@@ -236,7 +236,7 @@ documentRoute({
   path: '/api/v1/proposals/{id}/placement-slip/files',
   tags: TAGS,
   summary: 'Upload the insurer’s policy or cover note',
-  description: `Needs proposals.edit. The file is the request body (${Object.values(PLACEMENT_FILE_TYPES).join(', ')}; up to ${MAX_QUOTE_ATTACHMENT_BYTES / 1024 / 1024} MB); its type is checked from its content. The placement then attaches it by id. Audited.`,
+  description: `Needs property.edit. The file is the request body (${Object.values(PLACEMENT_FILE_TYPES).join(', ')}; up to ${MAX_QUOTE_ATTACHMENT_BYTES / 1024 / 1024} MB); its type is checked from its content. The placement then attaches it by id. Audited.`,
   request: {
     params: ProposalIdParamsSchema,
     query: PlacementFileUploadQuerySchema,
@@ -253,7 +253,7 @@ documentRoute({
   path: '/api/v1/proposals/{id}/placement-slip/files/{fileId}',
   tags: TAGS,
   summary: 'Download a policy or cover note file',
-  description: 'Needs proposals.view.',
+  description: 'Needs property.view.',
   request: { params: PlacementFileParamsSchema },
   responses: {
     200: { description: 'The file', content: { 'application/octet-stream': binary } },
@@ -267,7 +267,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Record the policy or cover note the insurer issued',
   description:
-    'Needs proposals.edit. Its kind, number, date (not in the future) and at least one file uploaded for the placement (400 otherwise). 409 until the slip has gone to the insurer, and on a closed case. Moves the case to Placed; can be corrected afterwards. Audited (PLACEMENT_RECORDED).',
+    'Needs property.edit. Its kind, number, date (not in the future) and at least one file uploaded for the placement (400 otherwise). 409 until the slip has gone to the insurer, and on a closed case. Moves the case to Placed; can be corrected afterwards. Audited (PLACEMENT_RECORDED).',
   request: { params: ProposalIdParamsSchema, body: json(RecordPlacedRequestSchema) },
   responses: {
     200: { description: 'The placement slip', ...json(PlacementSlipSchema) },

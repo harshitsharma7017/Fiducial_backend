@@ -37,7 +37,7 @@ function actorOf(req: Request) {
 
 /**
  * Insurers' quotes on a case (Q-1 to Q-5), under /api/v1/proposals: reading needs
- * proposals.view; recording quotes and their attachments proposals.edit.
+ * property.view; recording quotes and their attachments property.edit.
  */
 export function createQuotesRouter(options: {
   jwtSecret: string;
@@ -46,8 +46,8 @@ export function createQuotesRouter(options: {
 }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('proposals.view');
-  const edit = requirePermission('proposals.edit');
+  const view = requirePermission('property.view');
+  const edit = requirePermission('property.edit');
 
   router.get(
     '/:id/quotes',
@@ -148,7 +148,7 @@ documentRoute({
   tags: ['Quotes'],
   summary: 'List the insurers’ quotes on a case',
   description:
-    'Needs proposals.view. Per insurer and option, every version newest first, with net, GST and total (with and without terrorism) and the deviations from the RFQ. `qcr` lists what the QCR compares: the latest version of each option from insurers that have not declined.',
+    'Needs property.view. Per insurer and option, every version newest first, with net, GST and total (with and without terrorism) and the deviations from the RFQ. `qcr` lists what the QCR compares: the latest version of each option from insurers that have not declined.',
   request: { params: ProposalIdParamsSchema },
   responses: {
     200: { description: 'The quotes', ...json(ProposalQuotesSchema) },
@@ -162,7 +162,7 @@ documentRoute({
   tags: ['Quotes'],
   summary: 'Record an insurer’s quote for one option',
   description:
-    'Needs proposals.edit. Saves the next version: the premium of each section the RFQ asked for (Fire with and without terrorism), the insurer’s terms, and at least one attachment uploaded for this insurer (400 otherwise). From the second version on a reason is needed. The insurer moves to Quoted. 409 when the RFQ has not gone to the insurer or the case is closed. Audited (QUOTE_RECORDED).',
+    'Needs property.edit. Saves the next version: the premium of each section the RFQ asked for (Fire with and without terrorism), the insurer’s terms, and at least one attachment uploaded for this insurer (400 otherwise). From the second version on a reason is needed. The insurer moves to Quoted. 409 when the RFQ has not gone to the insurer or the case is closed. Audited (QUOTE_RECORDED).',
   request: { params: ProposalInsurerParamsSchema, body: json(RecordQuoteRequestSchema) },
   responses: {
     201: { description: 'The case’s quotes', ...json(ProposalQuotesSchema) },
@@ -175,7 +175,7 @@ documentRoute({
   path: '/api/v1/proposals/{id}/insurers/{insurerId}/quote-attachments',
   tags: ['Quotes'],
   summary: 'Upload the insurer’s mail or PDF',
-  description: `Needs proposals.edit. The file is the request body (${Object.values(QUOTE_ATTACHMENT_TYPES).join(', ')}; up to ${MAX_QUOTE_ATTACHMENT_BYTES / 1024 / 1024} MB); its type is checked from its content. Quotes of this insurer then attach it by id. Audited.`,
+  description: `Needs property.edit. The file is the request body (${Object.values(QUOTE_ATTACHMENT_TYPES).join(', ')}; up to ${MAX_QUOTE_ATTACHMENT_BYTES / 1024 / 1024} MB); its type is checked from its content. Quotes of this insurer then attach it by id. Audited.`,
   request: {
     params: ProposalInsurerParamsSchema,
     query: QuoteAttachmentUploadQuerySchema,
@@ -192,7 +192,7 @@ documentRoute({
   path: '/api/v1/proposals/{id}/quote-attachments/{attachmentId}',
   tags: ['Quotes'],
   summary: 'Download a quote attachment',
-  description: 'Needs proposals.view.',
+  description: 'Needs property.view.',
   request: { params: QuoteAttachmentParamsSchema },
   responses: {
     200: { description: 'The file', content: { 'application/octet-stream': binary } },
@@ -206,7 +206,7 @@ documentRoute({
   tags: ['Quotes'],
   summary: 'Read a quote file to pre-fill the quote form',
   description:
-    'Needs proposals.edit. Reads a kept quote file and returns candidate values (section premiums, net, GST, total, valid-until) each with the text it came from and a review state (HIGH, LOW, MISSING, INVALID), plus any arithmetic discrepancies. Saves nothing: staff review the values in the form and save through the quote route. With OCR_PROVIDER=none (`reader` BUILT_IN) only text PDFs are read on the server. With OCR_PROVIDER=gemini (`reader` GEMINI) text PDFs (as their text), scanned PDFs and PNG/JPEG pictures (as the file) are sent to Google’s Gemini API; values from a picture or scan are always LOW. Mails are never read (`manualEntryRequired`). 503 (UPSTREAM_UNAVAILABLE) when Gemini is busy, unavailable, too slow or gives an unusable answer; retry, or enter by hand. Audited (QUOTE_PDF_READ, with the reader, the outcome and whether the file left the server), without the text or values.',
+    'Needs property.edit. Reads a kept quote file and returns candidate values (section premiums, net, GST, total, valid-until) each with the text it came from and a review state (HIGH, LOW, MISSING, INVALID), plus any arithmetic discrepancies. Saves nothing: staff review the values in the form and save through the quote route. With OCR_PROVIDER=none (`reader` BUILT_IN) only text PDFs are read on the server. With OCR_PROVIDER=gemini (`reader` GEMINI) text PDFs (as their text), scanned PDFs and PNG/JPEG pictures (as the file) are sent to Google’s Gemini API; values from a picture or scan are always LOW. Mails are never read (`manualEntryRequired`). 503 (UPSTREAM_UNAVAILABLE) when Gemini is busy, unavailable, too slow or gives an unusable answer; retry, or enter by hand. Audited (QUOTE_PDF_READ, with the reader, the outcome and whether the file left the server), without the text or values.',
   request: { params: QuoteAttachmentParamsSchema },
   responses: {
     200: { description: 'The candidate values', ...json(QuoteExtractionSchema) },

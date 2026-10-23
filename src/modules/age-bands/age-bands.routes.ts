@@ -20,8 +20,8 @@ import {
   updateAgeBandSet,
 } from './age-bands.service.ts';
 
-// The Age Band Master (N4) under /api/v1/age-bands: reading needs masters.view, every change
-// masters.manage. There is no delete: a set can be deactivated, and cases keep their copies.
+// The Age Band Master (N4) under /api/v1/age-bands: reading needs age_bands.view, every change
+// age_bands.manage. There is no delete: a set can be deactivated, and cases keep their copies.
 
 const ListQuerySchema = z.strictObject({
   active: z
@@ -45,8 +45,8 @@ const CasesResponseSchema = z.object({
 export function createAgeBandsRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('masters.view');
-  const manage = requirePermission('masters.manage');
+  const view = requirePermission('age_bands.view');
+  const manage = requirePermission('age_bands.manage');
   router.get(
     '/',
     view,
@@ -109,7 +109,7 @@ for (const item of [
     method: 'get',
     path: base,
     summary: 'List age band sets',
-    permission: 'masters.view',
+    permission: 'age_bands.view',
     query: ListQuerySchema,
     response: AgeBandSetListResponseSchema,
   },
@@ -117,7 +117,7 @@ for (const item of [
     method: 'post',
     path: base,
     summary: 'Create an age band set',
-    permission: 'masters.manage',
+    permission: 'age_bands.manage',
     body: AgeBandSetInputSchema,
     response: AgeBandSetSchema,
     status: 201,
@@ -126,14 +126,14 @@ for (const item of [
     method: 'get',
     path: one,
     summary: 'An age band set',
-    permission: 'masters.view',
+    permission: 'age_bands.view',
     response: AgeBandSetSchema,
   },
   {
     method: 'put',
     path: one,
     summary: 'Edit an age band set (its revision rises; cases keep their copies)',
-    permission: 'masters.manage',
+    permission: 'age_bands.manage',
     body: AgeBandSetInputSchema,
     response: AgeBandSetSchema,
   },
@@ -141,21 +141,21 @@ for (const item of [
     method: 'post',
     path: `${one}/activate`,
     summary: 'Activate an age band set',
-    permission: 'masters.manage',
+    permission: 'age_bands.manage',
     response: AgeBandSetSchema,
   },
   {
     method: 'post',
     path: `${one}/deactivate`,
     summary: 'Deactivate an age band set',
-    permission: 'masters.manage',
+    permission: 'age_bands.manage',
     response: AgeBandSetSchema,
   },
   {
     method: 'get',
     path: `${one}/cases`,
     summary: 'Open cases holding a copy of the set',
-    permission: 'masters.view',
+    permission: 'age_bands.view',
     response: CasesResponseSchema,
   },
 ] as const) {

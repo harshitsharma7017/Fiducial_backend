@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MemberPrivateFieldSchema } from './masking.ts';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
 import { nameKeyOf } from './census-rules.ts';
 import { EbProductSchema } from './eb-products.ts';
@@ -36,7 +37,8 @@ export const EbEmployeeSchema = z.object({
   employeeId: z.string(),
   name: z.string(),
   gender: GhiGenderSchema,
-  dateOfBirth: z.iso.date(),
+  /** Null when withheld (see `hidden`). */
+  dateOfBirth: z.iso.date().nullable(),
   dateOfJoining: z.iso.date().nullable(),
   unresolved: z.boolean(),
   enrollments: z.array(EbEnrollmentSchema),
@@ -48,10 +50,12 @@ export const EbEmployeeSchema = z.object({
       product: EbProductSchema,
       name: z.string(),
       gender: GhiGenderSchema,
-      dateOfBirth: z.iso.date(),
+      dateOfBirth: z.iso.date().nullable(),
     }),
   ),
   updatedAt: IsoDateTimeSchema.nullable(),
+  /** Fields withheld from this user (no permission to see them). */
+  hidden: z.array(MemberPrivateFieldSchema).optional(),
 });
 export type EbEmployee = z.infer<typeof EbEmployeeSchema>;
 

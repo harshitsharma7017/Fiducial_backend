@@ -13,6 +13,7 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
+import { publicAccess } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { publicClaimLink, submitThroughLink, uploadThroughLink } from './claim-links.service.ts';
 
@@ -57,6 +58,8 @@ export function createClaimLinksRouter(
         });
       },
     }),
+    // No sign-in by design: the link token (header) is the credential, checked on every request.
+    publicAccess('employee claim submission link; the link token is checked per request'),
   );
   router.get(
     '/current',

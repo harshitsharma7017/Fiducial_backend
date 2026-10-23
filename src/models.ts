@@ -58,10 +58,13 @@ import { PincodeModel } from './modules/masters/pincode.model.ts';
 import { QcrModel } from './modules/qcr/qcr.model.ts';
 import { RfqStateModel, RfqVersionModel } from './modules/rfq/rfq.model.ts';
 import { QuoteAttachmentModel, QuoteModel } from './modules/quotes/quote.model.ts';
+import { RoleModel } from './modules/roles/role.model.ts';
 import { UserModel } from './modules/users/user.model.ts';
 
 const MODELS = [
   UserModel,
+  // Database-driven roles (docs/RBAC.md).
+  RoleModel,
   AuditLogModel,
   MasterVersionModel,
   OccupancyModel,

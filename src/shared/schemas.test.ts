@@ -41,7 +41,12 @@ describe('CreateUserRequestSchema', () => {
     expect(
       CreateUserRequestSchema.safeParse({ ...valid, roles: ['MANAGER', 'MANAGER'] }).success,
     ).toBe(false);
-    expect(CreateUserRequestSchema.safeParse({ ...valid, roles: ['ROOT'] }).success).toBe(false);
+    // Roles are database records now: the schema checks the key format, and the API refuses a key
+    // with no active role (test/user-roles.test.ts).
+    expect(CreateUserRequestSchema.safeParse({ ...valid, roles: ['root'] }).success).toBe(false);
+    expect(CreateUserRequestSchema.safeParse({ ...valid, roles: ['NO SPACES'] }).success).toBe(
+      false,
+    );
   });
 });
 

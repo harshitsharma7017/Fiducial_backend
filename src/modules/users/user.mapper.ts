@@ -1,4 +1,4 @@
-import type { User } from '../../shared/index.ts';
+import { ROLE_LABELS, isLegacyRole, type User } from '../../shared/index.ts';
 import type { UserDoc } from './user.model.ts';
 
 type UserFields = Pick<
@@ -14,14 +14,24 @@ type UserFields = Pick<
   | 'updatedAt'
 >;
 
-/** Public view of a user. Never includes the password hash or the failed-attempt counter. */
-export function toUserDto(user: UserFields, now: Date = new Date()): User {
+/**
+ * Public view of a user. Never includes the password hash or the failed-attempt counter. Role
+ * names come from `names` (the roles collection); without it, legacy labels or the key.
+ */
+export function toUserDto(
+  user: UserFields,
+  now: Date = new Date(),
+  names?: ReadonlyMap<string, string>,
+): User {
   const locked = user.lockedUntil && user.lockedUntil > now ? user.lockedUntil : null;
   return {
     id: user._id.toHexString(),
     email: user.email,
     name: user.name,
     roles: [...user.roles],
+    roleNames: user.roles.map(
+      (role) => names?.get(role) ?? (isLegacyRole(role) ? ROLE_LABELS[role] : role),
+    ),
     active: user.active,
     lockedUntil: locked ? locked.toISOString() : null,
     lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,

@@ -72,13 +72,15 @@ import {
   uploadClaimDocument,
 } from './claims.service.ts';
 
-// Group health claims (C1 to C4) under /api/v1/claims. Viewing needs claims.view; creating,
-// links, editing, documents and moves claims.process (and the service checks the claim is assigned
-// to the user, unless they hold claims.admin); reassigning, templates and HR contacts claims.admin.
+// Group health claims (C1 to C4) under /api/v1/claims. Viewing needs claims.view, documents
+// claims.view_documents; creating claims.create; links claims.links; editing, moves, remarks and
+// uploads claims.process on the claims assigned to the user, or claims.manage_all on any claim;
+// reassigning claims.assign; templates and HR contacts claims.settings; email retries
+// claims.retry_notifications.
 
 function actorOf(req: Request): ClaimActor {
   const user = currentUser(req);
-  return { id: user.id, roles: user.roles, requestId: req.requestId, kind: 'STAFF' };
+  return { id: user.id, permissions: user.permissions, requestId: req.requestId, kind: 'STAFF' };
 }
 
 function sendFile(
@@ -127,8 +129,14 @@ export function createClaimsRouter(options: {
   router.use(authenticate(options));
   // N12: a refused claim request is audited.
   const view = requireClaimPermission('claims.view');
-  const processing = requireClaimPermission('claims.process');
-  const admin = requireClaimPermission('claims.admin');
+  const create = requireClaimPermission('claims.create');
+  const links = requireClaimPermission('claims.links');
+  const settings = requireClaimPermission('claims.settings');
+  const assign = requireClaimPermission('claims.assign');
+  const documents = requireClaimPermission('claims.view_documents');
+  const retry = requireClaimPermission('claims.retry_notifications');
+  // Working a claim: the service then requires the assignee, unless the user may work any claim.
+  const work = requireClaimPermission(['claims.process', 'claims.manage_all']);
   const deps = { transport: options.mailTransport, logger: options.logger };
 
   router.get(
@@ -158,7 +166,7 @@ export function createClaimsRouter(options: {
   );
   router.post(
     '/',
-    processing,
+    create,
     route({ body: CreateClaimRequestSchema }, async ({ body }, req, res) => {
       res.status(201).json(await createClaim(body, actorOf(req)));
     }),
@@ -167,14 +175,14 @@ export function createClaimsRouter(options: {
   // Pickers and settings (before /:id so their paths are not taken for ids).
   router.get(
     '/policies',
-    processing,
+    create,
     route({ query: ClaimPolicyQuerySchema }, async ({ query }, _req, res) => {
       res.json(await claimPolicies(query.clientId));
     }),
   );
   router.get(
     '/policies/:caseId/employees',
-    processing,
+    create,
     route(
       { params: ClaimPolicyParamsSchema, query: ClaimEmployeeQuerySchema },
       async ({ params, query }, _req, res) => {
@@ -184,42 +192,42 @@ export function createClaimsRouter(options: {
   );
   router.get(
     '/policies/:caseId/employees/:memberId/family',
-    processing,
+    create,
     route({ params: ClaimEmployeeParamsSchema }, async ({ params }, _req, res) => {
       res.json(await employeeFamily(params.caseId, params.memberId));
     }),
   );
   router.get(
     '/links',
-    processing,
+    links,
     route({ query: ClaimLinkListQuerySchema }, async ({ query }, _req, res) => {
       res.json(await listClaimLinks(query.ghiCaseId));
     }),
   );
   router.post(
     '/links',
-    processing,
+    links,
     route({ body: CreateClaimLinkRequestSchema }, async ({ body }, req, res) => {
       res.status(201).json(await createClaimLink(body, actorOf(req)));
     }),
   );
   router.post(
     '/links/:linkId/revoke',
-    processing,
+    links,
     route({ params: ClaimLinkParamsSchema }, async ({ params }, req, res) => {
       res.json(await revokeClaimLink(params.linkId, actorOf(req)));
     }),
   );
   router.get(
     '/email-templates',
-    admin,
+    settings,
     route({}, async (_input, _req, res) => {
       res.json(await listClaimTemplates());
     }),
   );
   router.put(
     '/email-templates/:status/:audience',
-    admin,
+    settings,
     route(
       { params: ClaimEmailTemplateParamsSchema, body: UpdateClaimEmailTemplateRequestSchema },
       async ({ params, body }, req, res) => {
@@ -236,7 +244,7 @@ export function createClaimsRouter(options: {
   );
   router.put(
     '/hr-contacts/:clientId',
-    admin,
+    settings,
     route(
       { params: ClaimHrContactParamsSchema, body: SetClaimHrContactRequestSchema },
       async ({ params, body }, req, res) => {
@@ -259,7 +267,7 @@ export function createClaimsRouter(options: {
   );
   router.put(
     '/:id',
-    processing,
+    work,
     route(
       { params: ClaimParamsSchema, body: UpdateClaimRequestSchema },
       async ({ params, body }, req, res) => {
@@ -269,7 +277,7 @@ export function createClaimsRouter(options: {
   );
   router.post(
     '/:id/transitions',
-    processing,
+    work,
     route(
       { params: ClaimParamsSchema, body: TransitionClaimRequestSchema },
       async ({ params, body }, req, res) => {
@@ -279,7 +287,7 @@ export function createClaimsRouter(options: {
   );
   router.post(
     '/:id/remarks',
-    processing,
+    work,
     route(
       { params: ClaimParamsSchema, body: AddClaimRemarkRequestSchema },
       async ({ params, body }, req, res) => {
@@ -289,7 +297,7 @@ export function createClaimsRouter(options: {
   );
   router.put(
     '/:id/assignee',
-    admin,
+    assign,
     route(
       { params: ClaimParamsSchema, body: AssignClaimRequestSchema },
       async ({ params, body }, req, res) => {
@@ -299,7 +307,7 @@ export function createClaimsRouter(options: {
   );
   router.post(
     '/:id/documents',
-    processing,
+    work,
     express.raw({
       type: [...Object.keys(CLAIM_DOCUMENT_TYPES), 'application/octet-stream'],
       limit: MAX_CLAIM_DOCUMENT_BYTES,
@@ -321,7 +329,7 @@ export function createClaimsRouter(options: {
   );
   router.get(
     '/:id/documents/:fileId',
-    view,
+    documents,
     route(
       { params: ClaimFileParamsSchema, query: DocumentQuerySchema },
       async ({ params, query }, req, res) => {
@@ -335,7 +343,7 @@ export function createClaimsRouter(options: {
   );
   router.post(
     '/:id/notifications/:notificationId/retry',
-    processing,
+    retry,
     route({ params: ClaimNotificationParamsSchema }, async ({ params }, req, res) => {
       res.json(
         await retryClaimNotification(
@@ -377,7 +385,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims',
     summary: 'Create a claim (lands in Form)',
-    permission: 'claims.process',
+    permission: 'claims.create',
     body: CreateClaimRequestSchema,
     response: ClaimDetailSchema,
     status: 201,
@@ -386,7 +394,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims/policies',
     summary: 'Placed group health policies claims can be made on',
-    permission: 'claims.process',
+    permission: 'claims.create',
     query: ClaimPolicyQuerySchema,
     response: ClaimPolicyListResponseSchema,
   },
@@ -394,7 +402,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims/policies/{caseId}/employees',
     summary: 'Employees insured under a policy',
-    permission: 'claims.process',
+    permission: 'claims.create',
     query: ClaimEmployeeQuerySchema,
     response: ClaimMemberListResponseSchema,
   },
@@ -402,14 +410,14 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims/policies/{caseId}/employees/{memberId}/family',
     summary: 'An employee and their covered family: the possible patients',
-    permission: 'claims.process',
+    permission: 'claims.create',
     response: ClaimMemberListResponseSchema,
   },
   {
     method: 'get',
     path: '/api/v1/claims/links',
     summary: 'Employee submission links',
-    permission: 'claims.process',
+    permission: 'claims.links',
     query: ClaimLinkListQuerySchema,
     response: ClaimLinkListResponseSchema,
   },
@@ -417,7 +425,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/links',
     summary: 'Create an employee submission link (its token is shown once)',
-    permission: 'claims.process',
+    permission: 'claims.links',
     body: CreateClaimLinkRequestSchema,
     response: CreateClaimLinkResponseSchema,
     status: 201,
@@ -426,21 +434,21 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/links/{linkId}/revoke',
     summary: 'Revoke a submission link',
-    permission: 'claims.process',
+    permission: 'claims.links',
     response: ClaimLinkSchema,
   },
   {
     method: 'get',
     path: '/api/v1/claims/email-templates',
     summary: 'Claim email templates',
-    permission: 'claims.admin',
+    permission: 'claims.settings',
     response: ClaimEmailTemplateListResponseSchema,
   },
   {
     method: 'put',
     path: '/api/v1/claims/email-templates/{status}/{audience}',
     summary: 'Edit a claim email template',
-    permission: 'claims.admin',
+    permission: 'claims.settings',
     body: UpdateClaimEmailTemplateRequestSchema,
     response: ClaimEmailTemplateSchema,
   },
@@ -455,7 +463,7 @@ for (const item of [
     method: 'put',
     path: '/api/v1/claims/hr-contacts/{clientId}',
     summary: 'Set a company’s HR contact for claim emails',
-    permission: 'claims.admin',
+    permission: 'claims.settings',
     body: SetClaimHrContactRequestSchema,
     response: ClaimHrContactSchema,
   },
@@ -470,7 +478,7 @@ for (const item of [
     method: 'put',
     path: '/api/v1/claims/{id}',
     summary: 'Correct a claim’s details (assigned staff or Admin)',
-    permission: 'claims.process',
+    permission: 'claims.process (assigned) or claims.manage_all',
     body: UpdateClaimRequestSchema,
     response: ClaimDetailSchema,
   },
@@ -478,7 +486,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/{id}/transitions',
     summary: 'Move a claim with a remark; emails the claimant and HR',
-    permission: 'claims.process',
+    permission: 'claims.process (assigned) or claims.manage_all',
     body: TransitionClaimRequestSchema,
     response: TransitionClaimResponseSchema,
   },
@@ -486,7 +494,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/{id}/remarks',
     summary: 'Add a remark',
-    permission: 'claims.process',
+    permission: 'claims.process (assigned) or claims.manage_all',
     body: AddClaimRemarkRequestSchema,
     response: ClaimDetailSchema,
     status: 201,
@@ -495,7 +503,7 @@ for (const item of [
     method: 'put',
     path: '/api/v1/claims/{id}/assignee',
     summary: 'Assign a claim to claims staff',
-    permission: 'claims.admin',
+    permission: 'claims.assign',
     body: AssignClaimRequestSchema,
     response: ClaimDetailSchema,
   },
@@ -503,7 +511,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/{id}/documents',
     summary: 'Upload a supporting document (PDF, PNG or JPEG)',
-    permission: 'claims.process',
+    permission: 'claims.process (assigned) or claims.manage_all',
     query: ClaimDocumentUploadQuerySchema,
     response: ClaimDocumentSchema,
     status: 201,
@@ -513,7 +521,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims/{id}/documents/{fileId}',
     summary: 'View or download a document',
-    permission: 'claims.view',
+    permission: 'claims.view_documents',
     query: DocumentQuerySchema,
     file: true,
   },
@@ -521,7 +529,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims/{id}/notifications/{notificationId}/retry',
     summary: 'Retry a failed claim email',
-    permission: 'claims.process',
+    permission: 'claims.retry_notifications',
     response: ClaimNotificationSchema,
   },
 ] as const) {

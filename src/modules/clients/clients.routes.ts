@@ -39,7 +39,8 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
   const view = requirePermission('clients.view');
-  const manage = requirePermission('clients.manage');
+  const create = requirePermission('clients.create');
+  const update = requirePermission('clients.update');
 
   router.get(
     '/',
@@ -51,7 +52,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/',
-    manage,
+    create,
     route({ body: CreateClientRequestSchema }, async ({ body }, req, res) => {
       res.status(201).json(await createClient(body, actorOf(req)));
     }),
@@ -67,7 +68,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
 
   router.patch(
     '/:id',
-    manage,
+    update,
     route(
       { params: ClientIdParamsSchema, body: UpdateClientRequestSchema },
       async ({ params, body }, req, res) => {
@@ -89,7 +90,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/:id/locations',
-    manage,
+    update,
     route(
       { params: ClientIdParamsSchema, body: CreateClientLocationRequestSchema },
       async ({ params, body }, req, res) => {
@@ -100,7 +101,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
 
   router.patch(
     '/:id/locations/:locationId',
-    manage,
+    update,
     route(
       { params: ClientLocationParamsSchema, body: UpdateClientLocationRequestSchema },
       async ({ params, body }, req, res) => {
@@ -112,7 +113,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
   // Favourite add-ons (C-4) are picked while working a case, so they follow the proposal rights.
   router.get(
     '/:id/addon-favourites',
-    requirePermission('proposals.view'),
+    requirePermission('property.view'),
     route({ params: ClientIdParamsSchema }, async ({ params }, _req, res) => {
       res.json(await getAddonFavourites(params.id));
     }),
@@ -120,7 +121,7 @@ export function createClientsRouter(options: { jwtSecret: string }): Router {
 
   router.put(
     '/:id/addon-favourites',
-    requirePermission('proposals.edit'),
+    requirePermission('property.edit'),
     route(
       { params: ClientIdParamsSchema, body: SetAddonFavouritesRequestSchema },
       async ({ params, body }, req, res) => {
@@ -156,7 +157,7 @@ documentRoute({
   tags: ['Clients'],
   summary: 'Create a client',
   description:
-    'Needs clients.manage. The GSTIN is checked for format, state code and check digit, and ' +
+    'Needs clients.create. The GSTIN is checked for format, state code and check digit, and ' +
     'must not belong to another client (409 GSTIN_TAKEN). The occupancy code must be in the ' +
     'active occupancy master. Audited with every new value.',
   request: { body: { content: { 'application/json': { schema: CreateClientRequestSchema } } } },
@@ -191,7 +192,7 @@ documentRoute({
   tags: ['Clients'],
   summary: 'Edit a client',
   description:
-    'Needs clients.manage. Only the fields sent change; contacts are replaced as a whole. ' +
+    'Needs clients.update. Only the fields sent change; contacts are replaced as a whole. ' +
     'Audited with before and after values.',
   request: {
     params: ClientIdParamsSchema,
@@ -228,7 +229,7 @@ documentRoute({
   tags: ['Clients'],
   summary: 'Add a risk location',
   description:
-    'Needs clients.manage. A client can have any number of locations. The pincode must be in ' +
+    'Needs clients.update. A client can have any number of locations. The pincode must be in ' +
     'the active pincode master, which supplies the state, district and EQ zone. Leave ' +
     "occupancyCode null when the location has the client's occupancy. Audited.",
   request: {
@@ -250,7 +251,7 @@ documentRoute({
   tags: ['Clients'],
   summary: 'Edit a risk location',
   description:
-    'Needs clients.manage. Only the fields sent change; a new pincode is looked up again. ' +
+    'Needs clients.update. Only the fields sent change; a new pincode is looked up again. ' +
     'Audited with before and after values.',
   request: {
     params: ClientLocationParamsSchema,
@@ -271,7 +272,7 @@ documentRoute({
   tags: ['Clients'],
   summary: "List a client's favourite add-ons",
   description:
-    'Needs proposals.view. The add-on covers the add-on picker lists first for the client.',
+    'Needs property.view. The add-on covers the add-on picker lists first for the client.',
   request: { params: ClientIdParamsSchema },
   responses: {
     200: {
@@ -288,7 +289,7 @@ documentRoute({
   tags: ['Clients'],
   summary: "Replace a client's favourite add-ons",
   description:
-    'Needs proposals.edit. The whole list is replaced. Audited (ADDON_FAVOURITES_UPDATED) with ' +
+    'Needs property.edit. The whole list is replaced. Audited (ADDON_FAVOURITES_UPDATED) with ' +
     'the list before and after.',
   request: {
     params: ClientIdParamsSchema,

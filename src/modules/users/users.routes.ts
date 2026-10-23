@@ -6,38 +6,57 @@ import {
   UserListResponseSchema,
   UserSchema,
 } from '../../shared/index.ts';
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
+import {
+  assertPermission,
+  currentUser,
+  requireAnyPermission,
+  requirePermission,
+} from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
-import { createUser, listUsers, updateUser } from './users.service.ts';
+import { createUser, listUsers, updateUser, type UserActor } from './users.service.ts';
+
+function actorOf(req: Request): UserActor {
+  const user = currentUser(req);
+  return { id: user.id, permissions: user.permissions, requestId: req.requestId };
+}
 
 export function createUsersRouter(options: { jwtSecret: string }): Router {
   const router = Router();
-  router.use(authenticate(options), requirePermission('users.manage'));
+  router.use(authenticate(options));
 
   router.get(
     '/',
+    requirePermission('users.view'),
     route({ query: UserListQuerySchema }, async ({ query }, _req, res) => {
       res.json(await listUsers(query));
     }),
   );
 
+  // A new user always gets roles, so creating also needs users.assign_roles.
   router.post(
     '/',
+    requirePermission('users.create'),
+    requirePermission('users.assign_roles'),
     route({ body: CreateUserRequestSchema }, async ({ body }, req, res) => {
-      const user = await createUser(body, { id: currentUser(req).id, requestId: req.requestId });
-      res.status(201).json(user);
+      res.status(201).json(await createUser(body, actorOf(req)));
     }),
   );
 
+  // Each field needs its own permission: name users.update, roles users.assign_roles, active
+  // users.deactivate.
   router.patch(
     '/:id',
+    requireAnyPermission(['users.update', 'users.assign_roles', 'users.deactivate']),
     route(
       { params: UserIdParamsSchema, body: UpdateUserRequestSchema },
       async ({ params, body }, req, res) => {
-        res.json(await updateUser(params.id, body, currentUser(req), req.requestId));
+        if (body.name !== undefined) assertPermission(req, 'users.update');
+        if (body.roles !== undefined) assertPermission(req, 'users.assign_roles');
+        if (body.active !== undefined) assertPermission(req, 'users.deactivate');
+        res.json(await updateUser(params.id, body, actorOf(req)));
       },
     ),
   );
@@ -50,7 +69,8 @@ documentRoute({
   path: '/api/v1/users',
   tags: ['Users'],
   summary: 'List users',
-  description: 'Needs users.manage (Admin). Cursor pagination: pass nextCursor back as cursor.',
+  description:
+    'Needs users.view. Cursor pagination: pass nextCursor back as cursor. Each user lists role keys and names.',
   request: { query: UserListQuerySchema },
   responses: {
     200: {
@@ -67,7 +87,7 @@ documentRoute({
   tags: ['Users'],
   summary: 'Create a user',
   description:
-    'Needs users.manage (Admin). Passwords need at least 12 characters. Audited with every new value.',
+    'Needs users.create and users.assign_roles. Roles are role keys; each must exist and be active, and together they may grant only permissions you hold (403 PERMISSION_ESCALATION). Passwords need at least 12 characters. Audited with every new value.',
   request: { body: { content: { 'application/json': { schema: CreateUserRequestSchema } } } },
   responses: {
     201: {
@@ -84,9 +104,7 @@ documentRoute({
   tags: ['Users'],
   summary: "Change a user's name or roles, or deactivate them",
   description:
-    'Needs users.manage (Admin). You cannot deactivate yourself or remove your own Admin role. ' +
-    "Deactivation and role changes take effect on the user's next request. Audited with before " +
-    'and after values.',
+    'Needs users.update for the name, users.assign_roles for roles, users.deactivate for active. You cannot deactivate yourself or remove your own Administrator role; you can only manage users whose access is within yours; at least one active user keeps the Administrator role (409 LAST_ADMIN). Changes take effect on the user’s next request. Audited with before and after values.',
   request: {
     params: UserIdParamsSchema,
     body: { content: { 'application/json': { schema: UpdateUserRequestSchema } } },

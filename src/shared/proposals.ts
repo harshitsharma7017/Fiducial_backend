@@ -882,6 +882,12 @@ export type ExistingPolicyLookup = z.infer<typeof ExistingPolicyLookupSchema>;
 export const LastPolicyQuerySchema = z.strictObject({ clientId: ObjectIdSchema });
 
 /** Staff a case can be assigned to: active users who may edit proposals. */
+/** GET /proposals/owners: owners for a case of this line of business (they must be able to edit it). */
+export const ProposalOwnersQuerySchema = z.strictObject({
+  product: z.enum(['PROPERTY', 'GMC', 'GPA', 'GTLI']).default('PROPERTY'),
+});
+export type ProposalOwnersQuery = z.output<typeof ProposalOwnersQuerySchema>;
+
 export const ProposalOwnersResponseSchema = z.object({
   items: z.array(z.object({ id: ObjectIdSchema, name: z.string(), email: z.string() })),
 });

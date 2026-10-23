@@ -30,14 +30,14 @@ import {
   updateDraftVersion,
 } from './family-plans.service.ts';
 
-// The Family Plan Master (N2) under /api/v1/family-plans: reading needs masters.view, every
-// change masters.manage (Requirement 24.1). There is no delete route (12.10).
+// The Family Plan Master (N2) under /api/v1/family-plans: reading needs family_plans.view, every
+// change family_plans.manage (Requirement 24.1). There is no delete route (12.10).
 
 export function createFamilyPlansRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('masters.view');
-  const manage = requirePermission('masters.manage');
+  const view = requirePermission('family_plans.view');
+  const manage = requirePermission('family_plans.manage');
 
   router.get(
     '/',
@@ -147,7 +147,7 @@ for (const item of [
     method: 'get',
     path: base,
     summary: 'List family plans by product',
-    permission: 'masters.view',
+    permission: 'family_plans.view',
     query: FamilyPlanListQuerySchema,
     response: FamilyPlanListResponseSchema,
   },
@@ -155,7 +155,7 @@ for (const item of [
     method: 'post',
     path: base,
     summary: 'Create a family plan with its first (Draft) version',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     body: CreateFamilyPlanRequestSchema,
     response: FamilyPlanSchema,
     status: 201,
@@ -164,14 +164,14 @@ for (const item of [
     method: 'get',
     path: plan,
     summary: 'A family plan with every version',
-    permission: 'masters.view',
+    permission: 'family_plans.view',
     response: FamilyPlanSchema,
   },
   {
     method: 'put',
     path: plan,
     summary: 'Rename a family plan (code and product never change)',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     body: RenameFamilyPlanRequestSchema,
     response: FamilyPlanSchema,
   },
@@ -179,28 +179,28 @@ for (const item of [
     method: 'post',
     path: `${plan}/activate`,
     summary: 'Activate a plan',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     response: FamilyPlanSchema,
   },
   {
     method: 'post',
     path: `${plan}/deactivate`,
     summary: 'Deactivate a plan (assignments stay)',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     response: FamilyPlanSchema,
   },
   {
     method: 'get',
     path: `${plan}/open-cases`,
     summary: 'Open cases that use the plan',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     response: FamilyPlanOpenCasesResponseSchema,
   },
   {
     method: 'post',
     path: `${plan}/versions`,
     summary: 'Create a Draft version',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     body: PlanVersionInputSchema,
     response: FamilyPlanSchema,
     status: 201,
@@ -209,7 +209,7 @@ for (const item of [
     method: 'put',
     path: `${plan}/versions/{number}`,
     summary: 'Edit a Draft version',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     body: PlanVersionInputSchema,
     response: FamilyPlanSchema,
   },
@@ -217,14 +217,14 @@ for (const item of [
     method: 'post',
     path: `${plan}/versions/{number}/activate`,
     summary: 'Activate a Draft version',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     response: FamilyPlanSchema,
   },
   {
     method: 'put',
     path: `${plan}/versions/{number}/effective-to`,
     summary: 'Set an Active version’s end date (once)',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     body: SetPlanVersionEndRequestSchema,
     response: FamilyPlanSchema,
   },
@@ -232,7 +232,7 @@ for (const item of [
     method: 'post',
     path: `${plan}/versions/{number}/confirm`,
     summary: 'Record the client’s confirmation of a version',
-    permission: 'masters.manage',
+    permission: 'family_plans.manage',
     response: FamilyPlanSchema,
   },
 ] as const) {

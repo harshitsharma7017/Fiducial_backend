@@ -27,12 +27,15 @@ import {
   TpaInspectResponseSchema,
   TpaUploadQuerySchema,
   XLSX_CONTENT_TYPE,
-  can,
 } from '../../shared/index.ts';
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser, requireClaimPermission } from '../../middleware/require-permission.ts';
+import {
+  currentUser,
+  requireClaimPermission,
+  userCan,
+} from '../../middleware/require-permission.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { claimImportSettings, setClaimImportSettings } from './tpa-board.service.ts';
@@ -66,16 +69,17 @@ import {
 } from './tpa-import.service.ts';
 import { MAX_TPA_FILE_BYTES } from './tpa-workbook.ts';
 
-// TPA claims (N9) under /api/v1/tpa. Formats are administered with claims.admin; files are
-// checked and imported with claims.process; imported claims are read with claims.view.
-// Diagnosis details (diagnosis, ICD code, rejection reason) go only to claims.process.
+// TPA claims (N9) under /api/v1/tpa. Formats and settings are administered with
+// claims.tpa_manage; files are checked, imported, reviewed and linked with claims.tpa_import;
+// imported claims are read with claims.view. Diagnosis details (diagnosis, ICD code, rejection
+// reason) go only to claims.view_diagnosis, full bank accounts to claims.view_bank.
 
 /** Whether the signed-in user may see diagnosis details (decided on the server, every call). */
-export const diagnosisVisibleTo = (req: Request) => can(currentUser(req).roles, 'claims.process');
-/** What the signed-in user may see of claim data (N12): diagnosis (claims.process), bank (claims.admin). */
+export const diagnosisVisibleTo = (req: Request) => userCan(req, 'claims.view_diagnosis');
+/** What the signed-in user may see of claim data (N12): diagnosis and full bank accounts. */
 export const claimAccessOf = (req: Request): ClaimAccess => ({
   diagnosis: diagnosisVisibleTo(req),
-  bank: can(currentUser(req).roles, 'claims.admin'),
+  bank: userCan(req, 'claims.view_bank'),
 });
 
 const xlsxBody = express.raw({
@@ -110,8 +114,8 @@ export function createTpaRouter(options: {
   router.use(authenticate(options));
   // N12: refused requests for claim data are audited.
   const view = requireClaimPermission('claims.view');
-  const process = requireClaimPermission('claims.process');
-  const admin = requireClaimPermission('claims.admin');
+  const process = requireClaimPermission('claims.tpa_import');
+  const admin = requireClaimPermission('claims.tpa_manage');
 
   // N11: whether TPA imports email (off until the client approves).
   router.get(
@@ -339,14 +343,14 @@ for (const item of [
     method: 'get',
     path: `${base}/settings`,
     summary: 'Whether TPA imports email (N11)',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     response: ClaimImportSettingsResponseSchema,
   },
   {
     method: 'put',
     path: `${base}/settings`,
     summary: 'Set whether TPA imports email (N11)',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     body: ClaimImportSettingsSchema,
     response: ClaimImportSettingsResponseSchema,
   },
@@ -362,14 +366,14 @@ for (const item of [
     method: 'get',
     path: `${base}/formats`,
     summary: 'TPA formats',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     response: TpaFormatListResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/formats`,
     summary: 'Create a TPA format',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     body: TpaFormatInputSchema,
     response: TpaFormatSchema,
     status: 201,
@@ -378,14 +382,14 @@ for (const item of [
     method: 'get',
     path: `${base}/formats/{formatId}`,
     summary: 'A TPA format',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     response: TpaFormatSchema,
   },
   {
     method: 'put',
     path: `${base}/formats/{formatId}`,
     summary: 'Edit a TPA format (its revision rises)',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     body: TpaFormatInputSchema,
     response: TpaFormatSchema,
   },
@@ -393,21 +397,21 @@ for (const item of [
     method: 'post',
     path: `${base}/formats/{formatId}/activate`,
     summary: 'Activate a TPA format',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     response: TpaFormatSchema,
   },
   {
     method: 'post',
     path: `${base}/formats/{formatId}/deactivate`,
     summary: 'Deactivate a TPA format',
-    permission: 'claims.admin',
+    permission: 'claims.tpa_manage',
     response: TpaFormatSchema,
   },
   {
     method: 'post',
     path: `${base}/inspect`,
     summary: 'Headers and sample rows of a file against a format',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     query: TpaInspectQuerySchema,
     upload: XLSX_CONTENT_TYPE,
     response: TpaInspectResponseSchema,
@@ -416,7 +420,7 @@ for (const item of [
     method: 'get',
     path: `${base}/imports`,
     summary: 'A policy’s TPA imports',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     query: TpaImportListQuerySchema,
     response: TpaImportListResponseSchema,
   },
@@ -424,7 +428,7 @@ for (const item of [
     method: 'post',
     path: `${base}/imports`,
     summary: 'Upload a TPA export and check every row',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     query: TpaUploadQuerySchema,
     upload: XLSX_CONTENT_TYPE,
     response: TpaImportSchema,
@@ -434,14 +438,14 @@ for (const item of [
     method: 'get',
     path: `${base}/imports/{importId}`,
     summary: 'A TPA import',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     response: TpaImportSchema,
   },
   {
     method: 'get',
     path: `${base}/imports/{importId}/rows`,
     summary: 'An import’s rows with their problems',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     query: TpaImportRowsQuerySchema,
     response: TpaImportRowsResponseSchema,
   },
@@ -449,14 +453,14 @@ for (const item of [
     method: 'get',
     path: `${base}/imports/{importId}/error-report`,
     summary: 'The rows with problems as Excel',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     file: true,
   },
   {
     method: 'post',
     path: `${base}/imports/{importId}/commit`,
     summary: 'Import the checked rows by a policy',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     body: CommitTpaImportRequestSchema,
     response: TpaImportSchema,
   },
@@ -464,7 +468,7 @@ for (const item of [
     method: 'post',
     path: `${base}/imports/{importId}/discard`,
     summary: 'Discard a checked file',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     response: TpaImportSchema,
   },
   {
@@ -493,7 +497,7 @@ for (const item of [
     method: 'put',
     path: `${base}/claims/{claimId}/link`,
     summary: 'Link a TPA claim by hand, or set its review note',
-    permission: 'claims.process',
+    permission: 'claims.tpa_import',
     body: LinkTpaClaimRequestSchema,
     response: TpaClaimRecordSchema,
   },

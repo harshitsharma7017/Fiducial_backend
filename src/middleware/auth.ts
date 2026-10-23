@@ -1,20 +1,25 @@
-import type { Role } from '../shared/index.ts';
+import type { Permission } from '../shared/index.ts';
 import type { RequestHandler } from 'express';
 import { Types } from 'mongoose';
 import { unauthenticated } from '../lib/errors.ts';
 import { verifyAccessToken } from '../modules/auth/token.ts';
+import { resolvePermissions } from '../modules/roles/roles.service.ts';
 import { UserModel } from '../modules/users/user.model.ts';
 
 export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
-  roles: Role[];
+  /** Role keys as stored on the user (snapshotted on timelines). */
+  roles: string[];
+  /** The permissions of the user's active roles, resolved for this request. */
+  permissions: ReadonlySet<Permission>;
 }
 
 /**
- * Requires a valid "Authorization: Bearer <JWT>" header. The user is re-read on every request
- * so deactivation and role changes take effect immediately, not when the token expires.
+ * Requires a valid "Authorization: Bearer <JWT>" header. The user and their roles are re-read on
+ * every request, so deactivation and role or permission changes take effect on the next request,
+ * not when the token expires. The token carries only the user id.
  */
 export function authenticate(options: { jwtSecret: string }): RequestHandler {
   return async (req, _res, next) => {
@@ -39,7 +44,8 @@ export function authenticate(options: { jwtSecret: string }): RequestHandler {
       id: user._id.toHexString(),
       email: user.email,
       name: user.name,
-      roles: user.roles,
+      roles: [...user.roles],
+      permissions: await resolvePermissions(user.roles),
     };
     next();
   };

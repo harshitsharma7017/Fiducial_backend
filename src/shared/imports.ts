@@ -75,7 +75,7 @@ export const IMPORT_SHEETS: Record<ImportEntity, ImportSheet> = {
     label: 'Clients',
     sheetName: 'Clients',
     description: 'The insured: name, GSTIN, communication address, business, occupancy, contacts.',
-    permission: 'clients.manage',
+    permission: 'clients.import',
     columns: [
       { key: 'name', header: 'Insured name', required: true, note: 'As on the Data Sheet.' },
       {
@@ -113,7 +113,7 @@ export const IMPORT_SHEETS: Record<ImportEntity, ImportSheet> = {
     label: 'Risk locations',
     sheetName: 'Risk locations',
     description: 'Sites of existing clients. Import the clients first.',
-    permission: 'clients.manage',
+    permission: 'clients.import',
     columns: [
       {
         key: 'clientGstin',
@@ -154,7 +154,7 @@ export const IMPORT_SHEETS: Record<ImportEntity, ImportSheet> = {
     label: 'Insurers',
     sheetName: 'Insurers',
     description: 'Insurer branches with the email addresses RFQs are sent to.',
-    permission: 'masters.manage',
+    permission: 'insurers.import',
     columns: [
       { key: 'company', header: 'Insurance company', required: true, note: '' },
       {

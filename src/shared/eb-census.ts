@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MemberPrivateFieldSchema } from './masking.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { EbProductSchema, type EbProduct } from './eb-products.ts';
 import {
@@ -523,7 +524,8 @@ export const EbMemberSchema = z.object({
   employeeId: z.string(),
   name: z.string(),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']),
-  dateOfBirth: z.iso.date(),
+  /** Null when withheld (see `hidden`). */
+  dateOfBirth: z.iso.date().nullable(),
   relationship: GhiRelationshipSchema,
   dateOfJoining: z.iso.date().nullable(),
   sumInsured: z.string().nullable(),
@@ -545,6 +547,8 @@ export const EbMemberSchema = z.object({
   source: z.enum(['MANUAL', 'IMPORT']),
   employeeIdentityId: ObjectIdSchema.nullable(),
   updatedAt: IsoDateTimeSchema,
+  /** Fields withheld from this user (no permission to see them). */
+  hidden: z.array(MemberPrivateFieldSchema).optional(),
 });
 export type EbMember = z.infer<typeof EbMemberSchema>;
 

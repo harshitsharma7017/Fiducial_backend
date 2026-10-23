@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MemberPrivateFieldSchema } from './masking.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { SearchTextSchema } from './clients.ts';
 import { GhiRupeesSchema } from './ghi.ts';
@@ -102,7 +103,8 @@ export const GhiMemberSchema = z.object({
   employeeId: z.string(),
   name: z.string(),
   gender: GhiGenderSchema,
-  dateOfBirth: z.iso.date(),
+  /** Null when withheld (see `hidden`). */
+  dateOfBirth: z.iso.date().nullable(),
   relationship: GhiRelationshipSchema,
   dateOfJoining: z.iso.date().nullable(),
   /** As entered: a family floater's dependants may leave it blank (they share the employee's). */
@@ -111,6 +113,8 @@ export const GhiMemberSchema = z.object({
   age: z.number().int(),
   source: z.enum(['MANUAL', 'IMPORT']),
   updatedAt: IsoDateTimeSchema,
+  /** Fields withheld from this user (no permission to see them). */
+  hidden: z.array(MemberPrivateFieldSchema).optional(),
 });
 export type GhiMember = z.infer<typeof GhiMemberSchema>;
 

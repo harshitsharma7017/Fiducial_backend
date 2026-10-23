@@ -22,6 +22,7 @@ import { templateFile } from '../documents/templates.service.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
 import { RfqStateModel, RfqVersionModel } from '../rfq/rfq.model.ts';
 import { rfqAttributionOf, rfqAttributionUserIds } from '../rfq/rfq-approval.ts';
+import { roleNameMap } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import { fillRfqTemplate } from './rfq-template.ts';
 import { buildRfqWorkbookDocument, type RfqMasters } from './rfq-workbook.ts';
@@ -174,9 +175,13 @@ export async function rfqAttributionFor(
   version: Parameters<typeof rfqAttributionOf>[0],
 ): Promise<RfqAttribution> {
   const ids = rfqAttributionUserIds(version);
-  const users = await UserModel.find({ _id: { $in: ids } }, { name: 1, roles: 1 }).lean();
+  const [users, roleNames] = await Promise.all([
+    UserModel.find({ _id: { $in: ids } }, { name: 1, roles: 1 }).lean(),
+    roleNameMap(),
+  ]);
   return rfqAttributionOf(
     version,
     new Map(users.map((user) => [user._id.toHexString(), { name: user.name, roles: user.roles }])),
+    roleNames,
   );
 }

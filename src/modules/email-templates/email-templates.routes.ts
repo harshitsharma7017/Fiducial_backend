@@ -13,20 +13,23 @@ import { listEmailTemplates, updateEmailTemplate } from './email-templates.servi
 
 /**
  * The wording of the RFQ and reminder mails (E-2): every role that sees the masters reads them
- * (masters.view); Admins edit them (masters.manage).
+ * (email_templates.view); Admins edit them (email_templates.manage).
  */
 export function createEmailTemplatesRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  router.use(requirePermission('masters.view'));
+  router.use(requirePermission('email_templates.view'));
 
-  router.get('/', async (_req, res) => {
-    res.json(await listEmailTemplates());
-  });
+  router.get(
+    '/',
+    route({}, async (_input, _req, res) => {
+      res.json(await listEmailTemplates());
+    }),
+  );
 
   router.put(
     '/:kind',
-    requirePermission('masters.manage'),
+    requirePermission('email_templates.manage'),
     route(
       { params: EmailTemplateKindParamsSchema, body: UpdateEmailTemplateRequestSchema },
       async ({ params, body }, req, res) => {
@@ -49,7 +52,7 @@ documentRoute({
   tags: ['Email templates'],
   summary: 'List the email templates',
   description:
-    'Needs masters.view. The RFQ and Reminder templates, each with its subject, body, version and who last changed it. Missing kinds are created with the default wording.',
+    'Needs email_templates.view. The RFQ and Reminder templates, each with its subject, body, version and who last changed it. Missing kinds are created with the default wording.',
   responses: {
     200: {
       description: 'The templates',
@@ -65,7 +68,7 @@ documentRoute({
   tags: ['Email templates'],
   summary: 'Save an email template',
   description:
-    'Needs masters.manage. Merge fields are written {{fieldName}}; an unknown field or a stray {{ or }} is a 400 naming it. expectedVersion is the version being edited: when someone saved a newer one, 409 TEMPLATE_VERSION_CONFLICT carries details.currentVersion. Audited with the old and new wording.',
+    'Needs email_templates.manage. Merge fields are written {{fieldName}}; an unknown field or a stray {{ or }} is a 400 naming it. expectedVersion is the version being edited: when someone saved a newer one, 409 TEMPLATE_VERSION_CONFLICT carries details.currentVersion. Audited with the old and new wording.',
   request: {
     params: EmailTemplateKindParamsSchema,
     body: { content: { 'application/json': { schema: UpdateEmailTemplateRequestSchema } } },

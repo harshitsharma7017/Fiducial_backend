@@ -63,11 +63,13 @@ import {
   XLSX_CONTENT_TYPE,
   EB_PRODUCT_SLUGS,
   type EbRoutedProduct,
+  casePermission,
 } from '../../shared/index.ts';
 import express, { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middleware/auth.ts';
 import { requirePermission } from '../../middleware/require-permission.ts';
+import { ebRawCensus, hiddenFields, redactEbMember } from './member-redaction.ts';
 import { route } from '../../middleware/validate.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { getEbCase, saveEbRequirements, toEbCaseRecord } from './eb-cases.service.ts';
@@ -132,9 +134,10 @@ import { scopeOf } from './products/profile.ts';
 
 // The GPA and GTLI routers (N1, design D2), one per product from this factory, mounted at
 // /api/v1/eb/gpa and /api/v1/eb/gtli. Every route loads cases of its own product only (a case of
-// another product is not found, 2.9) and checks one permission (24.1): viewing proposals.view,
-// changes proposals.edit, approvals proposals.approve, mails proposals.send, downloads
-// proposals.export (templates and error reports proposals.view).
+// another product is not found, 2.9) and checks the product's permissions (24.1): viewing
+// <product>.view, changes <product>.edit, approvals <product>.approve, mails <product>.send,
+// downloads <product>.export. Raw census rows also need the employees.view_* permissions and the
+// error report census.export (member-redaction.ts).
 
 export function createEbProductRouter(
   product: EbRoutedProduct,
@@ -144,11 +147,13 @@ export function createEbProductRouter(
   const transport = options.mailTransport;
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('proposals.view');
-  const edit = requirePermission('proposals.edit');
-  const approve = requirePermission('proposals.approve');
-  const send = requirePermission('proposals.send');
-  const exportFile = requirePermission('proposals.export');
+  const view = requirePermission(casePermission(product, 'view'));
+  const edit = requirePermission(casePermission(product, 'edit'));
+  const approve = requirePermission(casePermission(product, 'approve'));
+  const send = requirePermission(casePermission(product, 'send'));
+  const exportFile = requirePermission(casePermission(product, 'export'));
+  const rawCensus = ebRawCensus();
+  const censusExport = requirePermission('census.export');
   const P = EbCaseParamsSchema;
   const record = async (id: string) => toEbCaseRecord(await loadCase(id, undefined, scope));
   const requirementsSchema =
@@ -221,13 +226,16 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/members',
     view,
-    route({ params: P, query: GhiMemberListQuerySchema }, async ({ params, query }, _req, res) => {
-      res.json(await listEbMembers(scope, params.id, query));
+    route({ params: P, query: GhiMemberListQuerySchema }, async ({ params, query }, req, res) => {
+      const list = await listEbMembers(scope, params.id, query);
+      const hidden = hiddenFields(req);
+      res.json({ ...list, items: list.items.map((member) => redactEbMember(member, hidden)) });
     }),
   );
   router.post(
     '/cases/:id/members',
     edit,
+    ...rawCensus,
     route({ params: P, body: EbMemberInputSchema }, async ({ params, body }, req, res) => {
       res.status(201).json(await addEbMember(scope, params.id, body, actorOf(req)));
     }),
@@ -235,6 +243,7 @@ export function createEbProductRouter(
   router.put(
     '/cases/:id/members/:memberId',
     edit,
+    ...rawCensus,
     route(
       { params: GhiMemberParamsSchema, body: EbMemberInputSchema },
       async ({ params, body }, req, res) => {
@@ -260,8 +269,16 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/census/issues',
     view,
-    route({ params: P }, async ({ params }, _req, res) => {
-      res.json(await ebCensusIssues(await loadCase(params.id, undefined, scope)));
+    route({ params: P }, async ({ params }, req, res) => {
+      const result = await ebCensusIssues(await loadCase(params.id, undefined, scope));
+      const hidden = hiddenFields(req);
+      res.json({
+        ...result,
+        items: result.items.map((item) => ({
+          ...item,
+          member: redactEbMember(item.member, hidden),
+        })),
+      });
     }),
   );
   router.get(
@@ -274,6 +291,7 @@ export function createEbProductRouter(
   router.post(
     '/cases/:id/census/imports',
     edit,
+    ...rawCensus,
     express.raw({
       type: [XLSX_CONTENT_TYPE, 'application/octet-stream'],
       limit: MAX_GHI_CENSUS_BYTES + 1024 * 1024,
@@ -294,6 +312,7 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/census/imports/:importId',
     view,
+    ...rawCensus,
     route(
       { params: GhiImportParamsSchema, query: EbImportPreviewQuerySchema },
       async ({ params, query }, _req, res) => {
@@ -304,6 +323,7 @@ export function createEbProductRouter(
   router.put(
     '/cases/:id/census/imports/:importId/rows/:row',
     edit,
+    ...rawCensus,
     route(
       { params: GhiImportRowParamsSchema, body: CorrectEbImportRowRequestSchema },
       async ({ params, body }, req, res) => {
@@ -324,6 +344,7 @@ export function createEbProductRouter(
   router.post(
     '/cases/:id/census/imports/:importId/commit',
     edit,
+    ...rawCensus,
     route(
       { params: GhiImportParamsSchema, body: CommitEbImportRequestSchema },
       async ({ params, body }, req, res) => {
@@ -341,6 +362,7 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/census/imports/:importId/error-report',
     view,
+    censusExport,
     route(
       { params: GhiImportParamsSchema, query: EbImportPreviewQuerySchema },
       async ({ params, query }, req, res) => {
@@ -434,6 +456,8 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/rfq/document',
     exportFile,
+    // The member annexure carries dates of birth, salaries and nominees.
+    ...rawCensus,
     route({ params: P, query: GhiRfqDocumentQuerySchema }, async ({ params, query }, req, res) => {
       sendFile(res, await rfqFile(params.id, query.format, actorOf(req), query.versionId, scope));
     }),
@@ -597,6 +621,7 @@ export function createEbProductRouter(
   router.get(
     '/cases/:id/placement-slip',
     exportFile,
+    ...rawCensus,
     route({ params: P, query: GhiDocumentQuerySchema }, async ({ params, query }, req, res) => {
       sendFile(res, await ebPlacementSlipFile(scope, params.id, query.format, actorOf(req)));
     }),
@@ -617,8 +642,8 @@ export function createEbProductRouter(
 /** Documents both product routers in the OpenAPI document. */
 function documentProductRoutes(product: EbRoutedProduct): void {
   const base = `/api/v1/eb/${EB_PRODUCT_SLUGS[product]}/cases/{id}`;
-  const v = 'proposals.view';
-  const e = 'proposals.edit';
+  const v = casePermission(product, 'view');
+  const e = casePermission(product, 'edit');
   const items = [
     {
       method: 'get',
@@ -834,7 +859,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'post',
       path: `${base}/rfq/decision`,
       summary: 'Approve or return the RFQ',
-      permission: 'proposals.approve',
+      permission: casePermission(product, 'approve'),
       body: GhiDecisionRequestSchema,
       response: GhiRfqStateSchema,
     },
@@ -842,7 +867,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'get',
       path: `${base}/rfq/document`,
       summary: 'Download an RFQ version',
-      permission: 'proposals.export',
+      permission: casePermission(product, 'export'),
       query: GhiRfqDocumentQuerySchema,
       file: true,
     },
@@ -850,7 +875,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'post',
       path: `${base}/rfq/email`,
       summary: 'Email the approved RFQ to insurers',
-      permission: 'proposals.send',
+      permission: casePermission(product, 'send'),
       body: DispatchGhiRfqRequestSchema,
       response: EbDispatchRfqResponseSchema,
     },
@@ -858,7 +883,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'post',
       path: `${base}/rfq/sent`,
       summary: 'Mark the RFQ as sent outside the app',
-      permission: 'proposals.send',
+      permission: casePermission(product, 'send'),
       body: MarkGhiRfqSentRequestSchema,
       response: EbCaseRecordSchema,
     },
@@ -928,7 +953,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'post',
       path: `${base}/qcrs/{qcrId}/decision`,
       summary: 'Approve or reject the content shown',
-      permission: 'proposals.approve',
+      permission: casePermission(product, 'approve'),
       body: EbQcrDecisionRequestSchema,
       response: EbQcrSchema,
     },
@@ -936,7 +961,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'get',
       path: `${base}/qcrs/{qcrId}/document`,
       summary: 'Download the QCR',
-      permission: 'proposals.export',
+      permission: casePermission(product, 'export'),
       query: GhiDocumentQuerySchema,
       file: true,
     },
@@ -944,7 +969,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'post',
       path: `${base}/qcrs/{qcrId}/email`,
       summary: 'Mail the approved QCR to the company’s contacts',
-      permission: 'proposals.send',
+      permission: casePermission(product, 'send'),
       body: SendEbQcrRequestSchema,
       response: EbQcrSendResponseSchema,
     },
@@ -991,7 +1016,7 @@ function documentProductRoutes(product: EbRoutedProduct): void {
       method: 'get',
       path: `${base}/placement-slip`,
       summary: 'Download the placement slip',
-      permission: 'proposals.export',
+      permission: casePermission(product, 'export'),
       query: GhiDocumentQuerySchema,
       file: true,
     },

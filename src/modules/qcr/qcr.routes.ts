@@ -23,9 +23,9 @@ function actorOf(req: Request) {
 }
 
 /**
- * The QCR of a case (QC-1 to QC-6), under /api/v1/proposals: viewing needs proposals.view, the
- * broker's part proposals.edit, approval proposals.approve, the download proposals.export and the
- * mail to the insured proposals.send.
+ * The QCR of a case (QC-1 to QC-6), under /api/v1/proposals: viewing needs property.view, the
+ * broker's part property.edit, approval property.approve, the download property.export and the
+ * mail to the insured property.send.
  */
 export function createQcrRouter(options: {
   jwtSecret: string;
@@ -38,7 +38,7 @@ export function createQcrRouter(options: {
 
   router.get(
     '/:id/qcr',
-    requirePermission('proposals.view'),
+    requirePermission('property.view'),
     route({ params: ProposalIdParamsSchema }, async ({ params }, _req, res) => {
       res.json(await getQcr(params.id, deps));
     }),
@@ -46,7 +46,7 @@ export function createQcrRouter(options: {
 
   router.put(
     '/:id/qcr',
-    requirePermission('proposals.edit'),
+    requirePermission('property.edit'),
     route(
       { params: ProposalIdParamsSchema, body: SaveQcrRequestSchema },
       async ({ params, body }, req, res) => {
@@ -57,7 +57,7 @@ export function createQcrRouter(options: {
 
   router.post(
     '/:id/qcr/approve',
-    requirePermission('proposals.approve'),
+    requirePermission('property.approve'),
     route(
       { params: ProposalIdParamsSchema, body: ApproveQcrRequestSchema },
       async ({ params, body }, req, res) => {
@@ -68,7 +68,7 @@ export function createQcrRouter(options: {
 
   router.get(
     '/:id/qcr/document',
-    requirePermission('proposals.export'),
+    requirePermission('property.export'),
     route(
       { params: ProposalIdParamsSchema, query: QcrDocumentQuerySchema },
       async ({ params, query }, req, res) => {
@@ -83,7 +83,7 @@ export function createQcrRouter(options: {
 
   router.post(
     '/:id/qcr/email',
-    requirePermission('proposals.send'),
+    requirePermission('property.send'),
     route(
       { params: ProposalIdParamsSchema, body: SendQcrRequestSchema },
       async ({ params, body }, req, res) => {
@@ -104,7 +104,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'The quote comparison of a case',
   description:
-    'Needs proposals.view. Per option, the existing policy and the latest quote of up to five insurers that have not declined (Fire without terrorism where quoted so), net, GST and total, the lowest total marked, and where the insurers differ; the broker’s recommendation, remarks and payment; the approval (current only while nothing changed since); what still stops approval; and the mails to the insured.',
+    'Needs property.view. Per option, the existing policy and the latest quote of up to five insurers that have not declined (Fire without terrorism where quoted so), net, GST and total, the lowest total marked, and where the insurers differ; the broker’s recommendation, remarks and payment; the approval (current only while nothing changed since); what still stops approval; and the mails to the insured.',
   request: { params: ProposalIdParamsSchema },
   responses: {
     200: { description: 'The QCR', ...json(QcrSchema) },
@@ -118,7 +118,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'Save the broker’s recommendation, remarks and payment',
   description:
-    'Needs proposals.edit. Any change voids an approval: the QCR must be approved again. Audited (QCR_SAVED).',
+    'Needs property.edit. Any change voids an approval: the QCR must be approved again. Audited (QCR_SAVED).',
   request: { params: ProposalIdParamsSchema, body: json(SaveQcrRequestSchema) },
   responses: {
     200: { description: 'The QCR', ...json(QcrSchema) },
@@ -132,7 +132,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'Approve the QCR',
   description:
-    'Needs proposals.approve. Approves the QCR whose fingerprint the approver saw: 409 QCR_CHANGED when it changed since, 409 QCR_INCOMPLETE while something is missing (no quote, no recommendation, no payment in favour of). Audited (QCR_APPROVED).',
+    'Needs property.approve. Approves the QCR whose fingerprint the approver saw: 409 QCR_CHANGED when it changed since, 409 QCR_INCOMPLETE while something is missing (no quote, no recommendation, no payment in favour of). Audited (QCR_APPROVED).',
   request: { params: ProposalIdParamsSchema, body: json(ApproveQcrRequestSchema) },
   responses: {
     200: { description: 'The QCR', ...json(QcrSchema) },
@@ -146,7 +146,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'Download the QCR (Excel or PDF)',
   description:
-    'Needs proposals.export. The client’s QCR template filled when uploaded, else the built-in layout; the PDF is A4 with the letterhead. A draft can be downloaded to review; X-Qcr-Status says which. Audited (QCR_DOWNLOADED).',
+    'Needs property.export. The client’s QCR template filled when uploaded, else the built-in layout; the PDF is A4 with the letterhead. A draft can be downloaded to review; X-Qcr-Status says which. Audited (QCR_DOWNLOADED).',
   request: { params: ProposalIdParamsSchema, query: QcrDocumentQuerySchema },
   responses: {
     200: { description: 'The file', content: { 'application/octet-stream': binary } },
@@ -160,7 +160,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'Email the approved QCR to the insured',
   description:
-    'Needs proposals.send. Only an approved QCR, unchanged since approval, is sent (409 QCR_NOT_APPROVED otherwise; 409 MAIL_DISABLED when mail is off). One mail to the chosen addresses with the QCR attached, from the QCR email template; logged in the case’s mail log and audited. Repeating a sendId never mails twice.',
+    'Needs property.send. Only an approved QCR, unchanged since approval, is sent (409 QCR_NOT_APPROVED otherwise; 409 MAIL_DISABLED when mail is off). One mail to the chosen addresses with the QCR attached, from the QCR email template; logged in the case’s mail log and audited. Repeating a sendId never mails twice.',
   request: { params: ProposalIdParamsSchema, body: json(SendQcrRequestSchema) },
   responses: {
     200: { description: 'The outcome and the QCR', ...json(QcrSendResponseSchema) },

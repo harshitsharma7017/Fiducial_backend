@@ -5,11 +5,18 @@
  *
  *   SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD='a long passphrase' npm run seed:admin
  */
-import { EmailSchema, PasswordSchema, UserNameSchema } from '../shared/index.ts';
+import {
+  ADMIN_ROLE_KEY,
+  EmailSchema,
+  PERMISSIONS,
+  PasswordSchema,
+  UserNameSchema,
+} from '../shared/index.ts';
 import { z } from 'zod';
 import { ConfigError, loadScriptEnv } from '../config/env.ts';
 import { connectDatabase, disconnectDatabase } from '../lib/db.ts';
 import { ensureIndexes } from '../models.ts';
+import { ensureSystemRoles } from '../modules/roles/roles.service.ts';
 import { UserModel } from '../modules/users/user.model.ts';
 import { createUser } from '../modules/users/users.service.ts';
 
@@ -43,6 +50,8 @@ async function main(): Promise<number> {
   await connectDatabase(env.MONGODB_URI);
   try {
     await ensureIndexes();
+    // The Administrator role must exist before it is assigned.
+    await ensureSystemRoles();
     const existing = await UserModel.findOne({ email }).lean();
     if (existing) {
       console.log(
@@ -50,10 +59,11 @@ async function main(): Promise<number> {
       );
       return 0;
     }
-    const otherAdmins = await UserModel.countDocuments({ roles: 'ADMIN', active: true });
+    const otherAdmins = await UserModel.countDocuments({ roles: ADMIN_ROLE_KEY, active: true });
     const user = await createUser(
-      { email, name, password, roles: ['ADMIN'] },
-      { id: null, requestId: 'seed-admin' },
+      { email, name, password, roles: [ADMIN_ROLE_KEY] },
+      // A script run with database access: it may assign any role.
+      { id: null, permissions: new Set(PERMISSIONS), requestId: 'seed-admin' },
     );
     console.log(`Created admin ${user.email} (id ${user.id}).`);
     if (otherAdmins > 0) console.log(`Note: ${otherAdmins} other active admin(s) already existed.`);

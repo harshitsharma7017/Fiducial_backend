@@ -1,6 +1,7 @@
 import type { Request, RequestHandler, Response } from 'express';
 import { z } from 'zod';
-import { validationError } from '../lib/errors.ts';
+import { forbidden, validationError } from '../lib/errors.ts';
+import { accessGranted } from './require-permission.ts';
 
 export interface RequestSchemas {
   params?: z.ZodType;
@@ -84,16 +85,29 @@ export function validate(schemas: RequestSchemas): RequestHandler {
   };
 }
 
+/** Marks handlers built by route(), which enforce the access policy, for the router-stack check. */
+export const ROUTE_HANDLER = Symbol.for('fiducial.routeHandler');
+
 /**
  * Builds a route handler that validates its input first. Express 5 forwards rejected
  * promises to the error handler, so handlers can simply throw.
+ *
+ * Deny by default: the handler runs only when an access policy (requirePermission,
+ * authenticatedAccess, publicAccess…) let the request through; a route whose policy was forgotten
+ * answers 403 instead of running.
  */
 export function route<S extends RequestSchemas>(
   schemas: S,
   handler: (input: ValidatedInput<S>, req: Request, res: Response) => Promise<void> | void,
 ): RequestHandler {
-  return async (req, res) => {
+  const built: RequestHandler = async (req, res) => {
+    if (!accessGranted(res)) {
+      req.log.error({ method: req.method, url: req.originalUrl }, 'Route has no access policy');
+      throw forbidden();
+    }
     const input = parseRequest(schemas, req);
     await handler(input, req, res);
   };
+  Object.defineProperty(built, ROUTE_HANDLER, { value: true });
+  return built;
 }

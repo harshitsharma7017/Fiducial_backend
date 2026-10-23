@@ -1,5 +1,6 @@
 import {
   AUDIT_ACTIONS,
+  EB_PRODUCTS,
   ERROR_CODES,
   gpaMissing,
   gtliMissing,
@@ -10,6 +11,7 @@ import {
   type EbCaseListQuery,
   type EbCaseListResponse,
   type EbCaseRecord,
+  type EbProduct,
   type EbStage,
   type GpaRequirementsInput,
   type GtliRequirementsInput,
@@ -135,8 +137,23 @@ export async function createEbCase(
  * Cases of every product, most recently changed first, filtered by product, stage, type, company
  * and search text (reference or company name), with page numbers (Requirement 2.3).
  */
-export async function listEbCases(query: EbCaseListQuery): Promise<EbCaseListResponse> {
-  const filter: QueryFilter<GhiCaseDoc> = query.product ? productFilter(query.product) : {};
+/**
+ * A page of Employee Benefits cases. `products` are the products the caller may view: without a
+ * product in the query the list covers those, and a product outside them lists nothing.
+ */
+export async function listEbCases(
+  query: EbCaseListQuery,
+  products: readonly EbProduct[] = EB_PRODUCTS,
+): Promise<EbCaseListResponse> {
+  const visible = query.product
+    ? products.filter((product) => product === query.product)
+    : products;
+  const filter: QueryFilter<GhiCaseDoc> =
+    visible.length === EB_PRODUCTS.length
+      ? {}
+      : visible.length === 0
+        ? { _id: { $exists: false } }
+        : { $and: [{ $or: visible.map((product) => productFilter(product)) }] };
   if (query.stage) filter.stage = query.stage;
   if (query.type) filter.type = query.type;
   if (query.clientId) filter.clientId = new Types.ObjectId(query.clientId);

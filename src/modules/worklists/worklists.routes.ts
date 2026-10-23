@@ -9,7 +9,7 @@ import { placementSlipSummaries, qcrSummaries } from './worklists.service.ts';
 
 /**
  * The lists across cases for the Quotes and QCR and Placement Slips pages, under /api/v1: reading
- * needs proposals.view.
+ * needs property.view.
  */
 export function createWorklistsRouter(options: {
   jwtSecret: string;
@@ -18,7 +18,7 @@ export function createWorklistsRouter(options: {
   const router = Router();
   // Authenticated per route: the router sits at /api/v1, where other paths must still reach the
   // not-found answer.
-  const view = [authenticate(options), requirePermission('proposals.view')];
+  const view = [authenticate(options), requirePermission('property.view')];
 
   router.get(
     '/qcrs',
@@ -47,7 +47,7 @@ documentRoute({
   tags: ['QCR'],
   summary: 'Quotes and QCRs across cases',
   description:
-    'Needs proposals.view. Every open case whose RFQ has gone to an insurer, newest first: the insurers asked, quoted, declined, awaiting and overdue; the lowest total of Option 1 (else the first option quoted); the QCR’s status, recommendation, approval and last mail to the insured.',
+    'Needs property.view. Every open case whose RFQ has gone to an insurer, newest first: the insurers asked, quoted, declined, awaiting and overdue; the lowest total of Option 1 (else the first option quoted); the QCR’s status, recommendation, approval and last mail to the insured.',
   responses: {
     200: { description: 'The cases', ...json(QcrSummaryListSchema) },
     ...errorResponses(401, 403),
@@ -60,7 +60,7 @@ documentRoute({
   tags: ['Placement slip'],
   summary: 'Placement slips across cases',
   description:
-    'Needs proposals.view. Every open case with a client approval, last approved first: the quote accepted, the slip’s status, approval and last mail to the insurer, and the policy or cover note recorded.',
+    'Needs property.view. Every open case with a client approval, last approved first: the quote accepted, the slip’s status, approval and last mail to the insurer, and the policy or cover note recorded.',
   responses: {
     200: { description: 'The cases', ...json(PlacementSlipSummaryListSchema) },
     ...errorResponses(401, 403),

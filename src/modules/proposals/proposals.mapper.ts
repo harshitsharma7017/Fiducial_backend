@@ -29,6 +29,7 @@ import { ClientLocationModel } from '../clients/client-location.model.ts';
 import { ClientModel, type ClientDoc } from '../clients/client.model.ts';
 import { toAddressDto } from '../clients/clients.mapper.ts';
 import { InsurerModel, type InsurerDoc } from '../insurers/insurer.model.ts';
+import { roleNameMap } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import { Decimal } from '../../lib/decimal.ts';
 import {
@@ -54,6 +55,8 @@ export interface ProposalContext {
   insurers: ReadonlyMap<string, InsurerDoc>;
   /** Actor display: the user's name and current roles (A1), by user id. */
   users: ReadonlyMap<string, { name: string; roles: readonly Role[] }>;
+  /** Role key → name (the roles collection), so custom roles are named on timelines. */
+  roleNames?: ReadonlyMap<string, string>;
   /** The product and coverage section masters, in their order. */
   products: readonly CatalogItem<'products'>[];
   sections: readonly CatalogItem<'sections'>[];
@@ -63,11 +66,14 @@ export interface ProposalContext {
 
 const key = (id: Types.ObjectId) => id.toHexString();
 
-/** The role label from an activity entry's snapshot (valid roles only), or null when none. */
-function activityRole(stored: readonly string[] | undefined): string | null {
+/** The role label from an activity entry's snapshot (valid role keys only), or null when none. */
+function activityRole(
+  stored: readonly string[] | undefined,
+  names?: ReadonlyMap<string, string>,
+): string | null {
   if (!stored || stored.length === 0) return null;
   const valid = stored.filter((role): role is Role => RoleSchema.safeParse(role).success);
-  return valid.length > 0 ? roleLabel(valid) : null;
+  return valid.length > 0 ? roleLabel(valid, names) : null;
 }
 
 export async function loadContext(docs: readonly ProposalDoc[]): Promise<ProposalContext> {
@@ -83,19 +89,21 @@ export async function loadContext(docs: readonly ProposalDoc[]): Promise<Proposa
       ...(doc.deleted ? [key(doc.deleted.by)] : []),
     ]),
   );
-  const [clients, locations, insurers, users, products, sections] = await Promise.all([
+  const [clients, locations, insurers, users, products, sections, roleNames] = await Promise.all([
     ClientModel.find({ _id: { $in: [...clientIds] } }).lean(),
     ClientLocationModel.find({ _id: { $in: [...locationIds] } }).lean(),
     InsurerModel.find({ _id: { $in: [...insurerIds] } }).lean(),
     UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, roles: 1 }).lean(),
     catalogItems('products'),
     catalogItems('sections'),
+    roleNameMap(),
   ]);
   return {
     clients: new Map(clients.map((doc) => [key(doc._id), doc])),
     locations: new Map(locations.map((doc) => [key(doc._id), doc])),
     insurers: new Map(insurers.map((doc) => [key(doc._id), doc])),
     users: new Map(users.map((doc) => [key(doc._id), { name: doc.name, roles: doc.roles }])),
+    roleNames,
     products,
     sections,
     now: new Date(),
@@ -250,7 +258,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     id ? (context.users.get(key(id))?.name ?? 'Unknown user') : 'System';
   // A1: the actor's current role label for timeline entries; null when the actor is unknown.
   const userRole = (id: Types.ObjectId | null) =>
-    id ? roleLabel(context.users.get(key(id))?.roles) : null;
+    id ? roleLabel(context.users.get(key(id))?.roles, context.roleNames) : null;
 
   const locations = doc.locations.map((entry) => {
     const location = context.locations.get(key(entry.locationId));
@@ -543,7 +551,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
         actor: userName(entry.actorId),
         // A1: show the role snapshotted when the action occurred; fall back to the actor's current
         // roles only for older entries that carry no snapshot.
-        actorRole: activityRole(entry.actorRoles) ?? userRole(entry.actorId),
+        actorRole: activityRole(entry.actorRoles, context.roleNames) ?? userRole(entry.actorId),
         message: entry.message,
       })),
     createdAt: doc.createdAt.toISOString(),

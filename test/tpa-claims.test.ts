@@ -444,8 +444,8 @@ describe('TPA formats (N9 1)', () => {
     expect(denied.length).toBeGreaterThanOrEqual(2);
     expect(denied.map((entry) => entry.after)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ permission: 'claims.process', outcome: 'DENIED' }),
-        expect.objectContaining({ permission: 'claims.admin', outcome: 'DENIED' }),
+        expect.objectContaining({ permission: 'claims.tpa_import', outcome: 'DENIED' }),
+        expect.objectContaining({ permission: 'claims.tpa_manage', outcome: 'DENIED' }),
       ]),
     );
   });

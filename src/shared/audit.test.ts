@@ -82,6 +82,8 @@ describe('audit vocabulary', () => {
     ]);
     expect(auditActionsOfKind('CREATE')).toEqual([
       'USER_CREATED',
+      'ROLE_CREATED',
+      'ROLE_SEEDED',
       'CLIENT_CREATED',
       'CLIENT_LOCATION_CREATED',
       'INSURER_CREATED',
@@ -134,6 +136,9 @@ describe('audit vocabulary', () => {
     ]);
     expect(auditActionsOfKind('EDIT')).toEqual([
       'USER_UPDATED',
+      'ROLE_UPDATED',
+      'ROLE_ACTIVATED',
+      'ROLE_DEACTIVATED',
       'CLIENT_UPDATED',
       'CLIENT_LOCATION_UPDATED',
       'INSURER_UPDATED',

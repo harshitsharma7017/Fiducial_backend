@@ -1,4 +1,4 @@
-import { EbCaseListResponseSchema, type Role } from '../src/shared/index.ts';
+import { EbCaseListResponseSchema, type LegacyRole as Role } from '../src/shared/index.ts';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';

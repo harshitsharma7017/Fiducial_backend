@@ -3,8 +3,7 @@ import {
   EB_PRODUCT_NAMES,
   EB_REFERENCE_PREFIX,
   ERROR_CODES,
-  ROLES,
-  can,
+  casePermission,
   emptyGhiRequirements,
   DEFAULT_NOMINEE_REQUIREMENT,
   emptyGpaRequirements,
@@ -28,6 +27,7 @@ import { taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { CounterModel } from '../proposals/proposal.model.ts';
+import { usersWithPermission } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import { initialAssignment, planAudit } from './eb-plan-assignment.service.ts';
 import { gmcFamilyCover } from './products/gmc.ts';
@@ -51,7 +51,6 @@ import { GhiMemberModel } from './ghi-census.model.ts';
 import { GhiQuoteModel } from './ghi-workflow.model.ts';
 
 /** Staff a case can be assigned to: those who may edit cases, as on Property. */
-const OWNER_ROLES = ROLES.filter((role) => can([role], 'proposals.edit'));
 
 function istYear(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(
@@ -74,11 +73,11 @@ async function nextReference(product: EbProduct, session: mongo.ClientSession): 
   return `${prefix}-${year}-${String(counter?.seq ?? 1).padStart(4, '0')}`;
 }
 
-async function assertOwner(ownerId: string): Promise<void> {
+/** The owner must be active staff whose roles may edit cases of the product. */
+async function assertOwner(ownerId: string, product: EbProduct): Promise<void> {
   const owner = await UserModel.exists({
     _id: new Types.ObjectId(ownerId),
-    active: true,
-    roles: { $in: OWNER_ROLES },
+    ...(await usersWithPermission(casePermission(product, 'edit'))),
   });
   if (!owner) {
     throw validationError([
@@ -126,7 +125,7 @@ export async function createCaseOf(
   if (!client) {
     throw validationError([{ location: 'body', path: 'clientId', message: 'Choose a client' }]);
   }
-  if (input.ownerId) await assertOwner(input.ownerId);
+  if (input.ownerId) await assertOwner(input.ownerId, product);
   const userId = new Types.ObjectId(actor.id);
   const now = new Date();
   const scope = scopeOf(product);
@@ -321,7 +320,7 @@ export async function updateCaseOf(
   // The policy start can be the age reference date: once the RFQ is out it stays as sent.
   if (doc.policyStart !== input.policyStart && !doc.requirements.ageReferenceDate)
     assertEditable(doc);
-  if (input.ownerId !== doc.ownerId.toHexString()) await assertOwner(input.ownerId);
+  if (input.ownerId !== doc.ownerId.toHexString()) await assertOwner(input.ownerId, scope.product);
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {
     const updated = await GhiCaseModel.findOneAndUpdate(

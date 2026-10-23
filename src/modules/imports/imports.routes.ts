@@ -6,15 +6,17 @@ import {
   ImportTemplateQuerySchema,
   MAX_IMPORT_BYTES,
   XLSX_CONTENT_TYPE,
-  can,
   type ImportEntity,
 } from '../../shared/index.ts';
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
-import { forbidden } from '../../lib/errors.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser } from '../../middleware/require-permission.ts';
+import {
+  assertPermission,
+  currentUser,
+  requireAnyPermission,
+} from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { runImport } from './imports.service.ts';
 import { SAMPLE_ROWS } from './samples.ts';
@@ -24,10 +26,13 @@ const UploadSchema = z.instanceof(Buffer, {
   error: 'Upload an .xlsx workbook as the request body',
 });
 
-/** Each entity needs its own permission: clients.manage for clients, masters.manage for insurers. */
+/** Each entity needs its own permission: clients.import for clients and locations, insurers.import for insurers. */
 function assertMayImport(req: Request, entity: ImportEntity): void {
-  if (!can(currentUser(req).roles, IMPORT_SHEETS[entity].permission)) throw forbidden();
+  assertPermission(req, IMPORT_SHEETS[entity].permission);
 }
+
+/** Route policy: some import permission; the handler then checks the entity's own. */
+const mayImportAny = () => requireAnyPermission(['clients.import', 'insurers.import']);
 
 export function createImportsRouter(options: { jwtSecret: string }): Router {
   const router = Router();
@@ -35,6 +40,7 @@ export function createImportsRouter(options: { jwtSecret: string }): Router {
 
   router.get(
     '/:entity/template',
+    mayImportAny(),
     route(
       { params: ImportEntityParamsSchema, query: ImportTemplateQuerySchema },
       async ({ params, query }, req, res) => {
@@ -53,6 +59,7 @@ export function createImportsRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/:entity',
+    mayImportAny(),
     express.raw({ type: [XLSX_CONTENT_TYPE, 'application/octet-stream'], limit: MAX_IMPORT_BYTES }),
     route(
       { params: ImportEntityParamsSchema, query: ImportQuerySchema, body: UploadSchema },
@@ -73,8 +80,8 @@ documentRoute({
   tags: ['Imports'],
   summary: 'Download an import template',
   description:
-    'Needs the permission of the entity (clients.manage for clients and risk locations, ' +
-    'masters.manage for insurers). An .xlsx workbook with an Instructions sheet and the data ' +
+    'Needs the permission of the entity (clients.import for clients and risk locations, ' +
+    'insurers.import for insurers). An .xlsx workbook with an Instructions sheet and the data ' +
     'sheet; sample=true fills in fictional rows that pass the import.',
   request: { params: ImportEntityParamsSchema, query: ImportTemplateQuerySchema },
   responses: {

@@ -297,7 +297,7 @@ export function membersSheet(
           member.employeeId,
           member.name,
           GHI_GENDER_LABELS[member.gender],
-          formatDate(member.dateOfBirth),
+          member.dateOfBirth ? formatDate(member.dateOfBirth) : '',
           member.age,
           GHI_RELATIONSHIP_LABELS[member.relationship],
           member.dateOfJoining ? formatDate(member.dateOfJoining) : '',

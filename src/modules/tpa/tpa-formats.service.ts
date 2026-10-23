@@ -13,7 +13,7 @@ import { writeAudit } from '../audit/audit.service.ts';
 import { nameOf, userNames, type Actor } from '../ghi/ghi-common.ts';
 import { TpaClaimModel, TpaFormatModel, type TpaFormatDoc } from './tpa.model.ts';
 
-// TPA formats (N9 1): how one TPA's export maps to claim fields. Administered with claims.admin.
+// TPA formats (N9 1): how one TPA's export maps to claim fields. Administered with claims.tpa_manage.
 // An edit raises the revision; an import keeps the format as it was when its file was checked.
 // The TPA code is part of every claim's key, so it cannot change once claims use it.
 

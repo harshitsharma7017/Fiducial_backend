@@ -36,6 +36,18 @@ export const ERROR_CODES = {
   PLACEMENT_SLIP_NOT_APPROVED: 'PLACEMENT_SLIP_NOT_APPROVED',
   TEMPLATE_VERSION_CONFLICT: 'TEMPLATE_VERSION_CONFLICT',
   SELF_UPDATE_NOT_ALLOWED: 'SELF_UPDATE_NOT_ALLOWED',
+  /** Another role already has this name (compared trimmed, case-insensitive). */
+  ROLE_NAME_TAKEN: 'ROLE_NAME_TAKEN',
+  /** The role is assigned to users, so it cannot be deactivated. */
+  ROLE_IN_USE: 'ROLE_IN_USE',
+  /** The Administrator role cannot be edited or deactivated. */
+  ROLE_LOCKED: 'ROLE_LOCKED',
+  /** The role was changed by someone else since it was loaded. */
+  ROLE_VERSION_CONFLICT: 'ROLE_VERSION_CONFLICT',
+  /** The change would leave no active user with the active Administrator role. */
+  LAST_ADMIN: 'LAST_ADMIN',
+  /** The change would grant permissions the acting user does not hold. */
+  PERMISSION_ESCALATION: 'PERMISSION_ESCALATION',
   GHI_LOCKED: 'GHI_LOCKED',
   GHI_INCOMPLETE: 'GHI_INCOMPLETE',
   GHI_CENSUS_INVALID: 'GHI_CENSUS_INVALID',

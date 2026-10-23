@@ -2,7 +2,7 @@ import {
   emptyGpaQuoteTerms,
   emptyGpaRequirements,
   emptyGtliRequirements,
-  type Role,
+  type LegacyRole as Role,
 } from '../../src/shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { Express } from 'express';

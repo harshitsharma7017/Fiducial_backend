@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
+import { gmcRawCensus, hiddenFields, redactGhiMember } from './member-redaction.ts';
 import { route } from '../../middleware/validate.ts';
 import {
   addMember,
@@ -74,8 +75,8 @@ import { assignPlan } from './eb-plan-assignment.service.ts';
 import { GMC_SCOPE } from './products/profile.ts';
 
 // Group health cases (G1 to G3) under /api/v1/ghi. They use the proposal permissions, as a GHI
-// case is a proposal of another line of business: viewing proposals.view, creating
-// proposals.create, the Data Sheet, census, insurers and files proposals.edit.
+// case is a proposal of another line of business: viewing gmc.view, creating
+// gmc.create, the Data Sheet, census, insurers and files gmc.edit.
 
 export function actorOf(req: Request): Actor {
   return { id: currentUser(req).id, requestId: req.requestId };
@@ -97,8 +98,9 @@ export function sendFile(
 export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  const view = requirePermission('proposals.view');
-  const edit = requirePermission('proposals.edit');
+  const view = requirePermission('gmc.view');
+  const edit = requirePermission('gmc.edit');
+  const rawCensus = gmcRawCensus();
 
   router.get(
     '/cases',
@@ -109,7 +111,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   );
   router.post(
     '/cases',
-    requirePermission('proposals.create'),
+    requirePermission('gmc.create'),
     route({ body: CreateGhiCaseRequestSchema }, async ({ body }, req, res) => {
       res
         .status(201)
@@ -204,14 +206,17 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
     view,
     route(
       { params: GhiCaseParamsSchema, query: GhiMemberListQuerySchema },
-      async ({ params, query }, _req, res) => {
-        res.json(await listMembers(params.id, query));
+      async ({ params, query }, req, res) => {
+        const list = await listMembers(params.id, query);
+        const hidden = hiddenFields(req);
+        res.json({ ...list, items: list.items.map((member) => redactGhiMember(member, hidden)) });
       },
     ),
   );
   router.post(
     '/cases/:id/members',
     edit,
+    ...rawCensus,
     route(
       { params: GhiCaseParamsSchema, body: GhiMemberInputSchema },
       async ({ params, body }, req, res) => {
@@ -222,6 +227,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.put(
     '/cases/:id/members/:memberId',
     edit,
+    ...rawCensus,
     route(
       { params: GhiMemberParamsSchema, body: GhiMemberInputSchema },
       async ({ params, body }, req, res) => {
@@ -247,8 +253,12 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.get(
     '/cases/:id/census/issues',
     view,
-    route({ params: GhiCaseParamsSchema }, async ({ params }, _req, res) => {
-      res.json({ items: await censusIssues(await loadCase(params.id)) });
+    route({ params: GhiCaseParamsSchema }, async ({ params }, req, res) => {
+      const hidden = hiddenFields(req);
+      const items = await censusIssues(await loadCase(params.id));
+      res.json({
+        items: items.map((item) => ({ ...item, member: redactGhiMember(item.member, hidden) })),
+      });
     }),
   );
   router.get(
@@ -261,6 +271,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.post(
     '/cases/:id/census/imports',
     edit,
+    ...rawCensus,
     express.raw({
       type: [XLSX_CONTENT_TYPE, 'application/octet-stream'],
       limit: MAX_GHI_CENSUS_BYTES,
@@ -279,6 +290,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.get(
     '/cases/:id/census/imports/:importId',
     view,
+    ...rawCensus,
     route(
       { params: GhiImportParamsSchema, query: GhiImportPreviewQuerySchema },
       async ({ params, query }, _req, res) => {
@@ -289,6 +301,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.get(
     '/cases/:id/census/imports/:importId/error-report',
     view,
+    requirePermission('census.export'),
     route(
       { params: GhiImportParamsSchema, query: GhiImportPreviewQuerySchema },
       async ({ params, query }, req, res) => {
@@ -301,6 +314,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.put(
     '/cases/:id/census/imports/:importId/rows/:row',
     edit,
+    ...rawCensus,
     route(
       { params: GhiImportRowParamsSchema, body: CorrectGhiImportRowRequestSchema },
       async ({ params, body }, req, res) => {
@@ -313,6 +327,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
   router.post(
     '/cases/:id/census/imports/:importId/commit',
     edit,
+    ...rawCensus,
     route(
       { params: GhiImportParamsSchema, body: CommitGhiImportRequestSchema },
       async ({ params, body }, req, res) => {
@@ -378,7 +393,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/ghi/cases',
     summary: 'List group health cases',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     query: GhiCaseListQuerySchema,
     response: GhiCaseListResponseSchema,
   },
@@ -386,7 +401,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/ghi/cases',
     summary: 'Create a group health case (new business or renewal)',
-    permission: 'proposals.create',
+    permission: 'gmc.create',
     body: CreateGhiCaseRequestSchema,
     response: GhiCaseRecordSchema,
     status: 201,
@@ -395,14 +410,14 @@ for (const item of [
     method: 'get',
     path: base,
     summary: 'Get a group health case',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiCaseRecordSchema,
   },
   {
     method: 'put',
     path: base,
     summary: 'Change the case’s dates, staff and expiring policy',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: UpdateGhiCaseRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -410,7 +425,7 @@ for (const item of [
     method: 'post',
     path: `${base}/close`,
     summary: 'Close the case (lost or not renewed)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: CloseGhiCaseRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -418,7 +433,7 @@ for (const item of [
     method: 'put',
     path: `${base}/requirements`,
     summary: 'Save the GHI Data Sheet (G2)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: GhiRequirementsInputSchema,
     response: GhiCaseRecordSchema,
   },
@@ -426,7 +441,7 @@ for (const item of [
     method: 'put',
     path: `${base}/plan`,
     summary: 'Assign or change the family plan (N2; optional on GMC cases)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: AssignEbPlanRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -434,7 +449,7 @@ for (const item of [
     method: 'put',
     path: `${base}/insurers`,
     summary: 'Choose up to five insurers for the RFQ',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: SetGhiInsurersRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -442,7 +457,7 @@ for (const item of [
     method: 'post',
     path: `${base}/insurers/{insurerId}/decline`,
     summary: 'Record that an insurer declined',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: DeclineGhiInsurerRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -450,14 +465,14 @@ for (const item of [
     method: 'get',
     path: '/api/v1/ghi/census-template',
     summary: 'Download the census Excel template',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     file: true,
   },
   {
     method: 'get',
     path: `${base}/members`,
     summary: 'Census members, searchable, with page numbers',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     query: GhiMemberListQuerySchema,
     response: GhiMemberListResponseSchema,
   },
@@ -465,7 +480,7 @@ for (const item of [
     method: 'post',
     path: `${base}/members`,
     summary: 'Add a census member (checked against the family rules)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: GhiMemberInputSchema,
     response: GhiMemberSchema,
     status: 201,
@@ -474,7 +489,7 @@ for (const item of [
     method: 'put',
     path: `${base}/members/{memberId}`,
     summary: 'Edit a census member',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: GhiMemberInputSchema,
     response: GhiMemberSchema,
   },
@@ -482,21 +497,21 @@ for (const item of [
     method: 'delete',
     path: `${base}/members/{memberId}`,
     summary: 'Remove a census member',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     status: 204,
   },
   {
     method: 'get',
     path: `${base}/census/summary`,
     summary: 'Census summary (G4)',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiCensusSummarySchema,
   },
   {
     method: 'get',
     path: `${base}/census/issues`,
     summary: 'Members that no longer fit the Data Sheet',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: z.object({
       items: z.array(z.object({ member: GhiMemberSchema, issues: z.array(GhiCensusIssueSchema) })),
     }),
@@ -505,14 +520,14 @@ for (const item of [
     method: 'get',
     path: `${base}/census/imports`,
     summary: 'Census files uploaded to the case',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiImportListResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/census/imports`,
     summary: 'Upload and check a census file (nothing is imported yet)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     query: GhiCensusUploadQuerySchema,
     response: GhiCensusImportSchema,
     status: 201,
@@ -522,7 +537,7 @@ for (const item of [
     method: 'get',
     path: `${base}/census/imports/{importId}`,
     summary: 'A checked census file with each row’s problems (optionally under an import mode)',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     query: GhiImportPreviewQuerySchema,
     response: GhiCensusImportSchema,
   },
@@ -530,7 +545,7 @@ for (const item of [
     method: 'get',
     path: `${base}/census/imports/{importId}/error-report`,
     summary: 'The census file’s rows with issues as an Excel error report',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     query: GhiImportPreviewQuerySchema,
     file: true,
   },
@@ -538,7 +553,7 @@ for (const item of [
     method: 'put',
     path: `${base}/census/imports/{importId}/rows/{row}`,
     summary: 'Correct a row of a checked file',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: CorrectGhiImportRowRequestSchema,
     response: GhiCensusImportSchema,
   },
@@ -546,7 +561,7 @@ for (const item of [
     method: 'post',
     path: `${base}/census/imports/{importId}/commit`,
     summary: 'Import the checked file by the policy chosen (one transaction)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: CommitGhiImportRequestSchema,
     response: GhiCommitResultSchema,
   },
@@ -554,21 +569,21 @@ for (const item of [
     method: 'post',
     path: `${base}/census/imports/{importId}/discard`,
     summary: 'Set a checked file aside',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     response: GhiCensusImportSchema,
   },
   {
     method: 'get',
     path: `${base}/files`,
     summary: 'Files kept on the case',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiFileListResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/files`,
     summary: 'Upload a quote, client decision, payment proof or policy copy',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     query: GhiFileUploadQuerySchema,
     response: GhiFileSchema,
     status: 201,
@@ -578,7 +593,7 @@ for (const item of [
     method: 'get',
     path: `${base}/files/{fileId}`,
     summary: 'Download a file of the case',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     file: true,
   },
 ] as const) {

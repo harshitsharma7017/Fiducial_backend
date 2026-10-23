@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { API_VERSION } from '../../config/version.ts';
 import { pingDatabase } from '../../lib/db.ts';
 import { documentRoute } from '../../lib/openapi.ts';
+import { publicAccess } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 
 export function createHealthRouter(): Router {
@@ -10,6 +11,7 @@ export function createHealthRouter(): Router {
 
   router.get(
     '/',
+    publicAccess('health check for monitoring: status, database, version, uptime'),
     route({}, async (_input, _req, res) => {
       const dbUp = await pingDatabase();
       const body: HealthResponse = {

@@ -198,7 +198,12 @@ async function usableLink(token: string): Promise<ClaimLinkDoc> {
   return link;
 }
 
-const EMPLOYEE: ClaimActor = { id: null, roles: [], requestId: null, kind: 'EMPLOYEE' };
+const EMPLOYEE: ClaimActor = {
+  id: null,
+  permissions: new Set(),
+  requestId: null,
+  kind: 'EMPLOYEE',
+};
 
 export async function publicClaimLink(token: string): Promise<PublicClaimLink> {
   const link = await usableLink(token);

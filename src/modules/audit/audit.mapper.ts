@@ -13,6 +13,8 @@ import type { AuditLogDoc } from './audit.model.ts';
 export interface AuditLookups {
   actors: ReadonlyMap<string, AuditActor>;
   labels: ReadonlyMap<string, string>;
+  /** Role key → name, so custom roles are named. */
+  roleNames?: ReadonlyMap<string, string>;
 }
 
 export function recordKey(entity: string, id: string): string {
@@ -58,7 +60,7 @@ export function toAuditLogEntry(doc: AuditLogDoc, lookups: AuditLookups): AuditL
   const snapshot = snapshotRoles(doc.actorRoles);
   const actor: AuditActor | null = base
     ? snapshot
-      ? { ...base, roles: snapshot, roleLabel: roleLabel(snapshot) }
+      ? { ...base, roles: snapshot, roleLabel: roleLabel(snapshot, lookups.roleNames) }
       : base
     : null;
   return {

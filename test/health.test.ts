@@ -438,6 +438,13 @@ describe('API documentation', () => {
         'PUT /api/v1/tpa/claims/{claimId}/link',
         'PUT /api/v1/tpa/formats/{formatId}',
         'PUT /api/v1/tpa/settings',
+        // Database-driven roles (docs/RBAC.md).
+        'GET /api/v1/roles',
+        'GET /api/v1/roles/{key}',
+        'POST /api/v1/roles',
+        'PATCH /api/v1/roles/{key}',
+        'POST /api/v1/roles/{key}/activate',
+        'POST /api/v1/roles/{key}/deactivate',
       ].sort(),
     );
     // The audit query's filters are documented as query parameters.

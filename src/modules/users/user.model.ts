@@ -1,4 +1,3 @@
-import { ROLES, type Role } from '../../shared/index.ts';
 import { Schema, model, type Types } from 'mongoose';
 
 export interface UserDoc {
@@ -7,7 +6,8 @@ export interface UserDoc {
   name: string;
   /** argon2id hash. Never selected unless asked for explicitly. */
   passwordHash: string;
-  roles: Role[];
+  /** Role keys (the roles collection); validated against existing, active roles by the API. */
+  roles: string[];
   active: boolean;
   failedLoginCount: number;
   lockedUntil: Date | null;
@@ -23,10 +23,10 @@ const userSchema = new Schema<UserDoc>(
     name: { type: String, required: true, trim: true, maxlength: 120 },
     passwordHash: { type: String, required: true, select: false },
     roles: {
-      type: [{ type: String, enum: ROLES }],
+      type: [{ type: String, match: /^[A-Z][A-Z0-9_]{1,39}$/ }],
       required: true,
       validate: {
-        validator: (roles: Role[]) => roles.length > 0,
+        validator: (roles: string[]) => roles.length > 0,
         message: 'A user needs at least one role',
       },
     },
@@ -40,5 +40,6 @@ const userSchema = new Schema<UserDoc>(
 );
 
 userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ roles: 1, active: 1 });
 
 export const UserModel = model<UserDoc>('User', userSchema);

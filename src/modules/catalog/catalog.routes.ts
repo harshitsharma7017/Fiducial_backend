@@ -40,27 +40,30 @@ const UploadSchema = z.instanceof(Buffer, {
 const RowBodySchema = z.record(z.string(), z.unknown());
 
 /**
- * Product and cover masters (M-4 to M-9). Every role reads them (masters.view); Admins
- * (masters.manage) upload the workbook, add rows, edit and reorder.
+ * Product and cover masters (M-4 to M-9). Every role reads them (catalog.view); Admins
+ * (catalog.manage) upload the workbook, add rows, edit and reorder.
  */
 export function createCatalogRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  router.use(requirePermission('masters.view'));
+  router.use(requirePermission('catalog.view'));
 
-  router.get('/workbook', async (_req, res) => {
-    const file = await buildCatalogWorkbook(await allCatalogItems());
-    res.setHeader('Content-Type', XLSX_CONTENT_TYPE);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="Policy-and-cover-masters-${new Date().toISOString().slice(0, 10)}.xlsx"`,
-    );
-    res.send(file);
-  });
+  router.get(
+    '/workbook',
+    route({}, async (_input, _req, res) => {
+      const file = await buildCatalogWorkbook(await allCatalogItems());
+      res.setHeader('Content-Type', XLSX_CONTENT_TYPE);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Policy-and-cover-masters-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      );
+      res.send(file);
+    }),
+  );
 
   router.post(
     '/import',
-    requirePermission('masters.manage'),
+    requirePermission('catalog.manage'),
     express.raw({
       type: [XLSX_CONTENT_TYPE, 'application/octet-stream'],
       limit: MASTER_WORKBOOK_MAX_BYTES,
@@ -107,7 +110,7 @@ export function createCatalogRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/:master',
-    requirePermission('masters.manage'),
+    requirePermission('catalog.manage'),
     route(
       { params: CatalogMasterParamsSchema, body: RowBodySchema },
       async ({ params, body }, req, res) => {
@@ -118,7 +121,7 @@ export function createCatalogRouter(options: { jwtSecret: string }): Router {
 
   router.put(
     '/:master/order',
-    requirePermission('masters.manage'),
+    requirePermission('catalog.manage'),
     route(
       { params: CatalogMasterParamsSchema, body: CatalogReorderRequestSchema },
       async ({ params, body }, req, res) => {
@@ -129,7 +132,7 @@ export function createCatalogRouter(options: { jwtSecret: string }): Router {
 
   router.put(
     '/:master/:id',
-    requirePermission('masters.manage'),
+    requirePermission('catalog.manage'),
     route(
       { params: CatalogItemParamsSchema, body: RowBodySchema },
       async ({ params, body }, req, res) => {
@@ -152,7 +155,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Download the policy and cover masters workbook',
   description:
-    'Needs masters.view. An Instructions sheet and one sheet per master (Policies, Coverage sections, Add-on covers, BSUS BLUS add-on rates, Tax rates, Standard notes) with the saved rows, to edit and upload back. Empty masters have their headers only.',
+    'Needs catalog.view. An Instructions sheet and one sheet per master (Policies, Coverage sections, Add-on covers, BSUS BLUS add-on rates, Tax rates, Standard notes) with the saved rows, to edit and upload back. Empty masters have their headers only.',
   responses: { 200: { description: 'The workbook', ...xlsx }, ...errorResponses(401, 403) },
 });
 
@@ -162,7 +165,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Preview or import the policy and cover masters workbook',
   description:
-    'Needs masters.manage. The .xlsx as the request body. Each master sheet in the file replaces that master as a whole; masters without a sheet stay as they are. dryRun=true (default) only checks. With dryRun=false the sheets are saved in one transaction when every sheet passes, with one audit entry per master.',
+    'Needs catalog.manage. The .xlsx as the request body. Each master sheet in the file replaces that master as a whole; masters without a sheet stay as they are. dryRun=true (default) only checks. With dryRun=false the sheets are saved in one transaction when every sheet passes, with one audit entry per master.',
   request: { query: CatalogImportQuerySchema, body: xlsx },
   responses: {
     200: { description: 'The report per sheet', ...json(CatalogImportReportSchema) },
@@ -176,7 +179,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Suggest policies for a sum insured',
   description:
-    'Needs masters.view. The active policies whose range holds the sum insured (above the lower limit, up to and including the upper), in their order.',
+    'Needs catalog.view. The active policies whose range holds the sum insured (above the lower limit, up to and including the upper), in their order.',
   request: { query: ProductSuggestionQuerySchema },
   responses: {
     200: { description: 'The policies', ...json(ProductSuggestionSchema) },
@@ -190,7 +193,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'List a master',
   description:
-    'Needs masters.view. Every row in display order. master is products, sections, addons, addon-rules, tax-rates or notes. q keeps the rows whose text holds every word.',
+    'Needs catalog.view. Every row in display order. master is products, sections, addons, addon-rules, tax-rates or notes. q keeps the rows whose text holds every word.',
   request: { params: CatalogMasterParamsSchema, query: CatalogListQuerySchema },
   responses: {
     200: { description: 'The rows', ...json(CatalogListResponseSchema) },
@@ -204,7 +207,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Add a row to a master',
   description:
-    'Needs masters.manage. The row’s columns as in src/shared/catalog.ts. Sections cannot be added (the 14 are fixed). 409 CATALOG_ITEM_EXISTS for a duplicate. Audited.',
+    'Needs catalog.manage. The row’s columns as in src/shared/catalog.ts. Sections cannot be added (the 14 are fixed). 409 CATALOG_ITEM_EXISTS for a duplicate. Audited.',
   request: { params: CatalogMasterParamsSchema, body: json(RowBodySchema) },
   responses: {
     201: { description: 'The row', ...json(RowBodySchema) },
@@ -218,7 +221,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Reorder a master',
   description:
-    'Needs masters.manage. Policies, sections and notes: every row id in the new order. Fire stays the first section. Audited.',
+    'Needs catalog.manage. Policies, sections and notes: every row id in the new order. Fire stays the first section. Audited.',
   request: { params: CatalogMasterParamsSchema, body: json(CatalogReorderRequestSchema) },
   responses: {
     200: { description: 'The rows', ...json(CatalogListResponseSchema) },
@@ -232,7 +235,7 @@ documentRoute({
   tags: ['Policy and cover masters'],
   summary: 'Edit a master row',
   description:
-    'Needs masters.manage. Replaces the row’s columns. A section keeps its code. Audited with old and new values.',
+    'Needs catalog.manage. Replaces the row’s columns. A section keeps its code. Audited with old and new values.',
   request: { params: CatalogItemParamsSchema, body: json(RowBodySchema) },
   responses: {
     200: { description: 'The row', ...json(RowBodySchema) },

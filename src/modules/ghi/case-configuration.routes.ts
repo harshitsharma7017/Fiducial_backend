@@ -6,6 +6,7 @@ import {
   RfqSelectionSummaryResponseSchema,
   SelectAgeBandsRequestSchema,
   SelectionSummaryDocumentQuerySchema,
+  casePermission,
 } from '../../shared/index.ts';
 import { Router } from 'express';
 import type { z } from 'zod';
@@ -25,7 +26,7 @@ import {
 
 // A case's age bands (N4) and its RFQ Selection Summary Sheet (N7), the same for GMC
 // (/api/v1/ghi) and for GPA and GTLI (/api/v1/eb/{gpa,gtli}). Choosing the bands needs
-// proposals.edit, reading the summary proposals.view, downloading it proposals.export. Every
+// <product>.edit, reading the summary <product>.view, downloading it <product>.export. Every
 // call loads the case through its product scope, so an id of another product answers 404.
 
 export function createCaseConfigurationRouter(options: {
@@ -40,7 +41,7 @@ export function createCaseConfigurationRouter(options: {
   const P = GhiCaseParamsSchema;
   router.put(
     '/cases/:id/age-bands',
-    requirePermission('proposals.edit'),
+    requirePermission(casePermission(scope.product, 'edit')),
     route({ params: P, body: SelectAgeBandsRequestSchema }, async ({ params, body }, req, res) => {
       await selectCaseAgeBands(scope, params.id, body.setId, actorOf(req));
       res.json(await options.record(params.id));
@@ -48,14 +49,14 @@ export function createCaseConfigurationRouter(options: {
   );
   router.get(
     '/cases/:id/rfq/selection-summary',
-    requirePermission('proposals.view'),
+    requirePermission(casePermission(scope.product, 'view')),
     route({ params: P }, async ({ params }, _req, res) => {
       res.json(await caseSelectionSummary(scope, params.id));
     }),
   );
   router.get(
     '/cases/:id/rfq/selection-summary/document',
-    requirePermission('proposals.export'),
+    requirePermission(casePermission(scope.product, 'export')),
     route(
       { params: P, query: SelectionSummaryDocumentQuerySchema },
       async ({ params, query }, req, res) => {
@@ -74,7 +75,7 @@ export function createCaseConfigurationRouter(options: {
   );
   router.get(
     '/cases/:id/rfq/versions/:rfqId/selection-summary',
-    requirePermission('proposals.view'),
+    requirePermission(casePermission(scope.product, 'view')),
     route({ params: CaseRfqVersionParamsSchema }, async ({ params }, _req, res) => {
       res.json(await rfqVersionSelectionSummary(scope, params.id, params.rfqId));
     }),
@@ -90,7 +91,7 @@ export function documentCaseConfigurationRoutes(base: string, caseRecord: z.ZodT
       path: `${base}/age-bands`,
       summary:
         'Choose the case’s age band set (a copy of its current revision), or null for the standard bands',
-      permission: 'proposals.edit',
+      permission: '<product>.edit',
       body: SelectAgeBandsRequestSchema,
       response: caseRecord,
     },
@@ -98,14 +99,14 @@ export function documentCaseConfigurationRoutes(base: string, caseRecord: z.ZodT
       method: 'get',
       path: `${base}/rfq/selection-summary`,
       summary: 'The RFQ selection summary from the census as it is now',
-      permission: 'proposals.view',
+      permission: '<product>.view',
       response: RfqSelectionSummaryResponseSchema,
     },
     {
       method: 'get',
       path: `${base}/rfq/selection-summary/document`,
       summary: 'The RFQ selection summary as Excel or PDF (refused while it is incomplete)',
-      permission: 'proposals.export',
+      permission: '<product>.export',
       query: SelectionSummaryDocumentQuerySchema,
       file: true,
     },
@@ -113,7 +114,7 @@ export function documentCaseConfigurationRoutes(base: string, caseRecord: z.ZodT
       method: 'get',
       path: `${base}/rfq/versions/{rfqId}/selection-summary`,
       summary: 'The selection summary an RFQ version was generated with',
-      permission: 'proposals.view',
+      permission: '<product>.view',
       response: RfqSelectionSummaryResponseSchema,
     },
   ] as const) {

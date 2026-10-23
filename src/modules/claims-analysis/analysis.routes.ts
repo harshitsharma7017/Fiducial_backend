@@ -55,9 +55,10 @@ import {
   voidPremiumAdjustment,
 } from './claims-analysis.service.ts';
 
-// The claims analysis (N10, /api/v1/claims-analysis, claims.view; premium additions and deletions
-// changed with proposals.edit) and the renewal analysis (N8, /api/v1/renewal, proposals.view;
-// downloads proposals.export; recorded years and saved analyses proposals.edit). Every download
+// The claims analysis (N10, /api/v1/claims-analysis, claims_analysis.view, downloads
+// claims_analysis.export; premium additions and deletions claims_analysis.manage_premiums) and the
+// renewal analysis (N8, /api/v1/renewal, renewal_analysis.view; downloads renewal_analysis.export;
+// recorded years and saved analyses renewal_analysis.manage). Every download
 // is audited with its format; files are generated per request and never stored publicly.
 
 async function fileOf(model: DocumentModel, format: 'xlsx' | 'pdf') {
@@ -79,10 +80,12 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   // Authentication per route: this router is mounted at the API root beside public routes.
   const auth = authenticate(options);
   // N12: a refused request for claim data is audited.
-  const claimsView = requireClaimPermission('claims.view');
-  const edit = requirePermission('proposals.edit');
-  const view = requirePermission('proposals.view');
-  const exportFile = requirePermission('proposals.export');
+  const claimsView = requireClaimPermission('claims_analysis.view');
+  const claimsExport = requireClaimPermission('claims_analysis.export');
+  const premiums = requirePermission('claims_analysis.manage_premiums');
+  const renewalView = requirePermission('renewal_analysis.view');
+  const renewalExport = requirePermission('renewal_analysis.export');
+  const renewalManage = requirePermission('renewal_analysis.manage');
 
   // N10
   router.get(
@@ -114,7 +117,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/claims-analysis/document',
     auth,
-    claimsView,
+    claimsExport,
     route({ query: ClaimsAnalysisDocumentQuerySchema }, async ({ query }, req, res) => {
       const diagnosisVisible = diagnosisVisibleTo(req);
       const { policy: _policy, ...response } = await claimsAnalysis(
@@ -152,7 +155,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/claims-analysis/premium/:caseId',
     auth,
-    edit,
+    premiums,
     route(
       { params: CasePolicyParamsSchema, body: PremiumAdjustmentInputSchema },
       async ({ params, body }, req, res) => {
@@ -163,7 +166,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/claims-analysis/premium/:caseId/:adjustmentId/void',
     auth,
-    edit,
+    premiums,
     route({ params: PremiumAdjustmentParamsSchema }, async ({ params }, req, res) => {
       res.json(await voidPremiumAdjustment(params.caseId, params.adjustmentId, actorOf(req)));
     }),
@@ -173,7 +176,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/renewal/options',
     auth,
-    view,
+    renewalView,
     route({ query: RenewalOptionsQuerySchema }, async ({ query }, _req, res) => {
       res.json(await renewalOptions(query.clientId, query.product));
     }),
@@ -181,7 +184,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/renewal/analysis',
     auth,
-    view,
+    renewalView,
     route({ body: RenewalAnalysisRequestSchema }, async ({ body }, _req, res) => {
       res.json(await renewalAnalysis(body));
     }),
@@ -189,7 +192,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/renewal/analysis/document',
     auth,
-    exportFile,
+    renewalExport,
     route(
       { body: RenewalAnalysisRequestSchema, query: RenewalDocumentQuerySchema },
       async ({ body, query }, req, res) => {
@@ -211,7 +214,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/renewal/years',
     auth,
-    view,
+    renewalView,
     route({ query: RecordedPolicyYearQuerySchema }, async ({ query }, _req, res) => {
       res.json(await listRecordedYears(query.clientId, query.product));
     }),
@@ -219,7 +222,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/renewal/years',
     auth,
-    edit,
+    renewalManage,
     route({ body: RecordedPolicyYearInputSchema }, async ({ body }, req, res) => {
       res.status(201).json(await recordPolicyYear(body, actorOf(req)));
     }),
@@ -227,7 +230,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.put(
     '/renewal/years/:yearId',
     auth,
-    edit,
+    renewalManage,
     route(
       { params: RecordedPolicyYearParamsSchema, body: RecordedPolicyYearInputSchema },
       async ({ params, body }, req, res) => {
@@ -238,7 +241,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/renewal/reports',
     auth,
-    view,
+    renewalView,
     route(
       { query: z.strictObject({ clientId: z.string().regex(/^[a-f0-9]{24}$/i) }) },
       async ({ query }, _req, res) => {
@@ -249,7 +252,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.post(
     '/renewal/reports',
     auth,
-    edit,
+    renewalManage,
     route({ body: SaveRenewalReportRequestSchema }, async ({ body }, req, res) => {
       res.status(201).json(await saveRenewalReport(body, actorOf(req)));
     }),
@@ -257,7 +260,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/renewal/reports/:reportId',
     auth,
-    view,
+    renewalView,
     route({ params: RenewalReportParamsSchema }, async ({ params }, _req, res) => {
       res.json(await getRenewalReport(params.reportId));
     }),
@@ -265,7 +268,7 @@ export function createAnalysisRouter(options: { jwtSecret: string }): Router {
   router.get(
     '/renewal/reports/:reportId/document',
     auth,
-    exportFile,
+    renewalExport,
     route(
       { params: RenewalReportParamsSchema, query: RenewalDocumentQuerySchema },
       async ({ params, query }, req, res) => {
@@ -292,7 +295,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims-analysis',
     summary: 'Claims analysis of a placed policy',
-    permission: 'claims.view',
+    permission: 'claims_analysis.view',
     query: ClaimsAnalysisQuerySchema,
     response: ClaimsAnalysisResponseSchema,
   },
@@ -300,7 +303,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims-analysis/document',
     summary: 'Claims analysis as Excel or PDF (the same filters)',
-    permission: 'claims.view',
+    permission: 'claims_analysis.export',
     query: ClaimsAnalysisDocumentQuerySchema,
     file: true,
   },
@@ -308,14 +311,14 @@ for (const item of [
     method: 'get',
     path: '/api/v1/claims-analysis/premium/{caseId}',
     summary: 'A policy’s premium and its additions and deletions',
-    permission: 'claims.view',
+    permission: 'claims_analysis.view',
     response: PremiumAdjustmentListResponseSchema,
   },
   {
     method: 'post',
     path: '/api/v1/claims-analysis/premium/{caseId}',
     summary: 'Record a premium addition or deletion',
-    permission: 'proposals.edit',
+    permission: 'claims_analysis.manage_premiums',
     body: PremiumAdjustmentInputSchema,
     response: PremiumAdjustmentListResponseSchema,
     status: 201,
@@ -324,14 +327,14 @@ for (const item of [
     method: 'post',
     path: '/api/v1/claims-analysis/premium/{caseId}/{adjustmentId}/void',
     summary: 'Void a premium addition or deletion',
-    permission: 'proposals.edit',
+    permission: 'claims_analysis.manage_premiums',
     response: PremiumAdjustmentListResponseSchema,
   },
   {
     method: 'get',
     path: '/api/v1/renewal/options',
     summary: 'A company’s policy years and open cases for a product',
-    permission: 'proposals.view',
+    permission: 'renewal_analysis.view',
     query: RenewalOptionsQuerySchema,
     response: RenewalOptionsResponseSchema,
   },
@@ -339,7 +342,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/renewal/analysis',
     summary: 'Benefit and cost analysis of up to three policy years',
-    permission: 'proposals.view',
+    permission: 'renewal_analysis.view',
     body: RenewalAnalysisRequestSchema,
     response: RenewalAnalysisSchema,
   },
@@ -347,7 +350,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/renewal/analysis/document',
     summary: 'Benefit and cost analysis as Excel or PDF',
-    permission: 'proposals.export',
+    permission: 'renewal_analysis.export',
     body: RenewalAnalysisRequestSchema,
     query: RenewalDocumentQuerySchema,
     file: true,
@@ -356,7 +359,7 @@ for (const item of [
     method: 'get',
     path: '/api/v1/renewal/years',
     summary: 'Policy years recorded by hand',
-    permission: 'proposals.view',
+    permission: 'renewal_analysis.view',
     query: RecordedPolicyYearQuerySchema,
     response: RecordedPolicyYearListResponseSchema,
   },
@@ -364,7 +367,7 @@ for (const item of [
     method: 'post',
     path: '/api/v1/renewal/years',
     summary: 'Record a policy year by hand',
-    permission: 'proposals.edit',
+    permission: 'renewal_analysis.manage',
     body: RecordedPolicyYearInputSchema,
     response: RecordedPolicyYearSchema,
     status: 201,
@@ -373,7 +376,7 @@ for (const item of [
     method: 'put',
     path: '/api/v1/renewal/years/{yearId}',
     summary: 'Edit a recorded policy year',
-    permission: 'proposals.edit',
+    permission: 'renewal_analysis.manage',
     body: RecordedPolicyYearInputSchema,
     response: RecordedPolicyYearSchema,
   },
@@ -381,14 +384,14 @@ for (const item of [
     method: 'get',
     path: '/api/v1/renewal/reports',
     summary: 'Saved benefit and cost analyses',
-    permission: 'proposals.view',
+    permission: 'renewal_analysis.view',
     response: SavedRenewalReportListResponseSchema,
   },
   {
     method: 'post',
     path: '/api/v1/renewal/reports',
     summary: 'Save a benefit and cost analysis (kept as generated)',
-    permission: 'proposals.edit',
+    permission: 'renewal_analysis.manage',
     body: SaveRenewalReportRequestSchema,
     response: SavedRenewalReportSchema,
     status: 201,
@@ -397,14 +400,14 @@ for (const item of [
     method: 'get',
     path: '/api/v1/renewal/reports/{reportId}',
     summary: 'A saved analysis',
-    permission: 'proposals.view',
+    permission: 'renewal_analysis.view',
     response: SavedRenewalReportSchema,
   },
   {
     method: 'get',
     path: '/api/v1/renewal/reports/{reportId}/document',
     summary: 'A saved analysis as Excel or PDF',
-    permission: 'proposals.export',
+    permission: 'renewal_analysis.export',
     query: RenewalDocumentQuerySchema,
     file: true,
   },

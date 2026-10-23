@@ -5,7 +5,7 @@ import {
   CLAIM_TRANSITIONS,
   GHI_RELATIONSHIP_LABELS,
   REQUIRED_CLAIM_DOCUMENTS,
-  can,
+  hasPermission,
   maskPhone,
   type AuditAction,
   type ClaimCard,
@@ -15,7 +15,7 @@ import {
   type ClaimNotification,
   type ClaimRecord,
   type ClaimStatus,
-  type Role,
+  type Permission,
 } from '../../shared/index.ts';
 import { Types, type mongo } from 'mongoose';
 import { Decimal, moneyString } from '../../lib/decimal.ts';
@@ -36,22 +36,25 @@ import {
   type ClaimNotificationDoc,
 } from './claim.model.ts';
 
-/** Who is acting: a signed-in staff member (with their roles), or the employee's link. */
+/** Who is acting: a signed-in staff member (with their permissions), or the employee's link. */
 export interface ClaimActor {
   id: string | null;
-  roles: readonly Role[];
+  permissions: ReadonlySet<Permission>;
   requestId: string | null;
   kind: 'STAFF' | 'EMPLOYEE';
 }
 
 export const claimNotFound = () => notFound('Claim not found');
 
-/** Admins move any claim; claims staff move the claims assigned to them (C1, security). */
+/**
+ * Holders of claims.manage_all work any claim; claims staff (claims.process) work the claims
+ * assigned to them (C1, security).
+ */
 export function mayMove(actor: ClaimActor, claim: Pick<ClaimDoc, 'assignedTo'>): boolean {
   if (actor.kind !== 'STAFF') return false;
-  if (can(actor.roles, 'claims.admin')) return true;
+  if (hasPermission(actor.permissions, 'claims.manage_all')) return true;
   return (
-    can(actor.roles, 'claims.process') &&
+    hasPermission(actor.permissions, 'claims.process') &&
     actor.id !== null &&
     claim.assignedTo?.toHexString() === actor.id
   );
@@ -270,8 +273,9 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
   ]);
   const fileNames = await userNames(files.map((file) => file.uploadedBy));
   const editable = actor.kind === 'STAFF' && mayEdit(actor, claim);
-  // N12: the date of birth and phone only for those who process claims (and the employee's own link).
-  const personal = actor.kind === 'EMPLOYEE' || can(actor.roles, 'claims.process');
+  // N12: the date of birth and phone only with claims.view_personal (and the employee's own link).
+  const personal =
+    actor.kind === 'EMPLOYEE' || hasPermission(actor.permissions, 'claims.view_personal');
   return {
     id: claim._id.toHexString(),
     claimNumber: claim.claimNumber,

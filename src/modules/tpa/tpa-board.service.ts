@@ -180,9 +180,10 @@ export async function syncBoard(
   };
   const forwardOnly = (importDoc.format.boardUpdate ?? 'FORWARD_ONLY') === 'FORWARD_ONLY';
   const actorId = new Types.ObjectId(actor.id);
+  // Only attribution: the import already checked the user's permission.
   const claimActor = {
     id: actor.id,
-    roles: [],
+    permissions: new Set<never>(),
     requestId: actor.requestId,
     kind: 'STAFF' as const,
   };

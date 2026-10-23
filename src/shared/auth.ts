@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
+import { PermissionSchema } from './permissions.ts';
 import { RoleSchema } from './roles.ts';
 
 export const PASSWORD_MIN_LENGTH = 12;
@@ -33,7 +34,10 @@ export const UserSchema = z.object({
   id: ObjectIdSchema,
   email: z.string(),
   name: z.string(),
+  /** Role keys (stable identifiers). */
   roles: z.array(RoleSchema),
+  /** The roles' display names, in the same order (the key when a role no longer exists). */
+  roleNames: z.array(z.string()),
   active: z.boolean(),
   lockedUntil: IsoDateTimeSchema.nullable(),
   lastLoginAt: IsoDateTimeSchema.nullable(),
@@ -41,6 +45,12 @@ export const UserSchema = z.object({
   updatedAt: IsoDateTimeSchema,
 });
 export type User = z.infer<typeof UserSchema>;
+
+/** GET /auth/me: the signed-in user with the permissions of their active roles, resolved now. */
+export const CurrentUserSchema = UserSchema.extend({
+  permissions: z.array(PermissionSchema),
+});
+export type CurrentUser = z.infer<typeof CurrentUserSchema>;
 
 export const LoginResponseSchema = z.object({
   accessToken: z.string(),

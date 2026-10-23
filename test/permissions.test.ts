@@ -1,4 +1,9 @@
-import { ROLES, can, type Permission, type Role } from '../src/shared/index.ts';
+import {
+  ROLES,
+  can,
+  type LegacyPermission as Permission,
+  type LegacyRole as Role,
+} from '../src/shared/index.ts';
 import request, { type Test } from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { bearer, createTestApp, tokenFor, useTestDatabase } from './helpers/app.ts';

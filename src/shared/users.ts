@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { EmailSchema, PasswordSchema, UserSchema } from './auth.ts';
 import { CursorSchema, LimitSchema, ObjectIdSchema, paginatedSchema } from './common.ts';
-import { ROLES, RoleSchema } from './roles.ts';
+import { RoleSchema } from './roles.ts';
 
 export const UserNameSchema = z.string().trim().min(1, 'Enter a name').max(120, 'Name is too long');
 
 export const UserRolesSchema = z
   .array(RoleSchema)
   .min(1, 'Select at least one role')
-  .max(ROLES.length)
+  .max(20, 'Select at most 20 roles')
   .refine((roles) => new Set(roles).size === roles.length, 'Each role can be selected once');
 
 export const CreateUserRequestSchema = z.strictObject({

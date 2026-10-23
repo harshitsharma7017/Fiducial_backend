@@ -34,6 +34,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middleware/auth.ts';
 import { requirePermission } from '../../middleware/require-permission.ts';
+import { gmcRawCensus } from './member-redaction.ts';
 import { route } from '../../middleware/validate.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import {
@@ -70,8 +71,8 @@ import {
 import { actorOf, documentGhiRoute, sendFile } from './ghi.routes.ts';
 
 // The GHI workflow after the census (G5 to G7) under /api/v1/ghi/cases/{id}: the RFQ, quotes,
-// QCR, final QCR, payments, placement slip and policy. Approvals need proposals.approve, mails
-// proposals.send, downloads proposals.export, the rest proposals.edit (viewing proposals.view).
+// QCR, final QCR, payments, placement slip and policy. Approvals need gmc.approve, mails
+// gmc.send, downloads gmc.export, the rest gmc.edit (viewing gmc.view).
 
 export function createGhiWorkflowRouter(options: {
   jwtSecret: string;
@@ -80,11 +81,12 @@ export function createGhiWorkflowRouter(options: {
   const router = Router();
   router.use(authenticate(options));
   const transport = options.mailTransport;
-  const view = requirePermission('proposals.view');
-  const edit = requirePermission('proposals.edit');
-  const approve = requirePermission('proposals.approve');
-  const send = requirePermission('proposals.send');
-  const exportFile = requirePermission('proposals.export');
+  const view = requirePermission('gmc.view');
+  const edit = requirePermission('gmc.edit');
+  const approve = requirePermission('gmc.approve');
+  const send = requirePermission('gmc.send');
+  const exportFile = requirePermission('gmc.export');
+  const rawCensus = gmcRawCensus();
   const P = GhiCaseParamsSchema;
 
   // RFQ (G5)
@@ -126,6 +128,8 @@ export function createGhiWorkflowRouter(options: {
   router.get(
     '/cases/:id/rfq/document',
     exportFile,
+    // The member annexure carries dates of birth.
+    ...rawCensus,
     route({ params: P, query: GhiRfqDocumentQuerySchema }, async ({ params, query }, req, res) => {
       sendFile(res, await rfqFile(params.id, query.format, actorOf(req), query.versionId));
     }),
@@ -304,6 +308,7 @@ export function createGhiWorkflowRouter(options: {
   router.get(
     '/cases/:id/placement-slip',
     exportFile,
+    ...rawCensus,
     route({ params: P, query: GhiDocumentQuerySchema }, async ({ params, query }, req, res) => {
       sendFile(res, await placementSlipFile(params.id, query.format, actorOf(req)));
     }),
@@ -324,21 +329,21 @@ for (const item of [
     method: 'get',
     path: `${base}/rfq`,
     summary: 'RFQ versions, what is missing, and the mails sent',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiRfqStateSchema,
   },
   {
     method: 'get',
     path: `${base}/rfq/preview`,
     summary: 'Preview of the RFQ as it would be generated now',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiDocumentPreviewSchema,
   },
   {
     method: 'post',
     path: `${base}/rfq/generate`,
     summary: 'Generate a new RFQ version (Excel and PDF)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     response: GhiRfqStateSchema,
     status: 201,
   },
@@ -346,14 +351,14 @@ for (const item of [
     method: 'post',
     path: `${base}/rfq/submit`,
     summary: 'Submit the latest RFQ for approval',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     response: GhiRfqStateSchema,
   },
   {
     method: 'post',
     path: `${base}/rfq/decision`,
     summary: 'Approve or return the RFQ',
-    permission: 'proposals.approve',
+    permission: 'gmc.approve',
     body: GhiDecisionRequestSchema,
     response: GhiRfqStateSchema,
   },
@@ -361,7 +366,7 @@ for (const item of [
     method: 'get',
     path: `${base}/rfq/document`,
     summary: 'Download an RFQ version as generated',
-    permission: 'proposals.export',
+    permission: 'gmc.export',
     query: GhiRfqDocumentQuerySchema,
     file: true,
   },
@@ -369,7 +374,7 @@ for (const item of [
     method: 'post',
     path: `${base}/rfq/email`,
     summary: 'Email the approved RFQ to insurers (one mail each)',
-    permission: 'proposals.send',
+    permission: 'gmc.send',
     body: DispatchGhiRfqRequestSchema,
     response: DispatchGhiRfqResponseSchema,
   },
@@ -377,7 +382,7 @@ for (const item of [
     method: 'post',
     path: `${base}/rfq/sent`,
     summary: 'Mark the approved RFQ as sent outside the app',
-    permission: 'proposals.send',
+    permission: 'gmc.send',
     body: MarkGhiRfqSentRequestSchema,
     response: GhiCaseRecordSchema,
   },
@@ -385,14 +390,14 @@ for (const item of [
     method: 'get',
     path: `${base}/quotes`,
     summary: 'Every quote version, with deviations from the RFQ',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiQuoteListResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/quotes`,
     summary: 'Record an insurer’s quote (draft or final); GST and total by the API',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: CreateGhiQuoteRequestSchema,
     response: GhiQuoteSchema,
     status: 201,
@@ -401,7 +406,7 @@ for (const item of [
     method: 'put',
     path: `${base}/quotes/{quoteId}`,
     summary: 'Change a draft quote, or record it',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: UpdateGhiQuoteRequestSchema,
     response: GhiQuoteSchema,
   },
@@ -409,21 +414,21 @@ for (const item of [
     method: 'delete',
     path: `${base}/quotes/{quoteId}`,
     summary: 'Delete a draft quote',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     status: 204,
   },
   {
     method: 'get',
     path: `${base}/qcrs`,
     summary: 'QCR versions with the side-by-side comparison',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiQcrListResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/qcrs`,
     summary: 'Prepare a QCR version from up to five final quotes',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: SaveGhiQcrRequestSchema,
     response: GhiQcrSchema,
     status: 201,
@@ -432,7 +437,7 @@ for (const item of [
     method: 'put',
     path: `${base}/qcrs/{qcrId}`,
     summary: 'Edit a draft or rejected QCR',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: SaveGhiQcrRequestSchema,
     response: GhiQcrSchema,
   },
@@ -440,14 +445,14 @@ for (const item of [
     method: 'post',
     path: `${base}/qcrs/{qcrId}/submit`,
     summary: 'Submit the QCR for approval',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     response: GhiQcrSchema,
   },
   {
     method: 'post',
     path: `${base}/qcrs/{qcrId}/decision`,
     summary: 'Approve or reject the QCR',
-    permission: 'proposals.approve',
+    permission: 'gmc.approve',
     body: GhiQcrDecisionRequestSchema,
     response: GhiQcrSchema,
   },
@@ -455,7 +460,7 @@ for (const item of [
     method: 'get',
     path: `${base}/qcrs/{qcrId}/document`,
     summary: 'Download the QCR (Excel or PDF)',
-    permission: 'proposals.export',
+    permission: 'gmc.export',
     query: GhiDocumentQuerySchema,
     file: true,
   },
@@ -463,7 +468,7 @@ for (const item of [
     method: 'post',
     path: `${base}/qcrs/{qcrId}/email`,
     summary: 'Email the approved QCR to the client’s contacts',
-    permission: 'proposals.send',
+    permission: 'gmc.send',
     body: SendGhiQcrRequestSchema,
     response: z.object({ result: GhiSendOutcomeSchema, qcr: GhiQcrSchema }),
   },
@@ -471,7 +476,7 @@ for (const item of [
     method: 'post',
     path: `${base}/qcrs/{qcrId}/client-decision`,
     summary: 'Record the client’s decision and selected insurer',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: RecordGhiClientDecisionRequestSchema,
     response: GhiQcrSchema,
   },
@@ -479,14 +484,14 @@ for (const item of [
     method: 'get',
     path: `${base}/final-qcr`,
     summary: 'The accepted quote and the final agreed terms',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiFinalQcrStateSchema,
   },
   {
     method: 'post',
     path: `${base}/final-qcr`,
     summary: 'Record the final agreed terms (a new version; history kept)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: RecordGhiFinalQcrRequestSchema,
     response: GhiFinalQcrStateSchema,
   },
@@ -494,14 +499,14 @@ for (const item of [
     method: 'get',
     path: `${base}/payments`,
     summary: 'Payments against the final premium',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiPaymentsResponseSchema,
   },
   {
     method: 'post',
     path: `${base}/payments`,
     summary: 'Record a payment',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: SaveGhiPaymentRequestSchema,
     response: GhiPaymentsResponseSchema,
     status: 201,
@@ -510,7 +515,7 @@ for (const item of [
     method: 'put',
     path: `${base}/payments/{paymentId}`,
     summary: 'Change a payment (for example its status)',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: SaveGhiPaymentRequestSchema,
     response: GhiPaymentsResponseSchema,
   },
@@ -518,14 +523,14 @@ for (const item of [
     method: 'get',
     path: `${base}/placement`,
     summary: 'Whether the placement slip can be issued',
-    permission: 'proposals.view',
+    permission: 'gmc.view',
     response: GhiPlacementStateSchema,
   },
   {
     method: 'get',
     path: `${base}/placement-slip`,
     summary: 'Download the placement slip (Excel or PDF)',
-    permission: 'proposals.export',
+    permission: 'gmc.export',
     query: GhiDocumentQuerySchema,
     file: true,
   },
@@ -533,7 +538,7 @@ for (const item of [
     method: 'put',
     path: `${base}/policy`,
     summary: 'Record the policy number, copy and renewal date',
-    permission: 'proposals.edit',
+    permission: 'gmc.edit',
     body: RecordGhiPolicyRequestSchema,
     response: GhiCaseRecordSchema,
   },

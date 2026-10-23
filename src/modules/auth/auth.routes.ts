@@ -2,14 +2,20 @@ import {
   ERROR_CODES,
   LoginRequestSchema,
   LoginResponseSchema,
-  UserSchema,
+  CurrentUserSchema,
+  PERMISSIONS,
+  type CurrentUser,
 } from '../../shared/index.ts';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import type { Env } from '../../config/env.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser } from '../../middleware/require-permission.ts';
+import {
+  authenticatedAccess,
+  currentUser,
+  publicAccess,
+} from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import { getUser } from '../users/users.service.ts';
 import { login, recordLogout } from './auth.service.ts';
@@ -43,6 +49,7 @@ export function createAuthRouter(config: AuthConfig): Router {
   router.post(
     '/login',
     loginLimiter,
+    publicAccess('sign-in'),
     route({ body: LoginRequestSchema }, async ({ body }, req, res) => {
       const result = await login(
         body,
@@ -58,14 +65,22 @@ export function createAuthRouter(config: AuthConfig): Router {
   router.get(
     '/me',
     requireSession,
+    authenticatedAccess('the signed-in user’s own account and permissions'),
     route({}, async (_input, req, res) => {
-      res.set('Cache-Control', 'no-store').json(await getUser(currentUser(req).id));
+      const user = currentUser(req);
+      const me: CurrentUser = {
+        ...(await getUser(user.id)),
+        // Resolved from the active roles for this request; the API checks the same set.
+        permissions: PERMISSIONS.filter((permission) => user.permissions.has(permission)),
+      };
+      res.set('Cache-Control', 'no-store').json(me);
     }),
   );
 
   router.post(
     '/logout',
     requireSession,
+    authenticatedAccess('records the caller’s own sign-out'),
     route({}, async (_input, req, res) => {
       await recordLogout(currentUser(req), req.requestId);
       res.status(204).end();
@@ -101,7 +116,10 @@ documentRoute({
   tags: ['Auth'],
   summary: 'The signed-in user',
   responses: {
-    200: { description: 'Current user', content: { 'application/json': { schema: UserSchema } } },
+    200: {
+      description: 'Current user, with the permissions of their active roles',
+      content: { 'application/json': { schema: CurrentUserSchema } },
+    },
     ...errorResponses(401),
   },
 });

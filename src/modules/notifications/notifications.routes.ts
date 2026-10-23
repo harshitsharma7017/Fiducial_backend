@@ -11,7 +11,7 @@ import type { z } from 'zod';
 import { notFound } from '../../lib/errors.ts';
 import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
-import { currentUser } from '../../middleware/require-permission.ts';
+import { authenticatedAccess, currentUser } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
 import {
   listNotifications,
@@ -31,7 +31,8 @@ function recipientId(req: Request): string {
 
 export function createNotificationsRouter(options: { jwtSecret: string }): Router {
   const router = Router();
-  router.use(authenticate(options));
+  // Every route acts on the caller's own notifications only (scoped by recipient in the service).
+  router.use(authenticate(options), authenticatedAccess('own notifications only'));
 
   router.get(
     '/',

@@ -20,6 +20,7 @@ import { MasterVersionModel } from '../masters/master-version.model.ts';
 import { OccupancyModel } from '../masters/occupancy.model.ts';
 import { PincodeModel } from '../masters/pincode.model.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
+import { roleNameMap } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import { recordKey, toAuditLogEntry, type AuditLookups } from './audit.mapper.ts';
 import { AuditLogModel, type AuditLogDoc } from './audit.model.ts';
@@ -101,7 +102,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
     if (doc.entity === AUDIT_ENTITIES.PROPOSAL) proposalIds.add(doc.entityId);
   }
 
-  const [users, versions, locations, insurers, occupancies, pincodes, proposals] =
+  const [users, versions, locations, insurers, occupancies, pincodes, proposals, roleNames] =
     await Promise.all([
       UserModel.find({ _id: { $in: [...userIds] } }, { name: 1, email: 1, roles: 1 }).lean(),
       MasterVersionModel.find(
@@ -124,6 +125,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
           ).lean(),
         ),
       ).then((found) => found.flat()),
+      roleNameMap(),
     ]);
   // A location is labelled with its client's name, so those clients are read too.
   for (const location of locations) clientIds.add(location.clientId.toHexString());
@@ -141,7 +143,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
       name: user.name,
       email: user.email,
       roles: user.roles,
-      roleLabel: roleLabel(user.roles),
+      roleLabel: roleLabel(user.roles, roleNames),
     });
     labels.set(recordKey(AUDIT_ENTITIES.USER, id), user.email);
   }
@@ -196,7 +198,7 @@ async function loadLookups(docs: readonly AuditLogDoc[]): Promise<AuditLookups> 
       labels.set(recordKey(AUDIT_ENTITIES.GHI_CASE, ghiCase._id.toHexString()), ghiCase.reference);
     }
   }
-  return { actors, labels };
+  return { actors, labels, roleNames };
 }
 
 /**

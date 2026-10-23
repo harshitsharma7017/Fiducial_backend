@@ -110,25 +110,18 @@ it fails there until the frontend is synced.
   what, when, and each field's old and new value. It filters by kind (sign-in, create, edit, approve, send, export),
   by record and by who acted. Proposals are audited too: each RFQ download is an export (`RFQ_DOWNLOADED`) and
   marking the RFQ sent is a send (`RFQ_SENT`).
-- **Roles and permissions**: each route needs one permission (`requirePermission()`), and
-  `src/shared/permissions.ts` maps roles to permissions for both repos:
-
-  | Permission                                                      | Admin | Approver | Relationship Manager | Underwriting / Placement | Read-only |
-  | --------------------------------------------------------------- | ----- | -------- | -------------------- | ------------------------ | --------- |
-  | `proposals.view`, `clients.view`, `masters.view`                | yes   | yes      | yes                  | yes                      | yes       |
-  | `proposals.export`                                              | yes   | yes      | yes                  | yes                      |           |
-  | `proposals.edit`, `proposals.send`                              | yes   |          | yes                  | yes                      |           |
-  | `proposals.create`, `clients.manage`                            | yes   |          | yes                  |                          |           |
-  | `proposals.approve`                                             | yes   | yes      |                      |                          |           |
-  | `masters.manage`, `users.manage`, `settings.view`, `audit.view` | yes   |          |                      |                          |           |
-  | `claims.view`                                                   | yes   | yes      | yes                  | yes                      |           |
-  | `claims.process` (moves only claims assigned to the user)       | yes   |          | yes                  | yes                      |           |
-  | `claims.admin` (any claim, reassign, templates, HR contacts)    | yes   |          |                      |                          |           |
-
-  The role codes are `ADMIN`, `MANAGER` (Approver), `ACCOUNT_MANAGER` (Relationship Manager), `PLACEMENT_EXEC`
-  (Underwriting / Placement) and `READ_ONLY`. A user with several roles holds the union. The proposals API uses
-  `proposals.create`, `.edit`, `.export` and `.send` as described below. The client still has to confirm the table (see
-  `docs/OPEN_ITEMS.md`).
+- **Roles and permissions** (database-driven; [docs/RBAC.md](docs/RBAC.md)):
+  - Roles live in the `roles` collection and hold permissions from the catalog in `src/shared/permissions.ts`
+    (82 permissions, by resource and action, with product-specific case permissions `property.*`, `gmc.*`, `gpa.*`
+    and `gtli.*`).
+  - A user holds one or more role keys and gets the union of their active roles' permissions, resolved on every
+    request.
+  - Administrators create and edit roles through `/api/v1/roles` (Admin › Roles in both web apps).
+  - Every route declares an access policy, so routes are denied by default.
+  - The five legacy roles (`ADMIN`, `MANAGER` (Approver), `ACCOUNT_MANAGER` (Relationship Manager),
+    `PLACEMENT_EXEC`, `READ_ONLY`) are created as system roles on start, with exactly the access they had.
+    `npm run roles:migrate -- --check` reports without writing.
+  - Who approves what is still to be confirmed by the client (see `docs/OPEN_ITEMS.md`).
 
 - Every endpoint is documented with `documentRoute()` next to its route.
 

@@ -20,18 +20,21 @@ const UploadSchema = z.instanceof(Buffer, {
 });
 
 /**
- * The client's document formats (R-3): every role sees which are uploaded (masters.view); Admins
- * upload them (masters.manage). The RFQ is filled from its template; QCR and Placement Slip
+ * The client's document formats (R-3): every role sees which are uploaded (templates.view); Admins
+ * upload them (templates.manage). The RFQ is filled from its template; QCR and Placement Slip
  * templates are kept for when those documents are built.
  */
 export function createTemplatesRouter(options: { jwtSecret: string }): Router {
   const router = Router();
   router.use(authenticate(options));
-  router.use(requirePermission('masters.view'));
+  router.use(requirePermission('templates.view'));
 
-  router.get('/', async (_req, res) => {
-    res.json(await listTemplates());
-  });
+  router.get(
+    '/',
+    route({}, async (_input, _req, res) => {
+      res.json(await listTemplates());
+    }),
+  );
 
   router.get(
     '/:kind/file',
@@ -49,7 +52,7 @@ export function createTemplatesRouter(options: { jwtSecret: string }): Router {
 
   router.post(
     '/:kind',
-    requirePermission('masters.manage'),
+    requirePermission('templates.manage'),
     express.raw({
       type: [XLSX_CONTENT_TYPE, 'application/octet-stream'],
       limit: MAX_TEMPLATE_BYTES,
@@ -83,7 +86,7 @@ documentRoute({
   tags: ['Document templates'],
   summary: 'List the document templates',
   description:
-    'Needs masters.view. RFQ, QCR and Placement Slip, each with its uploaded template and what the engine found in it.',
+    'Needs templates.view. RFQ, QCR and Placement Slip, each with its uploaded template and what the engine found in it.',
   responses: {
     200: {
       description: 'The templates',
@@ -98,7 +101,7 @@ documentRoute({
   path: '/api/v1/templates/{kind}/file',
   tags: ['Document templates'],
   summary: 'Download a template',
-  description: 'Needs masters.view. The workbook as uploaded. 404 when none has been uploaded.',
+  description: 'Needs templates.view. The workbook as uploaded. 404 when none has been uploaded.',
   request: { params: DocumentKindParamsSchema },
   responses: { 200: { description: 'The workbook', ...xlsx }, ...errorResponses(401, 403, 404) },
 });
@@ -109,7 +112,7 @@ documentRoute({
   tags: ['Document templates'],
   summary: 'Upload a template',
   description:
-    'Needs masters.manage. The client’s format as the request body (.xlsx, up to 5 MB). It is checked first: an RFQ template must have the sheets and labels the engine fills by. When it passes it replaces the kind’s template (audited); otherwise saved is false and check lists the problems.',
+    'Needs templates.manage. The client’s format as the request body (.xlsx, up to 5 MB). It is checked first: an RFQ template must have the sheets and labels the engine fills by. When it passes it replaces the kind’s template (audited); otherwise saved is false and check lists the problems.',
   request: { params: DocumentKindParamsSchema, query: TemplateUploadQuerySchema, body: xlsx },
   responses: {
     200: {

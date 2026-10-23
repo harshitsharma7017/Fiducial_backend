@@ -22,15 +22,15 @@ import { TpaClaimEventModel, TpaClaimModel, type TpaClaimDoc } from './tpa.model
 
 /** What a user may see of claim data (N12), decided on the server from their permissions. */
 export interface ClaimAccess {
-  /** Diagnosis, ICD code and rejection reason (claims.process). */
+  /** Diagnosis, ICD code and rejection reason (claims.view_diagnosis). */
   diagnosis: boolean;
-  /** Full bank account numbers (claims.admin). */
+  /** Full bank account numbers (claims.view_bank). */
   bank: boolean;
 }
 
 // TPA claim records (N9): the list of a policy's imported claims and staff's manual links. A
 // manual link (to a main claim or a board claim) and the review note are never changed by an
-// import. Diagnosis details are returned only to users who process claims (claims.process).
+// import. Diagnosis details are returned only with claims.view_diagnosis.
 
 const amount = (value: Types.Decimal128 | null) =>
   value === null ? null : new Decimal(value.toString()).toFixed(2);

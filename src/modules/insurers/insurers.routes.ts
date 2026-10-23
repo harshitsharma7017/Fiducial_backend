@@ -13,12 +13,12 @@ import { currentUser, requirePermission } from '../../middleware/require-permiss
 import { route } from '../../middleware/validate.ts';
 import { createInsurer, getInsurer, listInsurers, updateInsurer } from './insurers.service.ts';
 
-// The insurer master is master data: everyone with masters.view reads it (the RFQ screen takes
-// its recipients from here) and Admins (masters.manage) maintain it.
+// The insurer master is master data: everyone with insurers.view reads it (the RFQ screen takes
+// its recipients from here) and Admins (insurers.manage) maintain it.
 export function createInsurersRouter(options: { jwtSecret: string }): Router {
   const router = Router();
-  router.use(authenticate(options), requirePermission('masters.view'));
-  const manage = requirePermission('masters.manage');
+  router.use(authenticate(options), requirePermission('insurers.view'));
+  const manage = requirePermission('insurers.manage');
 
   router.get(
     '/',
@@ -64,7 +64,7 @@ documentRoute({
   tags: ['Insurers'],
   summary: 'List insurers',
   description:
-    'Needs masters.view. By company then branch; q matches words in either, active=true lists ' +
+    'Needs insurers.view. By company then branch; q matches words in either, active=true lists ' +
     'only the insurers offered for new RFQs. Each insurer carries the email addresses RFQs go ' +
     'to. Cursor pagination: pass nextCursor back as cursor.',
   request: { query: InsurerListQuerySchema },
@@ -83,7 +83,7 @@ documentRoute({
   tags: ['Insurers'],
   summary: 'Add an insurer branch',
   description:
-    'Needs masters.manage (Admin). Company and branch together must be new (409 ' +
+    'Needs insurers.manage (Admin). Company and branch together must be new (409 ' +
     'INSURER_EXISTS, ignoring case and extra spaces). At least one RFQ email is required. Audited.',
   request: { body: { content: { 'application/json': { schema: CreateInsurerRequestSchema } } } },
   responses: {
@@ -100,7 +100,7 @@ documentRoute({
   path: '/api/v1/insurers/{id}',
   tags: ['Insurers'],
   summary: 'Get an insurer',
-  description: 'Needs masters.view.',
+  description: 'Needs insurers.view.',
   request: { params: InsurerIdParamsSchema },
   responses: {
     200: {
@@ -117,7 +117,7 @@ documentRoute({
   tags: ['Insurers'],
   summary: 'Edit or deactivate an insurer',
   description:
-    'Needs masters.manage (Admin). Only the fields sent change; contacts and RFQ emails are ' +
+    'Needs insurers.manage (Admin). Only the fields sent change; contacts and RFQ emails are ' +
     'replaced as a whole. Insurers are deactivated, never deleted. Audited with before and ' +
     'after values.',
   request: {

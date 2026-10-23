@@ -1,15 +1,15 @@
 import {
   NOTIFICATION_EVENT_LABELS,
-  ROLES,
-  can,
   type Notification,
   type NotificationEntity,
   type NotificationEvent,
   type NotificationListQuery,
   type NotificationListResponse,
+  type Permission,
 } from '../../shared/index.ts';
 import { Types, mongo, type QueryFilter } from 'mongoose';
 import type { Logger } from '../../lib/logger.ts';
+import { usersWithPermission } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import { NotificationModel, type NotificationDoc } from './notification.model.ts';
 
@@ -75,27 +75,23 @@ export async function notify(inputs: readonly NotifyInput[], logger?: Logger): P
   return created;
 }
 
-const APPROVER_ROLES = ROLES.filter((role) => can([role], 'proposals.approve'));
-const EDITOR_ROLES = ROLES.filter((role) => can([role], 'proposals.edit'));
-
-/** Active users who may approve proposals (the approval group), by id. */
-export async function approverIds(): Promise<string[]> {
-  const users = await UserModel.find(
-    { active: true, roles: { $in: APPROVER_ROLES } },
-    { _id: 1 },
-  ).lean();
+/** Active users whose roles may approve (the approval group; Property by default), by id. */
+export async function approverIds(permission: Permission = 'property.approve'): Promise<string[]> {
+  const users = await UserModel.find(await usersWithPermission(permission), { _id: 1 }).lean();
   return users.map((user) => user._id.toHexString());
 }
 
-/** Whether a user id still belongs to an active user (so we never notify a deactivated account). */
-export async function activeEditorIds(ids: readonly string[]): Promise<string[]> {
+/** The ids that still belong to active users who may edit (so we never notify a deactivated account). */
+export async function activeEditorIds(
+  ids: readonly string[],
+  permission: Permission = 'property.edit',
+): Promise<string[]> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (unique.length === 0) return [];
   const users = await UserModel.find(
     {
       _id: { $in: unique.map((id) => new Types.ObjectId(id)) },
-      active: true,
-      roles: { $in: EDITOR_ROLES },
+      ...(await usersWithPermission(permission)),
     },
     { _id: 1 },
   ).lean();

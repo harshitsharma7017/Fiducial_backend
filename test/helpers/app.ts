@@ -8,6 +8,7 @@ import { createApp } from '../../src/app.ts';
 import { loadEnv, type Env } from '../../src/config/env.ts';
 import { createLogger } from '../../src/lib/logger.ts';
 import { ensureIndexes } from '../../src/models.ts';
+import { ensureSystemRoles } from '../../src/modules/roles/roles.service.ts';
 import type { MailTransport } from '../../src/modules/mail/transport.ts';
 import type { ExistingPolicySource } from '../../src/modules/proposals/existing-policy-source.ts';
 import type { QuoteReader } from '../../src/modules/quotes/quote-reader.ts';
@@ -32,6 +33,8 @@ export function useTestDatabase(): void {
     mongoose.set('strictQuery', true);
     await mongoose.connect(inject('mongoUri'), { dbName: `test_${randomUUID().slice(0, 8)}` });
     await ensureIndexes();
+    // The five legacy roles, as the API creates them on start (docs/RBAC.md).
+    await ensureSystemRoles();
   });
   afterAll(async () => {
     await mongoose.connection.dropDatabase();

@@ -1,7 +1,7 @@
 import {
   ERROR_CODES,
   RFQ_VERSION_STATUS_LABELS,
-  ROLES,
+  RoleSchema,
   roleLabel,
   type ProposalRecord,
   type RfqAttribution,
@@ -104,18 +104,18 @@ export type AttributionUsers = ReadonlyMap<string, { name: string; roles: readon
 export function rfqAttributionOf(
   version: Pick<RfqVersionDoc, 'version' | 'status' | 'createdBy' | 'events'>,
   users: AttributionUsers,
+  /** Role key → name, so custom roles are named. */
+  roleNames?: ReadonlyMap<string, string>,
 ): RfqAttribution {
   const nameOf = (id: Types.ObjectId) => users.get(id.toHexString())?.name ?? 'Unknown user';
   // Prefer the role snapshotted on the event (the role held when it happened); fall back to the
-  // user's current roles only for older events with no snapshot. Invalid stored codes are ignored.
+  // user's current roles only for older events with no snapshot. Invalid stored keys are ignored.
   const snapshot = (stored: readonly string[] | undefined): Role[] | null => {
-    const valid = (stored ?? []).filter((role): role is Role =>
-      (ROLES as readonly string[]).includes(role),
-    );
+    const valid = (stored ?? []).filter((role): role is Role => RoleSchema.safeParse(role).success);
     return valid.length > 0 ? valid : null;
   };
   const roleOf = (id: Types.ObjectId, event?: { byRoles?: string[] }) =>
-    roleLabel(snapshot(event?.byRoles) ?? users.get(id.toHexString())?.roles ?? []);
+    roleLabel(snapshot(event?.byRoles) ?? users.get(id.toHexString())?.roles ?? [], roleNames);
   const generated = version.events.find((event) => event.action === 'GENERATED');
   const approval = version.events.find((event) => event.action === 'APPROVED');
   return {

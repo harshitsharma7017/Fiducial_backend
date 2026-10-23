@@ -5,8 +5,6 @@ import {
   CLAIM_TYPE_LABELS,
   ERROR_CODES,
   MAX_CLAIM_DOCUMENTS,
-  ROLES,
-  can,
   canMoveClaim,
   type ClaimBoard,
   type ClaimDetail,
@@ -37,6 +35,7 @@ import { InsurerModel } from '../insurers/insurer.model.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { sniff } from '../quotes/quotes.service.ts';
 import { CounterModel } from '../proposals/proposal.model.ts';
+import { usersWithPermission } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
 import {
   amountText,
@@ -68,9 +67,6 @@ import {
 import { dispatchClaim, enqueueStatusEmails } from './claim-notifications.ts';
 import { ClaimHrContactModel } from './claim-settings.model.ts';
 
-/** Staff a claim can be assigned to: active users who may process claims. */
-const PROCESSOR_ROLES = ROLES.filter((role) => can([role], 'claims.process'));
-
 function istYear(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(
     now,
@@ -90,7 +86,8 @@ export async function nextClaimNumber(session: mongo.ClientSession): Promise<str
 
 async function assertAssignee(userId: string, path = 'assignedTo'): Promise<Types.ObjectId> {
   const id = new Types.ObjectId(userId);
-  const ok = await UserModel.exists({ _id: id, active: true, roles: { $in: PROCESSOR_ROLES } });
+  // Staff a claim can be assigned to: active users whose roles may process claims.
+  const ok = await UserModel.exists({ _id: id, ...(await usersWithPermission('claims.process')) });
   if (!ok) {
     throw validationError([
       { location: 'body', path, message: 'Choose active staff who process claims' },
