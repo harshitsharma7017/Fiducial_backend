@@ -243,8 +243,27 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(response.headers['x-document-layout']).toBe('template');
     const filled = await load(response.body as Buffer);
     const original = await load(CLIENT_RFQ);
-    // Side by side with the client's file, the structure is identical.
-    expect(structure(filled)).toEqual(structure(original));
+    // Side by side with the client's file, the structure is identical, but for the schedule's
+    // merges: a label merged down from a row left out (hidden) moves to the first row still shown.
+    const withoutScheduleMerges = (workbook: ExcelJS.Workbook) =>
+      structure(workbook).map((sheet) =>
+        sheet.name === 'schedule' ? { ...sheet, merges: [] } : sheet,
+      );
+    expect(withoutScheduleMerges(filled)).toEqual(withoutScheduleMerges(original));
+    const filledSchedule = filled.getWorksheet('schedule')!;
+    const filledMerges = new Set((filledSchedule.model as { merges?: string[] }).merges ?? []);
+    for (const address of (original.getWorksheet('schedule')!.model as { merges?: string[] })
+      .merges ?? []) {
+      const [from = '', to = from] = address.split(':');
+      const start = filledSchedule.getCell(from);
+      const end = filledSchedule.getCell(to);
+      let top = Number(start.row);
+      while (top <= Number(end.row) && filledSchedule.getRow(top).hidden) top += 1;
+      if (top > Number(end.row)) continue;
+      const moved = `${filledSchedule.getCell(top, Number(start.col)).address}:${to}`;
+      if (top === Number(start.row)) expect(filledMerges).toContain(address);
+      else if (moved.split(':')[0] !== to) expect(filledMerges).toContain(moved);
+    }
     const zip = await JSZip.loadAsync(response.body as Buffer);
     expect(
       Object.keys(zip.files).filter((name) => name.startsWith('xl/media/') && !name.endsWith('/')),
@@ -398,10 +417,10 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(rows[buildingLine + 1]).toEqual(['Plant 1: Main block', 5000000, null]);
     expect(rows[buildingLine + 2]).toEqual(['Plant 1: Warehouse', 3000000, null]);
     expect(rows[buildingLine + 3]).toEqual(['Plant 2: Shed A', 250000, null]);
-    // A zero-valued building is still listed (0 shows as null/0 in the figure cell, name kept).
-    expect(rows[buildingLine + 4]?.[0]).toBe('Plant 2: Empty shed');
-    // The next real Fire line (Furniture) follows the building sub-rows — nothing is dropped.
-    expect(descriptions[buildingLine + 5]?.startsWith('Furniture')).toBe(true);
+    // A building with no sum insured is left out.
+    expect(descriptions).not.toContain('Plant 2: Empty shed');
+    // The next Fire line (Furniture) follows the building sub-rows.
+    expect(descriptions[buildingLine + 4]?.startsWith('Furniture')).toBe(true);
     // The Fire total is unchanged and authoritative (from the record), not a sum of the sub-rows
     // — so itemising buildings never double-counts. manyItems = 3 locations: STOCKS 50,000,000 × 3
     // + OTHER 750,000 × 3 + buildings 8,250,000.

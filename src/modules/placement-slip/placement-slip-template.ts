@@ -11,6 +11,7 @@ import {
   clearCells,
   findColumn,
   findRow,
+  hideRow,
   insertRows,
   labelKey,
   printColumns,
@@ -213,12 +214,10 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
   if (nameRow) setValue(sheet, nameRow, premiumColumn, `${accepted.company}, ${accepted.branch}`);
   const capacityRow = caption('Capacity');
   if (capacityRow) {
-    setValue(
-      sheet,
-      capacityRow,
-      premiumColumn,
-      `Capacity: ${slip.capacityPercent ? `${slip.capacityPercent}%` : 'Not stated'}`,
-    );
+    // A capacity the insurer did not state is left out.
+    if (slip.capacityPercent) {
+      setValue(sheet, capacityRow, premiumColumn, `Capacity: ${slip.capacityPercent}%`);
+    } else hideRow(sheet, capacityRow);
   }
   // Which Fire premium was accepted: the other caption is hidden.
   const without = caption('Optional: (Fire section without terrorism)');
@@ -303,7 +302,7 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     });
     if (slip.remarks) {
       sheet.getRow(remarksRow).height = Math.max(18, Math.ceil(slip.remarks.length / 90) * 15);
-    }
+    } else hideRow(sheet, remarksRow);
     // The format's print area stops above the remarks.
     const printed = printColumns(sheet);
     sheet.pageSetup.printArea = `${sheet.getColumn(printed.from).letter}1:${sheet.getColumn(printed.to).letter}${remarksRow}`;
@@ -340,15 +339,13 @@ function linesBelow(sheet: ExcelJS.Worksheet, title: string, next: string, lines
 }
 
 function fillScheduleExtras(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: PlacementSlip) {
-  // The policy number is the insurer's, once issued.
+  // The policy number is the insurer's, once issued; until then the row is left out.
   const policyNo = findRow(sheet, 'Policy No', { prefix: true });
   if (policyNo) {
-    setValue(
-      sheet,
-      policyNo,
-      1,
-      `Policy No: ${slip.placed?.number ?? 'To be issued by the insurer'}`,
-    );
+    if (slip.placed?.number) {
+      setValue(sheet, policyNo, 1, `Policy No: ${slip.placed.number}`);
+      sheet.getRow(policyNo).hidden = false;
+    } else hideRow(sheet, policyNo);
   }
   // The agreed bank: the hypothecation of each location, from the Data Sheet.
   const banks = [
@@ -360,12 +357,9 @@ function fillScheduleExtras(sheet: ExcelJS.Worksheet, record: ProposalRecord, sl
   ];
   const bankRow = findRow(sheet, 'Agreed Bank Clause', { column: 2, prefix: true });
   if (bankRow) {
-    setValue(
-      sheet,
-      bankRow,
-      2,
-      `Agreed Bank Clause: ${banks.length > 0 ? banks.join('; ') : 'Not applicable'}`,
-    );
+    // Without a hypothecation there is no bank: the clause is left out.
+    if (banks.length > 0) setValue(sheet, bankRow, 2, `Agreed Bank Clause: ${banks.join('; ')}`);
+    else hideRow(sheet, bankRow);
   }
   linesBelow(sheet, 'Warranties / Conditions', 'Excess', slip.conditions ? [slip.conditions] : []);
   linesBelow(

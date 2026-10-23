@@ -153,6 +153,10 @@ export function buildComparison(
         version: version.version,
         premiums,
         fireWithTerrorism: Boolean(fire?.premium) && !fire?.premiumWithoutTerrorism,
+        fire: {
+          withTerrorism: fire?.premium ?? null,
+          withoutTerrorism: fire?.premiumWithoutTerrorism ?? null,
+        },
         totals,
         // B2: the totals WITH terrorism (net, GST, total), when the insurer quoted both Fire
         // figures, so the QCR shows the premium including terrorism alongside the comparison total.

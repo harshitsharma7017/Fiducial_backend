@@ -375,12 +375,32 @@ describe('QC-4, QC-5: the export', () => {
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) && typeof row[1] === 'string' ? [row[1]] : []));
     // B5: only Fire and the included Money appear; Burglary and the rest are omitted.
-    expect(labels).toContain('Fire');
+    expect(labels).toContain('Fire (premium with terrorism)');
     expect(labels).toContain('Money');
     expect(labels).not.toContain('Burglary');
-    // B2: the built-in QCR shows the terrorism extra and the total including terrorism.
+    // B2: Fire and the totals with and without terrorism, and the terrorism extra.
+    expect(labels).toContain('Fire (premium without terrorism)');
+    expect(labels).toContain('Total Premium (with terrorism)');
+    expect(labels).toContain('Total Premium (without terrorism)');
     expect(labels).toContain('Terrorism, extra net premium');
-    expect(labels).toContain('Total Premium (including terrorism)');
+    // Option 1, insurer A (column E, after the existing figures and the sum insured): Fire
+    // 1,20,000 with terrorism and 1,00,000 without; totals as its quote entries give them.
+    const rows = premium.getSheetValues();
+    const start = rows.findIndex(
+      (row) =>
+        Array.isArray(row) && row[1] === 'Proposed – Option 1 — premium with and without terrorism',
+    );
+    expect(start).toBeGreaterThan(0);
+    const value = (label: string) => {
+      const at = rows.findIndex(
+        (row, index) => index > start && Array.isArray(row) && row[1] === label,
+      );
+      return premium.getRow(at).getCell(5).value;
+    };
+    expect(value('Fire (premium with terrorism)')).toBe(120000);
+    expect(value('Fire (premium without terrorism)')).toBe(100000);
+    expect(value('Total Premium (with terrorism)')).toBe(143370);
+    expect(value('Total Premium (without terrorism)')).toBe(119770);
     // B5: no aggregate "Not required" line in the schedule.
     const schedule = workbook.getWorksheet('schedule')!;
     expect(JSON.stringify(schedule.getSheetValues())).not.toContain('Not required');

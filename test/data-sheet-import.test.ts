@@ -45,6 +45,9 @@ async function filledWorkbook(): Promise<Buffer> {
   sheet.getCell(rowOf(sheet, 'Building 1', 2, fire), 3).value = 40000;
   sheet.getCell(rowOf(sheet, 'Building 1', 2, fire), 4).value = 2500;
   sheet.getCell(rowOf(sheet, 'Furniture', 2, fire), 5).value = 500000;
+  // D2: the sheet's own Interior row, 1,000 sq ft at ₹300, is part of Furniture & Interiors.
+  sheet.getCell(rowOf(sheet, 'Interior', 2, fire), 3).value = 1000;
+  sheet.getCell(rowOf(sheet, 'Interior', 2, fire), 4).value = 300;
   sheet.getCell(rowOf(sheet, 'All other machineries', 2, fire), 5).value = 150000000;
   sheet.getCell(rowOf(sheet, 'All types of stock', 2, fire), 5).value = 60000000.5;
   sheet.getCell(rowOf(sheet, 'Hypothecation', 2), 5).value = 'State Bank of India, Fort';
@@ -124,8 +127,8 @@ beforeAll(async () => {
       clientId: client.body.id,
       locationIds: [locationId],
       dueDate: '2026-11-20',
-      policyStart: null,
-      policyEnd: null,
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
     })
     .expect(201);
   caseId = created.body.id as string;
@@ -153,7 +156,8 @@ describe('DS-08: reading the client’s Data Sheet workbook', () => {
       { name: 'Building 1 (if applicable)', sqFt: '40000', ratePerSqFt: '2500', amount: null },
     ]);
     expect(location.fire).toEqual([
-      { key: 'FFF', sqFt: null, ratePerSqFt: null, amount: '500000' },
+      // Furniture 5,00,000 + Interiors 3,00,000, as one item.
+      { key: 'FFF', sqFt: null, ratePerSqFt: null, amount: '800000' },
       { key: 'OTHER_MACHINERY', sqFt: null, ratePerSqFt: null, amount: '150000000' },
       { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: '60000001' },
     ]);

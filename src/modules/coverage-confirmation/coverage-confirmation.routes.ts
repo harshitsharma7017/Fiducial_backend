@@ -121,7 +121,7 @@ documentRoute({
   tags: TAGS,
   summary: 'Download the coverage confirmation letter (PDF)',
   description:
-    'Needs property.export. An A4 PDF on the Fiducial letterhead (shared document design), from the recorded confirmation and the live policy details. No signature is rendered: a configured signatory is shown as typed text, else the signatory is marked to be confirmed. 409 until a confirmation is recorded. Audited (COVERAGE_CONFIRMATION_DOWNLOADED).',
+    'Needs property.export. An A4 PDF on the Fiducial letterhead (shared document design), from the recorded confirmation and the live policy details. No signature is rendered: a configured signatory is shown as typed text, else only the broker’s name. 409 until a confirmation is recorded. Audited (COVERAGE_CONFIRMATION_DOWNLOADED).',
   request: { params: ProposalIdParamsSchema },
   responses: {
     200: { description: 'The PDF', content: { 'application/octet-stream': binary } },

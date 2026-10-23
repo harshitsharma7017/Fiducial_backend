@@ -69,7 +69,7 @@ export type FireGroup = (typeof FIRE_GROUPS)[number];
 export const FIRE_GROUP_LABELS: Record<FireGroup, string> = {
   BUILDING:
     'All Building & all type of civil structures Including Plinth & Foundation, Compound wall and False ceiling',
-  // D2: Interior moved out of Building into this line.
+  // D2: Interiors are part of this line.
   FFF: 'Furniture, Fixtures and Fittings & Interiors',
   OFFICE_EQUIPMENT:
     'Office equipments and all communication systems like computer systems, computer peripherals, telephones, etc.',
@@ -99,14 +99,13 @@ export const FIRE_ITEMS = [
     label: 'Plinth & Foundation',
     measured: true,
   },
-  // D2: Interior moved from the Building group to Furniture, Fixtures and Fittings & Interiors.
-  // Its key is unchanged so legacy values are preserved; only its group/number/label change.
-  { key: 'INTERIOR', group: 'FFF', number: '2a', label: 'Interiors', measured: true },
+  // D2: Furniture, Fixtures and Fittings and Interiors are one item with one sum insured. Cases
+  // saved with a separate INTERIOR item load with it added to this one (proposals.mapper).
   {
     key: 'FFF',
     group: 'FFF',
     number: '2',
-    label: 'Furniture, Fixtures and Fittings',
+    label: 'Furniture, Fixtures and Fittings & Interiors',
     measured: false,
   },
   {
@@ -617,11 +616,15 @@ export const LocationDataInputSchema = z.strictObject({
   risk: RiskDetailsInputSchema,
 });
 
+/** The policy period is required, new business and renewals alike. */
+const PolicyStartSchema = z.iso.date({ error: 'Enter the start of the policy period' });
+const PolicyEndSchema = z.iso.date({ error: 'Enter the end of the policy period' });
+
 export const DataSheetInputSchema = z
   .strictObject({
     dueDate: z.iso.date({ error: 'Enter the date quotes are needed by' }),
-    policyStart: blankAsNull(z.iso.date({ error: 'Enter a date' })),
-    policyEnd: blankAsNull(z.iso.date({ error: 'Enter a date' })),
+    policyStart: PolicyStartSchema,
+    policyEnd: PolicyEndSchema,
     locations: z.array(LocationDataInputSchema).max(200),
     /** Proposed Option 2 for each Fire line; blank when there is no second option. */
     fireOption2: z.array(z.strictObject({ group: z.enum(FIRE_GROUPS), amount: OptionalRupees })),
@@ -637,8 +640,9 @@ export const DataSheetInputSchema = z
     /** Add-on covers chosen from the product's lists (C-4). */
     addons: z.array(ChosenAddonSchema).max(MAX_CHOSEN_ADDONS).default([]),
     /**
-     * Renewals: last year's policy as the Existing column (C-2). Starts as the policy software's
-     * copy; what is typed here is used instead. Blank throughout: the software's copy.
+     * The policy in force as the Existing column (C-2): last year's on a renewal, the client's
+     * current policy on new business. A renewal's starts as the policy software's copy; what is
+     * typed here is used instead. Blank throughout: the software's copy, or none.
      */
     existing: z
       .strictObject({
@@ -658,13 +662,13 @@ export const DataSheetInputSchema = z
         included: z.boolean(),
         proposed1: OptionalRupees,
         proposed2: OptionalRupees,
-        /** Renewals: last year's sum insured (C-2). */
+        /** The Existing column's sum insured (C-2). */
         existing: OptionalRupees.default(null),
         /** The section's lines (SECTION_LINES), by key: digits, blank for none. */
         lines: LineValues,
         /** Option 2 of the lines (C-2). */
         lines2: LineValues,
-        /** Renewals: last year's lines (C-2). */
+        /** The Existing column's lines (C-2). */
         existingLines: LineValues,
         /** Burglary and Burglary Floater: 100% or first loss (C-3). */
         basis: z.enum(BURGLARY_BASES).nullable().default(null),
@@ -741,7 +745,7 @@ export const DataSheetInputSchema = z
       context.addIssue({
         code: 'custom',
         path: ['existing', 'insurer'],
-        message: 'Enter last year’s insurer',
+        message: 'Enter the existing policy’s insurer',
       });
     }
     const ids = sheet.locations.map((location) => location.locationId);
@@ -775,19 +779,9 @@ export function hasExistingFigures(sheet: {
 }
 export type DataSheetFormValues = z.input<typeof DataSheetInputSchema>;
 
-/** Policy period checks shared by creation and the Data Sheet. */
-function checkPeriod(
-  period: { policyStart: string | null; policyEnd: string | null },
-  context: z.RefinementCtx,
-) {
-  if (period.policyEnd && !period.policyStart) {
-    context.addIssue({
-      code: 'custom',
-      path: ['policyStart'],
-      message: 'Enter the start of the policy period',
-    });
-  }
-  if (period.policyStart && period.policyEnd && period.policyEnd <= period.policyStart) {
+/** Policy period check shared by creation and the Data Sheet. */
+function checkPeriod(period: { policyStart: string; policyEnd: string }, context: z.RefinementCtx) {
+  if (period.policyEnd <= period.policyStart) {
     context.addIssue({
       code: 'custom',
       path: ['policyEnd'],
@@ -803,21 +797,11 @@ export const CreateProposalRequestSchema = z
     locationIds: z.array(ObjectIdSchema).max(200),
     /** Assigned staff; the creator when left out. */
     ownerId: ObjectIdSchema.optional(),
-    /** New business may leave both blank: 1 year from the date of payment. */
-    policyStart: blankAsNull(z.iso.date({ error: 'Enter a date' })).default(null),
-    policyEnd: blankAsNull(z.iso.date({ error: 'Enter a date' })).default(null),
+    policyStart: PolicyStartSchema,
+    policyEnd: PolicyEndSchema,
     dueDate: z.iso.date({ error: 'Enter the date quotes are needed by' }),
   })
-  .superRefine((body, context) => {
-    checkPeriod(body, context);
-    if (body.type === 'EXISTING' && (!body.policyStart || !body.policyEnd)) {
-      context.addIssue({
-        code: 'custom',
-        path: [body.policyStart ? 'policyEnd' : 'policyStart'],
-        message: 'A renewal needs its policy period',
-      });
-    }
-  });
+  .superRefine(checkPeriod);
 export type CreateProposalRequest = z.infer<typeof CreateProposalRequestSchema>;
 export type CreateProposalFormValues = z.input<typeof CreateProposalRequestSchema>;
 

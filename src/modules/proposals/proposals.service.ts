@@ -593,7 +593,7 @@ const lineEntries = (values: Partial<Record<string, string | null | undefined>>)
   );
 
 /**
- * A renewal's Existing column as typed (C-2), or null to follow the policy software's copy: when
+ * The Existing column as typed (C-2), or null to follow the policy software's copy: when
  * nothing is typed, or when what is typed is the copy unchanged (the form starts from it).
  */
 function existingFiguresOf(input: DataSheetInput, copy: ProposalRecord): ExistingFiguresDoc | null {
@@ -718,7 +718,6 @@ export async function updateDataSheet(
     'locations',
   );
   const before = await recordOf(doc);
-  const renewal = doc.type === 'EXISTING';
   const set: Partial<ProposalDoc> = {
     dueDate: input.dueDate,
     policyStart: input.policyStart,
@@ -803,11 +802,9 @@ export async function updateDataSheet(
     })),
     notes: input.notes,
   };
-  // The Existing column of a renewal; new business has none.
-  if (renewal) {
-    const copy = await recordOf({ ...doc, ...set, existingFigures: null });
-    set.existingFigures = existingFiguresOf(input, copy);
-  }
+  // The Existing column: the policy in force, typed (new business and renewals) or copied.
+  const copy = await recordOf({ ...doc, ...set, existingFigures: null });
+  set.existingFigures = existingFiguresOf(input, copy);
   await checkProductAndAddons(input, await recordOf({ ...doc, ...set }));
   return saveWith(doc, set, 'Data Sheet saved', AUDIT_ACTIONS.PROPOSAL_UPDATED, actor, before);
 }

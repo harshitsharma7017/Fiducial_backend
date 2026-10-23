@@ -32,6 +32,7 @@ import {
   findColumn,
   findRow,
   findRows,
+  hideRow,
   insertRows,
   isCovered,
   labelKey,
@@ -43,7 +44,7 @@ import {
 } from '../documents/excel-template.ts';
 import { letterheadOf } from '../documents/sheet-pdf.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
-import type { RfqMasters } from './rfq-workbook.ts';
+import { filled, type RfqMasters } from './rfq-workbook.ts';
 
 // The RFQ in the client's own template (R-3): the uploaded workbook is filled in place, so its
 // sheets, merged cells, formulas, print areas and logo stay as the client made them. Every place
@@ -365,6 +366,12 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
     const existingPremiumColumn = existingColumn
       ? findColumn(sheet, top + 2, 'Premium', true)
       : null;
+    // New business has no existing policy: its columns are left out.
+    if (!renewal) {
+      for (const column of [existingColumn, existingSumColumn, existingPremiumColumn]) {
+        if (column) sheet.getColumn(column).hidden = true;
+      }
+    }
     for (let row = (captionRow ?? top + 3) + 1; row < end; row += 1) {
       const label = labelKey(cellText(sheet.getCell(row, 1)));
       if (label === 'net premium') break;
@@ -394,6 +401,11 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
             : plan.option === 'P1'
               ? (section?.proposed1 ?? null)
               : (section?.proposed2 ?? null);
+      // A section with no sum insured for this option, and nothing from last year, is left out.
+      if (!filled(value) && !(renewal && (filled(last?.sumInsured) || filled(last?.premium)))) {
+        hideRow(sheet, row);
+        continue;
+      }
       setValue(sheet, row, sumColumn, amount(value), { rupees: true });
     }
     // GST at the proposal's rate (the template says 18%).
@@ -450,7 +462,7 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
     'FIRE',
     ...record.sections.filter((section) => section.included).map((section) => section.code),
   ]);
-  const clauses = (masters.clauses ?? []).filter(
+  let clauses = (masters.clauses ?? []).filter(
     (clause) =>
       clause.active &&
       (document === 'QCR'
@@ -464,8 +476,27 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
           return code !== null && quoted.has(code);
         })),
   );
+  const banks = [
+    ...new Set(
+      record.locations.flatMap((location) =>
+        location.hypothecation ? [location.hypothecation] : [],
+      ),
+    ),
+  ];
+  const bankText = `Agreed Bank Clause: ${banks.join('; ')}`;
   const title = findRow(sheet, 'Clauses to be attached');
-  if (!title || clauses.length === 0) return;
+  if (!title) return;
+  if (clauses.length === 0) {
+    // The template's own clauses are kept; its bank clause names the bank, or is left out.
+    const bankRow = findRow(sheet, 'Agreed Bank Clause', { column: 2, from: title, prefix: true });
+    if (bankRow && banks.length > 0) setValue(sheet, bankRow, 2, bankText);
+    else if (bankRow) hideRow(sheet, bankRow);
+    return;
+  }
+  // Without a bank (no hypothecation), the Agreed Bank Clause is left out.
+  if (banks.length === 0) {
+    clauses = clauses.filter((clause) => !/^agreed bank clause/i.test(clause.text));
+  }
   const end = findRow(sheet, 'Warranties', { from: title + 1, prefix: true }) ?? title + 1;
   const printed = printColumns(sheet);
   let free = end - title - 1;
@@ -480,20 +511,11 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
     insertRows(sheet, title + 1 + free, clauses.length - free, title + Math.max(free, 1));
     free = clauses.length;
   }
-  const banks = [
-    ...new Set(
-      record.locations.flatMap((location) =>
-        location.hypothecation ? [location.hypothecation] : [],
-      ),
-    ),
-  ];
   clauses.forEach((clause, offset) => {
     const row = title + 1 + offset;
     clearCells(sheet, { from: row, to: row }, { from: printed.from, to: printed.to });
     sheet.getRow(row).hidden = false;
-    const text = /^agreed bank clause/i.test(clause.text)
-      ? `Agreed Bank Clause: ${banks.length > 0 ? banks.join('; ') : 'Not applicable'}`
-      : clause.text;
+    const text = /^agreed bank clause/i.test(clause.text) ? bankText : clause.text;
     setValue(sheet, row, printed.from, clause.heading);
     if (printed.to > printed.from + 1) sheet.mergeCells(row, printed.from + 1, row, printed.to);
     setValue(sheet, row, printed.from + 1, text);
@@ -529,8 +551,8 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
  * line, with its own sum insured, so the client RFQ shows the building breakdown (not only the
  * group total). Display-only: the Building line keeps the group total and the Fire total is
  * unchanged, so no sum is duplicated. Buildings are kept with their location (the name is prefixed
- * with the location when the case has more than one). A building with a zero sum insured is still
- * listed, as the Data Sheet does. Nothing is inserted when the case has no buildings, so the
+ * with the location when the case has more than one). A building with no sum insured is left
+ * out. Nothing is inserted when the case has no buildings, so the
  * template's single Building row is left exactly as before.
  */
 function itemiseBuildings(
@@ -543,14 +565,16 @@ function itemiseBuildings(
   },
 ): void {
   const multiLocation = record.locations.length > 1;
-  const entries = record.locations.flatMap((location) =>
-    location.buildings.map((building, index) => {
-      const name = building.name?.trim() ? building.name.trim() : `Building ${index + 1}`;
-      const label =
-        multiLocation && location.location ? `${location.location.name}: ${name}` : name;
-      return { label, sumInsured: building.sumInsured };
-    }),
-  );
+  const entries = record.locations
+    .flatMap((location) =>
+      location.buildings.map((building, index) => {
+        const name = building.name?.trim() ? building.name.trim() : `Building ${index + 1}`;
+        const label =
+          multiLocation && location.location ? `${location.location.name}: ${name}` : name;
+        return { label, sumInsured: building.sumInsured };
+      }),
+    )
+    .filter((entry) => filled(entry.sumInsured));
   if (entries.length === 0) return;
   const buildingRow = columns.buildingLine();
   if (buildingRow === null) return;
@@ -574,8 +598,11 @@ function itemiseBuildings(
 }
 
 export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
-  const { record, client, masters, renewal } = context;
+  const { record, client, masters } = context;
   const existing = record.existing;
+  // The Existing column: the policy in force (last year's on a renewal, the client's current
+  // policy on new business); left out when there is none.
+  const withExisting = existing !== null;
   // Working notes outside the printed columns are the client's, not the insurer's.
   const printed = printColumns(sheet);
   clearCells(
@@ -585,8 +612,12 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   );
 
   const policyNo = findRow(sheet, 'Policy No', { prefix: true });
-  if (policyNo)
-    setValue(sheet, policyNo, 1, `Policy No: ${renewal && existing ? existing.policyNumber : ''}`);
+  if (policyNo) {
+    // Only a case with the policy number of the policy in force has one to print.
+    if (existing?.policyNumber) {
+      setValue(sheet, policyNo, 1, `Policy No: ${existing.policyNumber}`);
+    } else hideRow(sheet, policyNo);
+  }
   const address = [
     client.address.line1,
     client.address.line2,
@@ -616,7 +647,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
         : 'For 1 year from date of payment';
   const values: Record<(typeof SCHEDULE_LABELS)[number], string> = {
     'Insured Name': client.name,
-    'Insured GST No': client.gstin ?? 'Not registered',
+    'Insured GST No': client.gstin ?? '',
     'Communication Address': address,
     'Risk Location': locations.join('\n'),
     'Policy Period': period,
@@ -626,6 +657,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   for (const label of SCHEDULE_LABELS) {
     const row = findRow(sheet, label);
     if (!row) continue;
+    if (!values[label].trim()) {
+      hideRow(sheet, row);
+      continue;
+    }
     setValue(sheet, row, 2, values[label]);
     if (label === 'Risk Location' && locations.length > 1) {
       sheet.getRow(row).height = Math.max(15, 15 * locations.length);
@@ -634,7 +669,9 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
 
   // The Fire table: Existing, Option 1 and Option 2 by line.
   const header = findRow(sheet, 'S No') ?? 10;
-  const existingColumn = findColumn(sheet, header, 'Existing Sum Insured') ?? 3;
+  const existingFound = findColumn(sheet, header, 'Existing Sum Insured');
+  const existingColumn = existingFound ?? 3;
+  if (existingFound && !withExisting) sheet.getColumn(existingFound).hidden = true;
   // The placement slip has one column, for the option the client accepted.
   const option1Column =
     findColumn(sheet, header, 'Proposed Sum Insured - Option 1') ??
@@ -656,7 +693,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   ) => {
     type Figure = readonly [column: number, name: string, value: string | null | undefined];
     const figures: Figure[] = [
-      ...(renewal ? [[existingColumn, 'Existing', existingValue] as const] : []),
+      ...(withExisting ? [[existingColumn, 'Existing', existingValue] as const] : []),
       [option1Column, 'Option 1', p1],
       [option2Column, 'Option 2', p2],
     ];
@@ -695,13 +732,15 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     setValue(sheet, after, 1, String(FIRE_GROUPS.length));
     setValue(sheet, after, 2, FIRE_GROUP_LABELS.OTHER);
   }
-  // A line with nothing in it stays blank, as in the client's sheet.
+  // A line with nothing in it is left out.
   const blankZero = (value: string | null | undefined) =>
     value === undefined || value === '0' ? null : value;
   for (const group of FIRE_GROUPS) {
     const row = findLine(group);
     const line = lineOf.get(group);
-    if (row && line) {
+    if (row && ![existingLine.get(group), line?.proposed1, line?.proposed2].some(filled)) {
+      hideRow(sheet, row);
+    } else if (row && line) {
       writeFigures(
         row,
         existingLine.get(group),
@@ -797,6 +836,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     }
   }
 
+  // "Additional Addon cover — as per attached list" only when add-on covers were chosen.
+  const additional = findRow(sheet, 'Additional Addon cover', { prefix: true });
+  if (additional && record.addons.length === 0) hideRow(sheet, additional);
+
   // Each section: its lines, or "Not required". Blocks are found again for each section, as a
   // basis row added to one moves those below it.
   for (const section of record.sections) {
@@ -826,13 +869,17 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
             (LINE_ALIASES[candidate.key] ?? []).some((alias) => text.startsWith(alias)),
         );
         if (!line) continue;
-        writeFigures(
-          row,
+        const values = [
           section.existingLines[line.key],
           section.lines[line.key],
           section.lines2[line.key],
-          line.kind === 'rupees',
-        );
+        ] as const;
+        // A line the Data Sheet left blank is left out.
+        if (!values.some(filled)) {
+          hideRow(sheet, row);
+          continue;
+        }
+        writeFigures(row, ...values, line.kind === 'rupees');
       }
     } else {
       writeFigures(first, last?.sumInsured, section.proposed1, section.proposed2);
@@ -847,6 +894,11 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       option1: option1Column,
       option2: section.proposed2 ? option2Column : null,
     });
+    // A section with every row left out is left out too, title and all.
+    const title = scheduleBlocks(sheet).get(section.code)?.title ?? block.title;
+    let shown = false;
+    for (let row = title + 1; row <= end; row += 1) shown ||= !sheet.getRow(row).hidden;
+    if (!shown) hideRow(sheet, title);
   }
 
   fillClauses(sheet, context);
@@ -945,26 +997,29 @@ function basisRow(
   return chosen;
 }
 
-/** Marks the add-on cover rows of a block as asked for or not (C-6); unanswered stay blank. */
+/**
+ * Marks the add-on cover rows of a block asked for (C-6); a cover not required, or not answered,
+ * is left out.
+ */
 function writeCovers(
   sheet: ExcelJS.Worksheet,
   rows: { from: number; to: number },
   covers: readonly Cover[],
   columns: { option1: number; option2: number | null },
 ) {
-  const answers = new Map(
-    covers.flatMap((cover) =>
-      cover.required === null ? [] : [[labelKey(cover.name), cover.required]],
-    ),
+  const asked = new Set(
+    covers.flatMap((cover) => (cover.required === true ? [labelKey(cover.name)] : [])),
   );
-  if (answers.size === 0) return;
   for (let row = rows.from; row <= rows.to; row += 1) {
     if (labelKey(cellText(sheet.getCell(row, 1))) !== 'addon coverages') continue;
-    const required = answers.get(labelKey(cellText(sheet.getCell(row, 2))));
-    if (required === undefined) continue;
-    const text = required ? 'Required' : 'Not required';
+    if (sheet.getRow(row).hidden) continue;
+    if (!asked.has(labelKey(cellText(sheet.getCell(row, 2))))) {
+      hideRow(sheet, row);
+      continue;
+    }
     for (const column of [columns.option1, columns.option2]) {
-      if (column && !isCovered(sheet.getCell(row, column))) setValue(sheet, row, column, text);
+      if (column && !isCovered(sheet.getCell(row, column)))
+        setValue(sheet, row, column, 'Required');
     }
   }
 }
@@ -993,6 +1048,13 @@ export function fillRiskDetails(sheet: ExcelJS.Worksheet, record: ProposalRecord
       const row = numbered[fieldIndex];
       if (row) setValue(sheet, row, column, location.risk[field.key] ?? null);
     });
+  });
+  // A question no location answered is left out.
+  RISK_DETAIL_FIELDS.forEach((field, fieldIndex) => {
+    const row = numbered[fieldIndex];
+    if (row && !record.locations.some((location) => location.risk[field.key]?.trim())) {
+      hideRow(sheet, row);
+    }
   });
 }
 
@@ -1100,25 +1162,22 @@ export function fillAddonSheets(
   for (const [name, list] of ADDON_SHEETS) {
     const sheet = sheetNamed(workbook, name);
     if (!sheet) continue;
-    if (decided && !record.addonLists.includes(list)) {
+    const chosen = record.addons.filter((addon) => addon.list === list);
+    // A list the case chose no add-on cover from is left out.
+    if (chosen.length === 0 || (decided && !record.addonLists.includes(list))) {
       sheet.state = 'hidden';
       continue;
     }
     const master = addons.filter((addon) => addon.list === list && addon.active);
-    const chosen = record.addons.filter((addon) => addon.list === list);
-    const items: AddonLine[] =
-      chosen.length > 0
-        ? chosen.map((addon, index) => {
-            const known = master.find((item) => labelKey(item.name) === labelKey(addon.name));
-            return {
-              seq: index + 1,
-              name: addon.name,
-              kind: known?.kind ?? null,
-              limit: known?.limit ?? null,
-            };
-          })
-        : master;
-    if (items.length === 0) continue;
+    const items: AddonLine[] = chosen.map((addon, index) => {
+      const known = master.find((item) => labelKey(item.name) === labelKey(addon.name));
+      return {
+        seq: index + 1,
+        name: addon.name,
+        kind: known?.kind ?? null,
+        limit: known?.limit ?? null,
+      };
+    });
     const used = sheet.rowCount;
     // Group merges in the first column (BSUS & BLUS: "Paid cover", "Inbuilt coverages").
     for (const address of [...((sheet.model as { merges?: string[] }).merges ?? [])]) {

@@ -18,6 +18,7 @@ import {
   WATERMARK,
 } from '../documents/document-theme.ts';
 import {
+  documentBackground,
   documentFooter,
   documentHeader,
   logoDataUrl,
@@ -44,8 +45,8 @@ export interface CoverageLetterInput {
   letterhead: Letterhead;
 }
 
-const rupees = (value: string | null) =>
-  value === null ? '—' : `₹${formatIndianNumber(value, 0)}`;
+// A sum insured not given is left blank, not shown as a dash.
+const rupees = (value: string | null) => (value === null ? '' : `₹${formatIndianNumber(value, 0)}`);
 const paise = (value: string) => `₹${formatIndianNumber(value, 2)}`;
 
 function detailRow(label: string, value: string): Content {
@@ -106,8 +107,8 @@ function sectionsTable(policy: CoveragePolicyDetails): Content {
 
 /**
  * The signature block. Never a rendered signature: it shows the configured signatory as typed
- * text (clearly a name/title, not a signature), or a note that the signatory is still to be
- * confirmed by the client. The document is therefore never represented as signed.
+ * text (clearly a name/title, not a signature); with none configured, only the broker's name. The
+ * document is therefore never represented as signed.
  */
 function signatureBlock(signatoryName: string | null, signatoryTitle: string | null): Content {
   const stack: Content[] = [
@@ -117,13 +118,6 @@ function signatureBlock(signatoryName: string | null, signatoryTitle: string | n
   if (signatoryName) {
     stack.push({ text: signatoryName, margin: [0, 16, 0, 0] });
     if (signatoryTitle) stack.push({ text: signatoryTitle, color: DOCUMENT_COLORS.muted });
-  } else {
-    stack.push({
-      text: '[Authorised signatory to be confirmed]',
-      italics: true,
-      color: DOCUMENT_COLORS.muted,
-      margin: [0, 16, 0, 0],
-    });
   }
   return { stack };
 }
@@ -192,7 +186,8 @@ export async function buildCoverageLetter(input: CoverageLetterInput): Promise<B
       color: DOCUMENT_COLORS.ink,
     },
     watermark: { ...WATERMARK },
-    header: () => documentHeader(logoImage, input.letterhead.address),
+    header: () => documentHeader(logoImage),
+    background: () => documentBackground(),
     footer: (page: number, pages: number) =>
       documentFooter(
         `Coverage confirmation ${policy.reference} · ${policy.insuredName}`,

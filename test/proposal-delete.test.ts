@@ -25,8 +25,8 @@ const newCase = async () =>
         clientId,
         locationIds: [locationId],
         dueDate: '2026-11-20',
-        policyStart: null,
-        policyEnd: null,
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
       })
       .expect(201)
   ).body as { id: string; reference: string };

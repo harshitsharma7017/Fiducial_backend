@@ -13,8 +13,24 @@
 /** A4 portrait in points (the unit pdfmake uses). */
 export const PAGE = { width: 595.28, height: 841.89 } as const;
 
-/** Page margins in points. The top leaves room for the letterhead band drawn in the header. */
-export const MARGIN = { left: 36, right: 36, top: 92, bottom: 44 } as const;
+/**
+ * Page margins in points. The top leaves room for the letterhead (logo, address and rule), the
+ * bottom for the contact line and the reference and page number above it.
+ */
+export const MARGIN = { left: 36, right: 36, top: 118, bottom: 62 } as const;
+
+/** The broker as the letterhead prints it (the Fiducial letterhead, "Invoice-2"). */
+export const BROKER = {
+  name: 'Fiducial Insurance Brokers India Pvt Ltd',
+  address: [
+    'LBR Complex, 172/1, Third Floor, Rajunaidu',
+    'Road, Sivananda Colony,',
+    'Coimbatore - 641 012.',
+  ],
+  telephone: '+91 422 4372530 / 2499962',
+  email: 'info@fiducial.in',
+  website: 'www.fiducial.in',
+} as const;
 
 export const CONTENT_WIDTH = PAGE.width - MARGIN.left - MARGIN.right;
 
@@ -35,8 +51,11 @@ export const DOCUMENT_COLORS = {
   gridline: '#b9d3ee',
   /** Table-header fill (light blue); the same tone the document workbooks use (TABLE_HEADER_FILL_ARGB). */
   tableHeader: '#dcebfa',
-  /** The green of the header and footer accents. */
-  accentGreen: '#4caf50',
+  /** The green of the letterhead's corner accent. */
+  accentGreen: '#5fa83a',
+  /** The letterhead's address and the contact line. */
+  letterhead: '#111827',
+  contact: '#1d3d7a',
   /** The blue of the header accent. */
   accentBlue: '#2b8fd6',
 } as const;
@@ -49,7 +68,8 @@ export const DOCUMENT_FONT = {
   body: 8,
   footer: 7,
   caption: 7,
-  letterheadAddress: 7,
+  letterheadAddress: 9,
+  contact: 8.5,
   /** A document's own title block (used by the Coverage Confirmation Letter). */
   title: 15,
   heading: 11,

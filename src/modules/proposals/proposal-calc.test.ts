@@ -33,9 +33,9 @@ describe('itemSumInsured', () => {
     expect(buildingSumInsured(building({ sqFt: '12500.5', ratePerSqFt: '2400' })).toFixed()).toBe(
       '30001200',
     );
-    expect(itemSumInsured(item('INTERIOR', { sqFt: '10.25', ratePerSqFt: '3' })).toFixed()).toBe(
-      '30.75',
-    );
+    expect(
+      itemSumInsured(item('COMPOUND_WALL', { sqFt: '10.25', ratePerSqFt: '3' })).toFixed(),
+    ).toBe('30.75');
   });
 
   it('totals the exact amounts, so the rounded total matches the client’s Excel', () => {

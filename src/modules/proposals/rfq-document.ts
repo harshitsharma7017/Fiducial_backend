@@ -51,10 +51,18 @@ export function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): E
   const anyAnnexure = record.sections.some(
     (section) => section.included && isAnnexureSection(section.code) && section.annexure.length > 0,
   );
+  const anyRisk = record.locations.some((location) =>
+    Object.values(location.risk).some((answer) => answer?.trim()),
+  );
+  // A sheet with nothing in it adds nothing to the paper copy; the Excel keeps it.
+  const empty: Record<string, boolean> = {
+    Annexure: !anyAnnexure,
+    'risk details': !anyRisk,
+    'claim details': record.claims.length === 0,
+  };
   const first = PDF_ORDER.flatMap((name) => {
     const sheet = sheetNamed(workbook, name);
-    // An empty annexure grid adds nothing to the paper copy; the Excel keeps it.
-    if (!sheet || (name === 'Annexure' && !anyAnnexure)) return [];
+    if (!sheet || empty[name]) return [];
     return [sheet];
   });
   const rest = workbook.worksheets.filter(

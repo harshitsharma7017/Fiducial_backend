@@ -35,7 +35,6 @@ const FIRE_LINE_WORDS: readonly [string, FireItemKey][] = [
   ['compound wall', 'COMPOUND_WALL'],
   ['false ceiling', 'FALSE_CEILING'],
   ['plinth', 'PLINTH_FOUNDATION'],
-  ['interior', 'INTERIOR'],
   ['furniture', 'FFF'],
   ['office equipment', 'OFFICE_EQUIPMENT'],
   ['entire power', 'ELECTRICAL'],
@@ -185,9 +184,32 @@ function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
     findRow(sheet, 'Total sum insured', { column: 2, from: header, prefix: true }) ?? header + 20;
   const fire: DataSheetImport['locations'][number]['fire'] = [];
   const buildings: DataSheetImport['locations'][number]['buildings'] = [];
+  // D2: the sheet's Interior row is part of Furniture, Fixtures and Fittings & Interiors.
+  let interiors: Decimal | null = null;
   for (let row = header + 1; row < total; row += 1) {
     const label = own(sheet, row, 2);
     if (!label) continue;
+    if (labelKey(label).startsWith('interior')) {
+      const where = `${place}, Interiors`;
+      const amount = rupees(reader, own(sheet, row, sumColumn), where);
+      const { sqFt, rate, product } = measuredValues(
+        reader,
+        sheet,
+        row,
+        sqFtColumn,
+        rateColumn,
+        amount,
+        where,
+      );
+      const value =
+        amount ??
+        product ??
+        (sqFt !== null && rate !== null
+          ? new Decimal(sqFt).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed()
+          : null);
+      if (value !== null) interiors = (interiors ?? new Decimal(0)).plus(value);
+      continue;
+    }
     // D1: a "Building …" row is a building, not a fixed Fire item. Its name is the row's text.
     if (labelKey(label).startsWith('building')) {
       const where = `${place}, ${label}`;
@@ -244,6 +266,12 @@ function readFire(reader: Reader, sheet: ExcelJS.Worksheet, place: string) {
       amount !== null &&
       new Decimal(sqFt).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).equals(amount);
     fire.push({ key, sqFt, ratePerSqFt: rate, amount: sameAsProduct ? null : amount });
+  }
+  if (interiors !== null) {
+    const furniture = fire.find((item) => item.key === 'FFF');
+    const amount = interiors.plus(furniture?.amount ?? 0).toFixed();
+    if (furniture) furniture.amount = amount;
+    else fire.push({ key: 'FFF', sqFt: null, ratePerSqFt: null, amount });
   }
   return { fire, buildings, sumColumn };
 }

@@ -246,6 +246,28 @@ export function insertRows(
   shiftPrintArea(sheet, at, count);
 }
 
+/**
+ * Hides a row: documents leave out what is empty or not required. A label merged down from the
+ * row (the "Addon coverages" column) moves to the next row of its range, so the rows still shown
+ * keep it.
+ */
+export function hideRow(sheet: ExcelJS.Worksheet, row: number): void {
+  for (const range of mergeRanges(sheet)) {
+    if (range.top !== row || range.bottom === row) continue;
+    const master = sheet.getCell(row, range.left);
+    const value = master.value;
+    const style = JSON.parse(JSON.stringify(master.style)) as Partial<ExcelJS.Style>;
+    sheet.unMergeCells(...rangeAddress(range));
+    const next = sheet.getCell(row + 1, range.left);
+    next.value = value;
+    next.style = style;
+    if (range.bottom > row + 1 || range.right > range.left) {
+      sheet.mergeCells(row + 1, range.left, range.bottom, range.right);
+    }
+  }
+  sheet.getRow(row).hidden = true;
+}
+
 /** Copies a column's look (cell styles and width) to another column. */
 export function copyColumnStyle(
   sheet: ExcelJS.Worksheet,

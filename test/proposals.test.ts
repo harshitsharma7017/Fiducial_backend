@@ -85,16 +85,19 @@ beforeAll(async () => {
 });
 
 function create(token = manager, locationIds = [plant1, plant2]) {
-  return request(app)
-    .post('/api/v1/proposals')
-    .set(bearer(token))
-    .send({ clientId, locationIds, dueDate: '2026-11-15' });
+  return request(app).post('/api/v1/proposals').set(bearer(token)).send({
+    clientId,
+    locationIds,
+    dueDate: '2026-11-15',
+    policyStart: '2026-12-01',
+    policyEnd: '2027-11-30',
+  });
 }
 
 const dataSheet = (overrides: Record<string, unknown> = {}) => ({
   dueDate: '2026-11-20',
-  policyStart: '',
-  policyEnd: '',
+  policyStart: '2026-12-01',
+  policyEnd: '2027-11-30',
   locations: [
     {
       locationId: plant1,
@@ -180,6 +183,17 @@ describe('new-business proposals', () => {
     );
   });
 
+  it('requires the policy period on the Data Sheet', async () => {
+    const { body: proposal } = await create().expect(201);
+    const blank = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(dataSheet({ policyStart: '', policyEnd: '' }))
+      .expect(400);
+    expect(JSON.stringify(blank.body.details)).toContain('Enter the start of the policy period');
+    expect(JSON.stringify(blank.body.details)).toContain('Enter the end of the policy period');
+  });
+
   it("refuses another client's locations", async () => {
     const other = await request(app)
       .post('/api/v1/clients')
@@ -196,7 +210,13 @@ describe('new-business proposals', () => {
     const response = await request(app)
       .post('/api/v1/proposals')
       .set(bearer(manager))
-      .send({ clientId: other.body.id, locationIds: [plant1], dueDate: '2026-11-15' })
+      .send({
+        clientId: other.body.id,
+        locationIds: [plant1],
+        dueDate: '2026-11-15',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
       .expect(400);
     expect(response.body.details[0].path).toBe('locationIds');
   });
@@ -350,8 +370,8 @@ describe('new-business proposals', () => {
     // 8,00,000. FLOP included with a non-zero Option 2 via its single sum-insured line.
     const body = {
       dueDate: '2026-11-20',
-      policyStart: '',
-      policyEnd: '',
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
       locations: [
         {
           locationId: plant1,
@@ -485,11 +505,26 @@ describe('new-business proposals', () => {
     expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
       'Steel coils in the yard',
     );
-    // D1/D2: the Building heading, then its two buildings (no S No) and civil-structure sub-items
-    // (a, b, c); Interiors (2a) now sits under Furniture (2); then 3, 4, 5…
+    // Only what was filled is printed, with its Data Sheet number: the Building heading over its
+    // two buildings (no S No), Plant and Machinery (5) over Genset (a) and Transformer (c), Stock
+    // (6, its own line empty) over third-party stock (a), then hypothecation and open stock.
     expect(rows.map((row) => row[0]).filter((n) => typeof n === 'string' && n.length <= 2)).toEqual(
-      ['1', 'a', 'b', 'c', 'a', '2', '3', '4', '5', 'a', 'b', 'c', 'd', '6', 'a', '7', '1', '2'],
+      ['1', '5', 'a', 'c', '6', 'a', '1', '2'],
     );
+    expect(find('Compressor and all its accessories')).toBeUndefined();
+    expect(find('Compound wall')).toBeUndefined();
+    expect(find('All types of stock pertaining to insured business')?.[4]).toBeUndefined();
+    // Sub-items are indented, letter and description; the headings are not.
+    const sheet = workbook.getWorksheet('fire by location')!;
+    const rowNumber = (label: string) =>
+      sheet.getSheetValues().findIndex((row) => Array.isArray(row) && row[2] === label);
+    const transformer = sheet.getRow(rowNumber('Transformer and all its accessories'));
+    expect(transformer.getCell(1).alignment?.indent).toBe(1);
+    expect(transformer.getCell(2).alignment?.indent).toBe(2);
+    expect(
+      sheet.getRow(rowNumber('All types of Plant and Machinery and all its accessories')).getCell(2)
+        .alignment?.indent ?? 0,
+    ).toBe(0);
     const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
     expect(schedule).toContain('Plant 1: State Bank of India, Pune');
     expect(schedule).toContain('Plant 1: Steel coils in the yard');
@@ -680,6 +715,147 @@ describe('new-business proposals', () => {
     expect(annexure).toContainEqual([1, 'CNC controller', 'Fanuc 0i-MF', 'F-77', '2021', 1250000]);
   });
 
+  it('C-2: new business takes the client’s current policy as the Existing column', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const sheet = (existing: Record<string, unknown>) =>
+      dataSheet({
+        locations: [
+          {
+            locationId: plant1,
+            fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+            hypothecation: '',
+            openStock: '',
+            risk: risk(),
+          },
+        ],
+        sections: [],
+        fireOption2: [],
+        existing,
+      });
+    const figures = {
+      policyNumber: 'CUR/2025/7',
+      fireLines: [{ group: 'STOCKS', amount: '900000' }],
+      fireTotal: null,
+    };
+    // Typed figures need the policy they come from.
+    const missing = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(sheet({ ...figures, insurer: null }))
+      .expect(400);
+    expect(JSON.stringify(missing.body.details)).toContain('Enter the existing policy’s insurer');
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(sheet({ ...figures, insurer: 'Current General, Fort' }))
+      .expect(200);
+    expect(saved.body.existing).toMatchObject({
+      insurer: 'Current General, Fort',
+      policyNumber: 'CUR/2025/7',
+      source: 'DATA_SHEET',
+    });
+    expect(
+      saved.body.fire.groups.find((g: { group: string }) => g.group === 'STOCKS').existing,
+    ).toBe('900000');
+    // The RFQ's schedule has the Existing column, with the policy in force.
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const rows = workbook
+      .getWorksheet('schedule')!
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
+    expect(rows.find((row) => row[0] === 'S No')).toEqual([
+      'S No',
+      'Description',
+      'Existing Sum Insured',
+      'Proposed Sum Insured - Option 1',
+      'Proposed Sum Insured - Option 2',
+    ]);
+    expect(
+      rows.find((row) => row[1] === 'All types of stock pertaining to insured business'),
+    ).toEqual([6, 'All types of stock pertaining to insured business', 900000, 1000000]);
+  });
+
+  it('leaves out of the RFQ whatever is empty or not required', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [
+            {
+              code: 'MONEY',
+              included: true,
+              proposed1: '',
+              proposed2: '',
+              lines: { cashInSafe: '200000' },
+              covers: [
+                { name: 'Riot Strike Malicious Damage', required: true },
+                { name: 'Terrorism', required: false },
+              ],
+            },
+          ],
+          fireOption2: [],
+          claims: [],
+        }),
+      )
+      .expect(200);
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    // No claims and no risk answers: those sheets are left out.
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      'premium details',
+      'schedule',
+      'fire by location',
+    ]);
+    const text = (name: string) => JSON.stringify(workbook.getWorksheet(name)!.getSheetValues());
+    const schedule = text('schedule');
+    // Money: the one line filled and the cover asked for; the blank lines and the cover not
+    // required are left out.
+    expect(schedule).toContain('Cash in safe / counter');
+    expect(schedule).not.toContain('Cash in transit');
+    expect(schedule).toContain('Riot Strike Malicious Damage');
+    expect(schedule).not.toContain('Not required');
+    // Fire: only the stock line; no empty lines, no unanswered covers.
+    expect(schedule).toContain('All types of stock pertaining to insured business');
+    expect(schedule).not.toContain('Office equipments');
+    expect(schedule).not.toContain('Earthquake');
+    // No hypothecation or open stock given: no "Nil" rows.
+    const location = text('fire by location');
+    expect(location).not.toContain('Nil');
+    expect(location).not.toContain('Hypothecation');
+  });
+
   it('D-4: Money, Fidelity and Public Liability take their sum insured from their lines', async () => {
     const { body: proposal } = await create(manager, [plant1]).expect(201);
     const saved = await request(app)
@@ -864,7 +1040,7 @@ describe('new-business proposals', () => {
   });
 });
 
-// D1 (multiple buildings) and D2 (Interior moved to Furniture, Fixtures and Fittings & Interiors).
+// D1 (multiple buildings) and D2 (Interiors one item with Furniture, Fixtures and Fittings).
 describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
   it('D1: any number of buildings, priced amount or area × rate, in the Building line', async () => {
     const { body: proposal } = await create(manager, [plant1]).expect(201);
@@ -920,44 +1096,133 @@ describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
     expect(location.fireTotal).toBe('9350000');
   });
 
-  it('D2: Interiors sit in Furniture, Fixtures and Fittings & Interiors, and count as contents', async () => {
+  it('D2: Furniture, Fixtures and Fittings & Interiors is one item, and counts as contents', async () => {
     const { body: proposal } = await create(manager, [plant1]).expect(201);
+    const location = (fire: { key: string; amount: string }[]) => ({
+      locationId: plant1,
+      buildings: [{ name: 'Building 1', sqFt: '', ratePerSqFt: '', amount: '4000000' }],
+      fire: fire.map((item) => ({ ...item, sqFt: '', ratePerSqFt: '' })),
+      hypothecation: '',
+      openStock: '',
+      risk: risk(),
+    });
+    const sheet = (fire: { key: string; amount: string }[]) =>
+      dataSheet({
+        locations: [location(fire)],
+        sections: [
+          { code: 'BURGLARY', included: true, proposed1: '', proposed2: '', basis: 'FULL' },
+        ],
+        fireOption2: [],
+      });
+    // A separate Interiors item is no longer accepted.
+    await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(sheet([{ key: 'INTERIOR', amount: '600000' }]))
+      .expect(400);
     const saved = await request(app)
       .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
       .set(bearer(manager))
       .send(
-        dataSheet({
-          locations: [
-            {
-              locationId: plant1,
-              buildings: [{ name: 'Building 1', sqFt: '', ratePerSqFt: '', amount: '4000000' }],
-              fire: [
-                { key: 'INTERIOR', sqFt: '', ratePerSqFt: '', amount: '600000' },
-                { key: 'FFF', sqFt: '', ratePerSqFt: '', amount: '400000' },
-                { key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' },
-              ],
-              hypothecation: '',
-              openStock: '',
-              risk: risk(),
-            },
-          ],
-          sections: [
-            { code: 'BURGLARY', included: true, proposed1: '', proposed2: '', basis: 'FULL' },
-          ],
-          fireOption2: [],
-        }),
+        sheet([
+          { key: 'FFF', amount: '1000000' },
+          { key: 'STOCKS', amount: '1000000' },
+        ]),
       )
       .expect(200);
     const line = (group: string) =>
       saved.body.fire.groups.find((g: { group: string }) => g.group === group);
-    // D2: Interiors (600000) + Furniture (400000) are in the FFF line, not Building.
     expect(line('FFF').proposed1).toBe('1000000');
     expect(line('BUILDING').proposed1).toBe('4000000');
-    // D2: Interiors count as Burglary contents (all but buildings): 1,000,000 + 1,000,000.
+    // Furniture & Interiors count as Burglary contents (all but buildings): 1,000,000 + 1,000,000.
     const burglary = saved.body.sections.find((s: { code: string }) => s.code === 'BURGLARY');
     expect(burglary.proposed1).toBe('2000000');
-    // No double count: the Fire total is 4,000,000 + 1,000,000 + 1,000,000.
     expect(saved.body.fire.proposed1).toBe('6000000');
+
+    // The RFQ's Fire by location: item 2 is one row with its sum insured, no sub-items.
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const rows = workbook
+      .getWorksheet('fire by location')!
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
+    const at = rows.findIndex((row) => row[1] === 'Furniture, Fixtures and Fittings & Interiors');
+    expect(rows[at]).toEqual([
+      '2',
+      'Furniture, Fixtures and Fittings & Interiors',
+      undefined,
+      undefined,
+      1000000,
+    ]);
+    expect(rows[at + 1]?.[0]).toBe('6');
+    expect(rows.some((row) => row[1] === 'Interiors')).toBe(false);
+  });
+
+  it('D2: a case saved with a separate Interiors item loads with it added to Furniture', async () => {
+    const { Types } = await import('mongoose');
+    const { ProposalModel } = await import('../src/modules/proposals/proposal.model.ts');
+    const d = (value: string) => Types.Decimal128.fromString(value);
+    const now = new Date();
+    const inserted = await ProposalModel.collection.insertOne({
+      reference: `LEGACY-${randomSuffix()}`,
+      type: 'NEW',
+      stage: 'DATA_SHEET',
+      stageOverride: null,
+      clientId: new Types.ObjectId(clientId),
+      ownerId: new Types.ObjectId((await tokenFor(app, ['ACCOUNT_MANAGER'])).user.id),
+      dueDate: '2026-11-20',
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
+      locations: [
+        {
+          locationId: new Types.ObjectId(plant1),
+          fire: [
+            // Interiors priced as area × rate: 1,000.5 sq ft × ₹450 = ₹4,50,225.
+            { key: 'INTERIOR', sqFt: d('1000.5'), ratePerSqFt: d('450'), amount: null },
+            { key: 'FFF', sqFt: null, ratePerSqFt: null, amount: d('200000') },
+            { key: 'STOCKS', sqFt: null, ratePerSqFt: null, amount: d('300000') },
+          ],
+          buildings: [],
+          hypothecation: null,
+          openStock: null,
+          risk: {},
+        },
+      ],
+      fireOption2: [],
+      sections: [],
+      claims: [],
+      notes: null,
+      insurers: [],
+      activity: [],
+      createdBy: new Types.ObjectId((await tokenFor(app, ['ADMIN'])).user.id),
+      updatedBy: new Types.ObjectId((await tokenFor(app, ['ADMIN'])).user.id),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const id = inserted.insertedId.toString();
+    const read = await request(app).get(`/api/v1/proposals/${id}`).set(bearer(manager)).expect(200);
+    const location = read.body.locations[0];
+    // Interiors (4,50,225) is added to Furniture (2,00,000); nothing is lost or counted twice.
+    expect(
+      location.fire.map((item: { key: string; amount: string | null }) => [item.key, item.amount]),
+    ).toEqual([
+      ['FFF', '650225'],
+      ['STOCKS', '300000'],
+    ]);
+    expect(read.body.fire.groups.find((g: { group: string }) => g.group === 'FFF').proposed1).toBe(
+      '650225',
+    );
+    expect(location.fireTotal).toBe('950225');
   });
 
   it('D1: legacy BUILDING_1/BUILDING_2 cases load as buildings and migrate on the next save', async () => {
@@ -975,8 +1240,8 @@ describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
       clientId: new Types.ObjectId(clientId),
       ownerId: new Types.ObjectId((await tokenFor(app, ['ACCOUNT_MANAGER'])).user.id),
       dueDate: '2026-11-20',
-      policyStart: null,
-      policyEnd: null,
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
       locations: [
         {
           locationId: new Types.ObjectId(plant1),

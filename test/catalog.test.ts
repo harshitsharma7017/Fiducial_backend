@@ -175,7 +175,13 @@ async function newProposal() {
   const response = await request(app)
     .post('/api/v1/proposals')
     .set(bearer(manager))
-    .send({ clientId, locationIds: [locationId], dueDate: '2026-12-01' })
+    .send({
+      clientId,
+      locationIds: [locationId],
+      dueDate: '2026-12-01',
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
+    })
     .expect(201);
   return response.body as { id: string; gstRatePercent: string | null };
 }
@@ -186,8 +192,8 @@ async function rfqSchedule(proposalId: string): Promise<string[]> {
     .set(bearer(manager))
     .send({
       dueDate: '2026-12-01',
-      policyStart: null,
-      policyEnd: null,
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
       locations: [
         {
           locationId,
@@ -199,7 +205,17 @@ async function rfqSchedule(proposalId: string): Promise<string[]> {
       ],
       fireOption2: [],
       sections: [
-        { code: 'BURGLARY', included: true, proposed1: '5000000', proposed2: null },
+        {
+          code: 'BURGLARY',
+          included: true,
+          proposed1: '5000000',
+          proposed2: null,
+          covers: [
+            { name: 'Theft', required: true },
+            { name: 'Riot Strike Malicious Damage', required: true },
+            { name: 'Terrorism', required: false },
+          ],
+        },
         { code: 'MONEY', included: false, proposed1: null, proposed2: null },
       ],
       claims: [],
@@ -419,7 +435,13 @@ describe('product and cover masters', () => {
     const proposal = await request(app)
       .post('/api/v1/proposals')
       .set(bearer(manager))
-      .send({ clientId, locationIds: [locationId], dueDate: '2026-12-01' })
+      .send({
+        clientId,
+        locationIds: [locationId],
+        dueDate: '2026-12-01',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
       .expect(201);
     // Nothing is insured yet, so nothing is suggested.
     expect(proposal.body.suggestedProducts).toEqual([]);
@@ -456,7 +478,13 @@ describe('product and cover masters', () => {
     const proposal = await request(app)
       .post('/api/v1/proposals')
       .set(bearer(manager))
-      .send({ clientId, locationIds: [locationId], dueDate: '2026-12-01' })
+      .send({
+        clientId,
+        locationIds: [locationId],
+        dueDate: '2026-12-01',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
       .expect(201);
     const codes = proposal.body.sections.map((s: { code: string }) => s.code);
     expect(codes.slice(0, 2)).toEqual(['MONEY', 'BURGLARY']);
@@ -532,8 +560,10 @@ describe('product and cover masters', () => {
     expect(
       lines.some((line) => line.startsWith('Insure all assets at current replacement value.')),
     ).toBe(true);
-    expect(lines).toContain('Addon coverages | Theft');
-    expect(lines).toContain('Riot Strike Malicious Damage');
+    // The covers asked for are printed; one not required is left out.
+    expect(lines).toContain('Addon coverages | Theft | Required');
+    expect(lines).toContain('Riot Strike Malicious Damage | Required');
+    expect(lines.some((line) => line.includes('Not required'))).toBe(false);
     // B5: a section marked not required (Money here) is omitted from the schedule, not shown as
     // "Not required".
     expect(lines).not.toContain('Money Insurance | Not required');

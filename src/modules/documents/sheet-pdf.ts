@@ -1,16 +1,19 @@
 import { formatDate, formatIndianNumber } from '../../shared/index.ts';
 import type ExcelJS from 'exceljs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import pdfmake from 'pdfmake';
 import type { Content, TableCell } from 'pdfmake';
 import {
+  BROKER,
   CONTENT_WIDTH,
   DOCUMENT_COLORS,
   DOCUMENT_FONT,
   DOCUMENT_FONT_FAMILY,
   DOCUMENT_LINE_HEIGHT,
   MARGIN,
+  PAGE,
   WATERMARK,
 } from './document-theme.ts';
 import { cellText, printColumns, printRows } from './excel-template.ts';
@@ -44,6 +47,24 @@ pdfmake.setLocalAccessPolicy((path) => path.startsWith(fontDir));
 /** Points per Excel character width (Calibri 11). */
 const POINTS_PER_CHARACTER = 5.6;
 const DEFAULT_COLUMN_WIDTH = 8.43;
+/** Points per Excel indent level (sub-items of the schedules are indented). */
+const POINTS_PER_INDENT = 9;
+/** Words a heading keeps in lower case unless they come first. */
+const MINOR_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'for',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+]);
 
 export interface Letterhead {
   logo: { data: Buffer; extension: string } | null;
@@ -146,10 +167,11 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
   for (let row = rows.from; row <= rows.to; row += 1) {
     if (!sheet.getRow(row).hidden) visible.push(row);
   }
+  // Hidden columns are left out, as hidden rows are.
   const columnNumbers = Array.from(
     { length: columns.to - columns.from + 1 },
     (_, i) => columns.from + i,
-  );
+  ).filter((column) => !sheet.getColumn(column).hidden);
   const characterWidths = columnNumbers.map(
     (column) => sheet.getColumn(column).width ?? DEFAULT_COLUMN_WIDTH,
   );
@@ -196,7 +218,7 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         continue;
       }
       let span = 1;
-      for (let next = column + 1; next <= columns.to; next += 1) {
+      for (const next of columnNumbers.slice(columnNumbers.indexOf(column) + 1)) {
         const other = sheet.getCell(row, next);
         if (
           cellText(other) ||
@@ -210,7 +232,9 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
       }
       if (span > 1) {
         overflow.set(key, span);
-        for (let next = column + 1; next < column + span; next += 1) covered.add(`${row}:${next}`);
+        const index = columnNumbers.indexOf(column);
+        for (const next of columnNumbers.slice(index + 1, index + span))
+          covered.add(`${row}:${next}`);
       }
     }
   }
@@ -251,6 +275,10 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         ],
       };
       if (fill) result.fillColor = fill;
+      const indent = cell.alignment?.indent ?? 0;
+      if (indent > 0 && result.alignment === 'left') {
+        result.margin = [indent * POINTS_PER_INDENT * scale, 0, 0, 0];
+      }
       // Theme colours 0 and 1 are the sheet's light and dark (white and black in Office themes).
       const theme = cell.font?.color?.theme;
       const colour = theme === 0 ? '#FFFFFF' : argbColour(cell.font?.color?.argb, '000000');
@@ -267,7 +295,8 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
       }
       if (span) {
         const right = Math.min(span.right, columns.to);
-        if (right > column) result.colSpan = right - column + 1;
+        const spanned = columnNumbers.filter((other) => other >= column && other <= right).length;
+        if (spanned > 1) result.colSpan = spanned;
         const lastVisible = visible.filter((r) => r >= span.top && r <= span.bottom).length;
         if (lastVisible > 1) result.rowSpan = lastVisible;
       }
@@ -278,6 +307,9 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
   return {
     table: { widths, body, dontBreakRows: true },
     layout: {
+      // Every cell carries its own borders from the sheet; the cells hidden under a merged range
+      // must draw none (pdfmake would otherwise rule a line under part of an unbordered title).
+      defaultBorder: false,
       hLineWidth: () => 0.5,
       vLineWidth: () => 0.5,
       hLineColor: () => DOCUMENT_COLORS.gridline,
@@ -305,15 +337,11 @@ export async function workbookToPdf(
   options: PdfOptions,
 ): Promise<Buffer> {
   const sheets = options.sheets ?? workbook.worksheets.filter((sheet) => sheet.state !== 'hidden');
-  const { address } = options.letterhead;
   const logoImage = logoDataUrl(options.letterhead.logo);
 
   const content: Content[] = sheets.flatMap((sheet, index): Content[] => [
     {
-      text: sheet.name,
-      fontSize: DOCUMENT_FONT.caption,
-      color: DOCUMENT_COLORS.muted,
-      margin: [0, 0, 0, 3],
+      ...sheetHeading(sheet.name),
       ...(index > 0 ? { pageBreak: 'before' as const } : {}),
     },
     sheetTable(sheet),
@@ -331,31 +359,95 @@ export async function workbookToPdf(
       color: DOCUMENT_COLORS.ink,
     },
     watermark: { ...WATERMARK },
-    header: () => documentHeader(logoImage, address),
+    header: () => documentHeader(logoImage),
     footer: (page: number, pages: number) => documentFooter(options.footer, page, pages),
+    background: () => documentBackground(),
     content,
   };
   return Buffer.from(await pdfmake.createPdf(definition).getBuffer());
 }
 
 /**
- * The shared letterhead band (Q2): the broker's logo, the address on the right and the navy rule,
- * drawn at the top of every page of every generated PDF. Exported so the Coverage Confirmation
- * Letter (Q4), which pdfmake draws directly, shows the same header.
+ * A sheet's name as the heading of its part of the PDF: in title case ("premium details" reads
+ * "Premium Details"), white on a navy band so each part of the document stands out.
  */
-export function documentHeader(logoImage: string | null, address: string | null): Content {
+export function sheetHeading(name: string) {
+  const text = name
+    .trim()
+    .split(/\s+/)
+    .map((word, index) =>
+      index > 0 && MINOR_WORDS.has(word.toLowerCase())
+        ? word.toLowerCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(' ');
   return {
-    margin: [MARGIN.left, 22, MARGIN.right, 0],
+    table: {
+      widths: ['*'],
+      body: [[{ text, bold: true, fontSize: DOCUMENT_FONT.heading, color: '#FFFFFF' }]],
+    },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: () => 0,
+      fillColor: () => DOCUMENT_COLORS.rule,
+      paddingLeft: () => 6,
+      paddingRight: () => 6,
+      paddingTop: () => 3,
+      paddingBottom: () => 3,
+    },
+    margin: [0, 0, 0, 6] as [number, number, number, number],
+  } satisfies Content;
+}
+
+/**
+ * The Fiducial letterhead's logo, bundled with the app as data/letterhead/logo.png (or .jpg).
+ * Without it, the logo of the client's uploaded template is used.
+ */
+const BRAND_LOGO = ((): string | null => {
+  for (const extension of ['png', 'jpg']) {
+    try {
+      const data = readFileSync(
+        new URL(`../../../data/letterhead/logo.${extension}`, import.meta.url),
+      );
+      return logoDataUrl({ data, extension });
+    } catch {
+      // Not bundled in this format.
+    }
+  }
+  return null;
+})();
+
+/**
+ * The letterhead at the top of every page of every generated PDF (Q2), as the Fiducial letterhead
+ * lays it out: the logo on the left, the broker's name and address in bold on the right, and a
+ * navy rule across the full width of the page. Exported so the Coverage Confirmation Letter (Q4),
+ * which pdfmake draws directly, shows the same header.
+ */
+export function documentHeader(logoImage: string | null): Content {
+  const logo = BRAND_LOGO ?? logoImage;
+  return {
+    margin: [MARGIN.left, 20, MARGIN.right, 0],
     stack: [
       {
+        columnGap: 30,
         columns: [
-          logoImage ? { image: logoImage, fit: [130, 42], width: 140 } : { text: '', width: 140 },
+          logo
+            ? { image: logo, fit: [200, 66], width: 230 }
+            : {
+                text: 'Fiducial',
+                bold: true,
+                fontSize: 26,
+                color: DOCUMENT_COLORS.rule,
+                width: 230,
+              },
           {
-            text: (address ?? '').replace(/\s*\|\s*/g, ' · ').replace(/\s*\n\s*/g, '\n'),
-            alignment: 'right',
-            fontSize: DOCUMENT_FONT.letterheadAddress,
-            color: DOCUMENT_COLORS.text,
             width: '*',
+            stack: [BROKER.name, ...BROKER.address],
+            bold: true,
+            fontSize: DOCUMENT_FONT.letterheadAddress,
+            color: DOCUMENT_COLORS.letterhead,
+            lineHeight: 1.2,
+            margin: [0, 6, 0, 0],
           },
         ],
       },
@@ -363,11 +455,11 @@ export function documentHeader(logoImage: string | null, address: string | null)
         canvas: [
           {
             type: 'line',
-            x1: 0,
-            y1: 6,
-            x2: CONTENT_WIDTH,
-            y2: 6,
-            lineWidth: 0.75,
+            x1: -MARGIN.left,
+            y1: 10,
+            x2: PAGE.width - MARGIN.left,
+            y2: 10,
+            lineWidth: 2.5,
             lineColor: DOCUMENT_COLORS.rule,
           },
         ],
@@ -376,19 +468,61 @@ export function documentHeader(logoImage: string | null, address: string | null)
   };
 }
 
-/** The shared footer (Q2): the document reference on the left, "Page X of Y" on the right. */
+/**
+ * The foot of every page (Q2): the document's reference and "Page X of Y", then the letterhead's
+ * contact line (telephone, e-mail and website) in navy.
+ */
 export function documentFooter(text: string, page: number, pages: number): Content {
+  const separator = { text: '  |  ', fontSize: DOCUMENT_FONT.contact + 3 };
   return {
-    margin: [MARGIN.left, 14, MARGIN.right, 0],
-    columns: [
-      { text, fontSize: DOCUMENT_FONT.footer, color: DOCUMENT_COLORS.muted },
+    margin: [MARGIN.left, 10, MARGIN.right, 0],
+    stack: [
       {
-        text: `Page ${page} of ${pages}`,
-        fontSize: DOCUMENT_FONT.footer,
-        color: DOCUMENT_COLORS.muted,
-        alignment: 'right',
+        columns: [
+          { text, fontSize: DOCUMENT_FONT.footer, color: DOCUMENT_COLORS.muted },
+          {
+            text: `Page ${page} of ${pages}`,
+            fontSize: DOCUMENT_FONT.footer,
+            color: DOCUMENT_COLORS.muted,
+            alignment: 'right',
+          },
+        ],
+      },
+      {
+        text: [
+          `Tel : ${BROKER.telephone}`,
+          separator,
+          `E-mail : ${BROKER.email}`,
+          separator,
+          BROKER.website,
+        ],
+        alignment: 'center',
+        bold: true,
+        fontSize: DOCUMENT_FONT.contact,
+        color: DOCUMENT_COLORS.contact,
+        margin: [0, 8, 0, 0],
       },
     ],
+  };
+}
+
+/** The letterhead's corner accent: a green and a navy triangle at the bottom right of each page. */
+export function documentBackground(): Content {
+  const { width, height } = PAGE;
+  const triangle = (run: number, rise: number, color: string) => ({
+    type: 'polyline' as const,
+    closePath: true,
+    color,
+    lineColor: color,
+    lineWidth: 0.1,
+    points: [
+      { x: width - run, y: height },
+      { x: width, y: height - rise },
+      { x: width, y: height },
+    ],
+  });
+  return {
+    canvas: [triangle(63, 88, DOCUMENT_COLORS.accentGreen), triangle(40, 57, DOCUMENT_COLORS.rule)],
   };
 }
 

@@ -560,10 +560,14 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
       throw new Error(`No "${text}" row`);
     };
 
-    // C-6: Fire's covers marked in the Option 1 column; Storm left unanswered stays blank.
+    // C-6: Fire's covers asked for are marked in the Option 1 column; Terrorism (not required)
+    // and Storm (left unanswered) are left out: their rows are hidden.
     expect(schedule.getCell(rowOf('Earthquake'), 4).value).toBe('Required');
-    expect(schedule.getCell(rowOf('Terrorism'), 4).value).toBe('Not required');
-    expect(schedule.getCell(rowOf('Storm, Tempest, Flood & Inundation'), 4).value).toBeNull();
+    expect(schedule.getRow(rowOf('Earthquake')).hidden).toBeFalsy();
+    expect(schedule.getRow(rowOf('Terrorism')).hidden).toBe(true);
+    expect(schedule.getRow(rowOf('Storm, Tempest, Flood & Inundation')).hidden).toBe(true);
+    // The "Addon coverages" label stays on the row still shown.
+    expect(schedule.getCell(rowOf('Earthquake'), 1).text).toBe('Addon coverages');
 
     // C-1: only the chosen policy is shown, under the label Policy.
     const product = rowOf('Policy', 1);

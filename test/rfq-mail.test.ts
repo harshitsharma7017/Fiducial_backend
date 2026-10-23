@@ -120,7 +120,13 @@ async function readyCase(complete = true): Promise<string> {
   const created = await request(app)
     .post('/api/v1/proposals')
     .set(bearer(manager))
-    .send({ clientId, locationIds: [plant], dueDate: DUE })
+    .send({
+      clientId,
+      locationIds: [plant],
+      dueDate: DUE,
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
+    })
     .expect(201);
   const id = created.body.id as string;
   await request(app)
@@ -134,8 +140,8 @@ async function readyCase(complete = true): Promise<string> {
       .set(bearer(manager))
       .send({
         dueDate: DUE,
-        policyStart: '',
-        policyEnd: '',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
         locations: [
           {
             locationId: plant,

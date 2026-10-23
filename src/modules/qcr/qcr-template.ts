@@ -14,6 +14,7 @@ import {
   findColumn,
   findRow,
   findRows,
+  hideRow,
   insertRows,
   labelKey,
   printColumns,
@@ -217,6 +218,15 @@ function fillPremiumComparison(
     const sumColumn = findColumn(sheet, namesRow, 'Sum Insured') ?? quoteColumn;
     const existingSum = findColumn(sheet, top + 2, 'Sum Insured') ?? existingColumn;
     const existingPremium = existingSum + 1;
+    // Left out: the existing policy's columns for new business, and insurer columns not used.
+    if (!renewal) {
+      for (const column of new Set([existingColumn, existingSum, existingPremium])) {
+        sheet.getColumn(column).hidden = true;
+      }
+    }
+    insurerColumns.slice(qcr.insurers.length).forEach((column) => {
+      sheet.getColumn(column).hidden = true;
+    });
 
     const quotes = qcr.insurers.map((insurer) =>
       data.quotes.find((quote) => quote.insurerId === insurer.insurerId),
@@ -354,6 +364,8 @@ function fillPremiumComparison(
         sheet.getRow(row).height = Math.max(18, Math.ceil(line.length / 150) * 15);
       });
     }
+    // Not given: the row is left out (after the lines above have taken its style).
+    if (!qcr.paymentInFavourOf) hideRow(sheet, paymentRow);
   }
 
   // The terrorism note: the extra premium of the recommended (else the lowest) quote per option.
@@ -380,6 +392,9 @@ function fillPremiumComparison(
           `If you opt for terrorism cover, additional premium of ${extras.join(' & ')} (before GST) will be charged.`,
         ),
       );
+    } else {
+      // No terrorism figure to give: the sentence with blanks for it is left out.
+      setValue(sheet, noteRow, 1, text.replace(/\s*If you opt for the same,[\s\S]*$/, ''));
     }
   }
 }

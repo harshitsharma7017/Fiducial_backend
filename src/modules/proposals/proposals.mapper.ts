@@ -164,11 +164,10 @@ const linesRecord = (
   );
 
 /**
- * A renewal's Existing column (C-2): the figures typed on the Data Sheet, else the policy
- * software's copy. New business has none.
+ * The Existing column (C-2): the figures typed on the Data Sheet, else (a renewal) the policy
+ * software's copy. New business has one when the client's current policy was typed in.
  */
 function existingColumn(doc: ProposalDoc) {
-  if (doc.type !== 'EXISTING') return null;
   const figures = doc.existingFigures ?? null;
   const copy = doc.existingPolicy ?? null;
   if (figures) {
@@ -212,9 +211,17 @@ function existingColumn(doc: ProposalDoc) {
 /** D1: the legacy building fire-item keys that are now read into the buildings list. */
 const LEGACY_BUILDING_KEYS = new Set(['BUILDING_1', 'BUILDING_2']);
 
-/** Current Fire items only: legacy BUILDING_1/BUILDING_2 are folded into buildings (D1). */
+/** D2: Interiors, once its own Fire item, now part of Furniture, Fixtures and Fittings. */
+const LEGACY_INTERIOR_KEY = 'INTERIOR';
+
+/**
+ * Current Fire items only: legacy BUILDING_1/BUILDING_2 are folded into buildings (D1), and a
+ * legacy INTERIOR item into Furniture, Fixtures and Fittings & Interiors (D2), its sum insured
+ * (typed, else area × rate, to the rupee) added to that item's. The next Data Sheet save writes
+ * them back as the one item.
+ */
 function fireValues(doc: ProposalDoc['locations'][number]): FireItemValues[] {
-  return doc.fire
+  const items = doc.fire
     .filter((item) => !LEGACY_BUILDING_KEYS.has(item.key))
     .map((item) => ({
       key: item.key,
@@ -222,6 +229,22 @@ function fireValues(doc: ProposalDoc['locations'][number]): FireItemValues[] {
       ratePerSqFt: str(item.ratePerSqFt),
       amount: str(item.amount),
     }));
+  const interior = items.find((item) => (item.key as string) === LEGACY_INTERIOR_KEY);
+  if (!interior) return items;
+  const current = items.filter((item) => item !== interior);
+  const value =
+    interior.amount ??
+    (interior.sqFt !== null && interior.ratePerSqFt !== null
+      ? new Decimal(interior.sqFt).times(interior.ratePerSqFt).toDecimalPlaces(0).toFixed()
+      : null);
+  if (value === null) return current;
+  const furniture = current.find((item) => item.key === 'FFF');
+  if (!furniture) return [...current, { key: 'FFF', sqFt: null, ratePerSqFt: null, amount: value }];
+  return current.map((item) =>
+    item === furniture
+      ? { ...item, amount: new Decimal(value).plus(item.amount ?? 0).toFixed() }
+      : item,
+  );
 }
 
 /**

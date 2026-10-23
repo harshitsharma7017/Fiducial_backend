@@ -456,7 +456,8 @@ describe('Placement slip', () => {
     );
 
     const schedule = workbook.getWorksheet('schedule')!;
-    expect(text(schedule, 1, 1)).toBe('Policy No: To be issued by the insurer');
+    // No policy number issued yet: the row is left out.
+    expect(schedule.getRow(1).hidden).toBe(true);
     expect(text(schedule, rowOf(schedule, 'Total Sum Insured - Fire', 2), 3)).toBe(60000000);
     expect(text(schedule, rowOf(schedule, 'Agreed Bank Clause', 2), 2)).toBe(
       'Agreed Bank Clause: State Bank of India, Fort branch',
@@ -485,9 +486,9 @@ describe('Placement slip', () => {
     ]);
     // The notes (here the hypothecation) come after the conditions, above the broker's footer.
     expect(rowOf(schedule, 'NOTE:')).toBeGreaterThan(rowOf(schedule, 'Excess'));
-    // Fire was accepted without terrorism.
+    // Fire was accepted without terrorism: its terrorism cover is left out (the row is hidden).
     const fireTerrorism = rowOf(schedule, 'Terrorism', 2);
-    expect(text(schedule, fireTerrorism, 3)).toBe('Not required');
+    expect(schedule.getRow(fireTerrorism).hidden).toBe(true);
     // The policy placed, not the range offered on the RFQ.
     const product = Array.from({ length: schedule.rowCount }, (_, i) => i + 1).find(
       (row) => text(schedule, row, 1) === 'Policy',

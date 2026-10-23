@@ -109,7 +109,14 @@ function createCase(body: Record<string, unknown>, token = manager, target = app
   return request(target)
     .post('/api/v1/proposals')
     .set(bearer(token))
-    .send({ clientId, locationIds: [locationId], dueDate: '2026-10-20', ...body });
+    .send({
+      clientId,
+      locationIds: [locationId],
+      dueDate: '2026-10-20',
+      policyStart: '2026-12-01',
+      policyEnd: '2027-11-30',
+      ...body,
+    });
 }
 
 describe('D-1: creating a case', () => {
@@ -146,7 +153,12 @@ describe('D-1: creating a case', () => {
     expect(JSON.stringify(backwards.body.details)).toContain(
       'The policy period must end after it starts',
     );
-    await createCase({ type: 'EXISTING', policyStart: '2026-11-01' }).expect(400);
+    // Both dates are required, for new business and renewals alike.
+    for (const type of ['NEW', 'EXISTING']) {
+      const blank = await createCase({ type, policyStart: '', policyEnd: '' }).expect(400);
+      expect(JSON.stringify(blank.body.details)).toContain('Enter the start of the policy period');
+      expect(JSON.stringify(blank.body.details)).toContain('Enter the end of the policy period');
+    }
     const owners = await request(app)
       .get('/api/v1/proposals/owners')
       .set(bearer(manager))
@@ -390,8 +402,8 @@ describe('the 9 stages', () => {
       .set(bearer(manager))
       .send({
         dueDate: '2026-10-20',
-        policyStart: null,
-        policyEnd: null,
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
         locations: [],
         fireOption2: [],
         sections: [],

@@ -3,6 +3,7 @@ import {
   BURGLARY_BASIS_LABELS,
   DEFAULT_FIRE_COVERS,
   FIRE_GROUP_LABELS,
+  FIRE_GROUPS,
   ANNEXURE_SECTIONS,
   FIRE_ITEM_HEADINGS,
   FIRE_ITEMS,
@@ -63,6 +64,10 @@ const HEADER_FILL: ExcelJS.Fill = {
 
 const amount = (value: string | null) => (value === null ? null : Number(value));
 
+/** A figure worth printing: documents leave out what is blank or zero. */
+export const filled = (value: string | null | undefined): value is string =>
+  value !== null && value !== undefined && value.trim() !== '' && Number(value) !== 0;
+
 export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sheet.addRow([text]);
   row.font = { bold: true, size: 13 };
@@ -80,7 +85,9 @@ export function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
   return row;
 }
 
+/** A label and its value; nothing is printed when the value is blank. */
 export function labelled(sheet: ExcelJS.Worksheet, label: string, value: string, span: number) {
+  if (!value.trim()) return;
   const row = sheet.addRow([label, value]);
   row.getCell(1).font = { bold: true };
   row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
@@ -121,6 +128,8 @@ function premiumDetails(
   // A2: who prepared and approved the RFQ. Reflects the actual records, not whoever exports it.
   if (attribution) {
     for (const [label, value] of rfqAttributionRows(attribution)) {
+      // A preparer that was never recorded is left out, not printed as "Not recorded".
+      if (!attribution.preparedBy && label.startsWith('Prepared by')) continue;
       labelled(sheet, `${label}:`, value, 4);
     }
   }
@@ -157,10 +166,12 @@ function premiumDetails(
     ]);
     const first = sheet.rowCount + 1;
     const fire = option === 1 ? record.fire.proposed1 : record.fire.proposed2;
-    money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
-    // B5: only sections marked required appear; Not-required ones are omitted entirely.
+    if (filled(fire)) money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
+    // B5: only sections marked required appear; Not-required ones are omitted entirely, and so
+    // is a section with no sum insured for this option.
     for (const section of record.sections.filter(isSectionShown)) {
       const value = option === 1 ? section.proposed1 : section.proposed2;
+      if (!filled(value)) continue;
       const row = sheet.addRow([section.name, amount(value)]);
       money(row, [2, 3, 4]);
     }
@@ -198,40 +209,43 @@ export function schedule(
   document: 'RFQ' | 'QCR' = 'RFQ',
 ) {
   const sectionMaster = new Map(masters.sections.map((section) => [section.code, section]));
-  // A renewal adds the client format's "Existing Sum Insured" column, from last year's policy.
-  const renewal = record.type === 'EXISTING';
+  // The client format's "Existing Sum Insured" column, for the policy in force (last year's on a
+  // renewal, the client's current policy on new business); left out when there is none.
+  const withExisting = record.existing !== null;
   const existing = record.existing;
   const copy = record.existingPolicy;
-  const span = renewal ? 5 : 4;
-  const amountColumns = renewal ? [3, 4, 5] : [3, 4];
+  const span = withExisting ? 5 : 4;
+  const amountColumns = withExisting ? [3, 4, 5] : [3, 4];
   const figures = (
     existingValue: string | null | undefined,
     p1: string | null | undefined,
     p2: string | null | undefined,
   ) =>
-    renewal
+    withExisting
       ? [amount(existingValue ?? null), amount(p1 ?? null), amount(p2 ?? null)]
       : [amount(p1 ?? null), amount(p2 ?? null)];
-  // C-6: each add-on cover marked as asked for or not, in the option columns.
+  // C-6: the add-on covers asked for, in the option columns; those not required, or not
+  // answered, are left out.
   const covers = (list: readonly Cover[], option2: boolean) => {
-    list.forEach((cover, index) => {
-      const answer = cover.required === null ? null : cover.required ? 'Required' : 'Not required';
-      sheet.addRow([
-        index === 0 ? 'Addon coverages' : null,
-        cover.name,
-        ...(renewal ? [null] : []),
-        answer,
-        option2 ? answer : null,
-      ]);
-    });
+    list
+      .filter((cover) => cover.required === true)
+      .forEach((cover, index) => {
+        sheet.addRow([
+          index === 0 ? 'Addon coverages' : null,
+          cover.name,
+          ...(withExisting ? [null] : []),
+          'Required',
+          option2 ? 'Required' : null,
+        ]);
+      });
   };
   const sheet = workbook.addWorksheet('schedule');
   sheet.columns = [{ width: 24 }, { width: 70 }, { width: 22 }, { width: 22 }, { width: 22 }].slice(
     0,
     span,
   );
-  if (renewal) {
-    sheet.addRow([`Policy No: ${existing?.policyNumber ?? ''}`]).font = { bold: true };
+  if (withExisting && existing?.policyNumber) {
+    sheet.addRow([`Policy No: ${existing.policyNumber}`]).font = { bold: true };
   }
   title(
     sheet,
@@ -241,7 +255,7 @@ export function schedule(
     span,
   );
   labelled(sheet, 'Insured Name', client.name, span);
-  labelled(sheet, 'Insured GST No', client.gstin ?? 'Not registered', span);
+  labelled(sheet, 'Insured GST No', client.gstin ?? '', span);
   const { address } = client;
   labelled(
     sheet,
@@ -267,21 +281,19 @@ export function schedule(
         : 'For 1 year from date of payment',
     span,
   );
-  if (renewal) {
+  if (withExisting && existing) {
     labelled(
       sheet,
       'Existing Policy',
-      existing
-        ? [
-            `${existing.policyNumber ? `${existing.policyNumber} with ` : ''}${existing.insurer}`,
-            copy?.periodStart && copy.periodEnd
-              ? `${formatDate(copy.periodStart)} to ${formatDate(copy.periodEnd)}`
-              : null,
-            copy?.totalPremium ? `premium ${copy.totalPremium}` : null,
-          ]
-            .filter(Boolean)
-            .join(', ')
-        : 'Not available',
+      [
+        `${existing.policyNumber ? `${existing.policyNumber} with ` : ''}${existing.insurer}`,
+        copy?.periodStart && copy.periodEnd
+          ? `${formatDate(copy.periodStart)} to ${formatDate(copy.periodEnd)}`
+          : null,
+        copy?.totalPremium ? `premium ${copy.totalPremium}` : null,
+      ]
+        .filter(Boolean)
+        .join(', '),
       span,
     );
   }
@@ -297,20 +309,22 @@ export function schedule(
   header(sheet, [
     'S No',
     'Description',
-    ...(renewal ? ['Existing Sum Insured'] : []),
+    ...(withExisting ? ['Existing Sum Insured'] : []),
     'Proposed Sum Insured - Option 1',
     'Proposed Sum Insured - Option 2',
   ]);
   sheet.addRow(['Fire & Allied Perils']).font = { bold: true };
-  record.fire.groups.forEach((line, index) => {
+  // Lines with no figure are left out; the others keep their Data Sheet numbers.
+  for (const line of record.fire.groups) {
+    if (![line.existing, line.proposed1, line.proposed2].some(filled)) continue;
     const row = sheet.addRow([
-      index + 1,
+      FIRE_GROUPS.indexOf(line.group) + 1,
       FIRE_GROUP_LABELS[line.group],
       ...figures(line.existing, line.proposed1, line.proposed2),
     ]);
     row.getCell(2).alignment = { wrapText: true };
     money(row, amountColumns);
-  });
+  }
   const total = sheet.addRow([
     null,
     'Total Sum Insured - Fire & Allied Perils',
@@ -356,13 +370,24 @@ export function schedule(
 
   const included = record.sections.filter(isSectionShown);
   for (const section of included) {
+    // The Data Sheet's lines for the section (D-4), then its sum insured; blank lines are left
+    // out, and so is a section with nothing in it.
+    const lines = (SECTION_LINES[section.code as SectionWithLines] ?? []).filter(
+      (line) =>
+        SUM_INSURED_LINE[section.code] !== line.key &&
+        [section.existingLines[line.key], section.lines[line.key], section.lines2[line.key]].some(
+          filled,
+        ),
+    );
+    const annexureItems = isAnnexureSection(section.code) ? section.annexure.length : 0;
+    const sumInsured =
+      [section.existing, section.proposed1, section.proposed2].some(filled) || annexureItems > 0;
+    const asked = section.covers.some((cover) => cover.required === true);
+    if (lines.length === 0 && !sumInsured && !asked) continue;
     sheet.addRow([]);
     sheet.addRow([section.name]).font = { bold: true };
-    // The Data Sheet's lines for the section (D-4), then its sum insured.
-    const lines = SECTION_LINES[section.code as SectionWithLines] ?? [];
     let number = 1;
     for (const line of lines) {
-      if (SUM_INSURED_LINE[section.code] === line.key) continue;
       const row = sheet.addRow([
         number,
         line.label,
@@ -375,21 +400,27 @@ export function schedule(
       if (line.kind === 'rupees') money(row, amountColumns);
       number += 1;
     }
-    money(
-      sheet.addRow([
-        number,
-        isAnnexureSection(section.code)
-          ? `As per Annexure${section.annexure.length > 0 ? ` (${section.annexure.length} ${section.annexure.length === 1 ? 'item' : 'items'})` : ''}`
-          : SUM_INSURED_LINE[section.code]
-            ? (lines.find((line) => line.key === SUM_INSURED_LINE[section.code])?.label ??
-              'Sum insured')
-            : 'Sum insured',
-        ...figures(section.existing, section.proposed1, section.proposed2),
-      ]),
-      amountColumns,
-    );
+    if (sumInsured) {
+      const sumInsuredLine = SECTION_LINES[section.code as SectionWithLines]?.find(
+        (line) => line.key === SUM_INSURED_LINE[section.code],
+      );
+      money(
+        sheet.addRow([
+          number,
+          isAnnexureSection(section.code)
+            ? `As per Annexure${annexureItems > 0 ? ` (${annexureItems} ${annexureItems === 1 ? 'item' : 'items'})` : ''}`
+            : (sumInsuredLine?.label ?? 'Sum insured'),
+          ...figures(section.existing, section.proposed1, section.proposed2),
+        ]),
+        amountColumns,
+      );
+    }
     // C-3: the sum insured on the chosen basis (100% or first loss).
-    if (section.basis && section.basisAmounts) {
+    if (
+      section.basis &&
+      section.basisAmounts &&
+      [section.basisAmounts.proposed1, section.basisAmounts.proposed2].some(filled)
+    ) {
       money(
         sheet.addRow([
           null,
@@ -421,7 +452,7 @@ export function schedule(
 
 /**
  * Fire & Burglary per location in the client's Data Sheet layout: the 7 numbered items with their
- * sub-items (headings 1 and 5 show the sum of theirs), sq ft and rate for buildings, the total,
+ * sub-items (headings 1, 2 and 5 show the sum of theirs), sq ft and rate for buildings, the total,
  * then hypothecation and stock in open space.
  */
 function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
@@ -435,7 +466,13 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     if (place) {
       sheet.addRow([addressLine(place)]);
       sheet.addRow([
-        `District ${place.district || '—'} · EQ zone ${place.eqZone ?? '—'} · Occupancy ${place.occupancy.tacCode} — ${place.occupancy.description}`,
+        [
+          place.district ? `District ${place.district}` : null,
+          place.eqZone ? `EQ zone ${place.eqZone}` : null,
+          `Occupancy ${place.occupancy.tacCode} — ${place.occupancy.description}`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
       ]);
     }
     header(sheet, [
@@ -446,8 +483,21 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       'Sum Insured',
     ]);
     const saved = new Map(location.fire.map((item) => [item.key, item]));
+    // Items with no area, rate or sum insured are left out, and so is a heading with nothing under it.
+    const itemFilled = (key: string) => {
+      const values = saved.get(key as never);
+      return Boolean(
+        values &&
+        [values.sqFt, values.ratePerSqFt, values.sumInsured].some((value) => filled(value)),
+      );
+    };
+    const buildings = location.buildings.filter((building) => filled(building.sumInsured));
     const headed = new Set<string>();
     for (const item of FIRE_ITEMS) {
+      const groupFilled =
+        FIRE_ITEMS.some((other) => other.group === item.group && itemFilled(other.key)) ||
+        (item.group === 'BUILDING' && buildings.length > 0);
+      if (!groupFilled) continue;
       const heading = FIRE_ITEM_HEADINGS[item.group];
       if (heading && !headed.has(item.group)) {
         headed.add(item.group);
@@ -463,7 +513,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
         money(row, [5]);
         // D1: list each building under the Building heading, with its area, rate and sum insured.
         if (item.group === 'BUILDING') {
-          location.buildings.forEach((building, index) => {
+          buildings.forEach((building, index) => {
             const buildingRow = sheet.addRow([
               null,
               building.name ?? `Building ${index + 1}`,
@@ -476,6 +526,9 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
           });
         }
       }
+      // An item's own line stays, without figures, when only its sub-items are filled (6 over 6a).
+      const parent = heading === undefined && item.number.length === 1;
+      if (!itemFilled(item.key) && !parent) continue;
       const values = saved.get(item.key);
       const sub = heading !== undefined || item.number.length > 1;
       const row = sheet.addRow([
@@ -485,17 +538,20 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
         amount(values?.ratePerSqFt ?? null),
         values ? amount(values.sumInsured) || null : null,
       ]);
+      // Sub-items sit under their heading: the letter and the description are both indented.
+      if (sub) row.getCell(1).alignment = { indent: 1 };
       row.getCell(2).alignment = { wrapText: true, indent: sub ? 2 : 0 };
       money(row, [4, 5]);
     }
     const total = sheet.addRow([null, 'Total sum insured', null, null, amount(location.fireTotal)]);
     total.font = { bold: true };
     money(total, [5]);
-    for (const [number, label, value] of [
-      ['1', HYPOTHECATION_LABEL, location.hypothecation],
-      ['2', OPEN_STOCK_LABEL, location.openStock],
-    ] as const) {
-      const row = sheet.addRow([number, label, value ?? 'Nil']);
+    const extras = [
+      [HYPOTHECATION_LABEL, location.hypothecation],
+      [OPEN_STOCK_LABEL, location.openStock],
+    ] as const;
+    for (const [index, [label, value]] of extras.filter(([, text]) => text?.trim()).entries()) {
+      const row = sheet.addRow([String(index + 1), label, value]);
       sheet.mergeCells(row.number, 3, row.number, 5);
       row.getCell(3).alignment = { wrapText: true, vertical: 'top' };
     }
@@ -550,6 +606,11 @@ export function annexure(workbook: ExcelJS.Workbook, record: ProposalRecord) {
 }
 
 export function riskDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
+  // Questions no location answered are left out; with none answered there is no sheet.
+  const answered = RISK_DETAIL_FIELDS.filter((field) =>
+    record.locations.some((location) => location.risk[field.key]?.trim()),
+  );
+  if (answered.length === 0) return;
   const sheet = workbook.addWorksheet('risk details');
   sheet.columns = [{ width: 6 }, { width: 40 }, ...record.locations.map(() => ({ width: 32 }))];
   header(sheet, [
@@ -557,7 +618,7 @@ export function riskDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) 
     null,
     ...record.locations.map((l, i) => l.location?.name ?? `Location ${i + 1}`),
   ]);
-  RISK_DETAIL_FIELDS.forEach((field, index) => {
+  answered.forEach((field, index) => {
     const row = sheet.addRow([
       index + 1,
       field.label,
@@ -568,6 +629,8 @@ export function riskDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) 
 }
 
 function claimDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
+  // No claims, no sheet.
+  if (record.claims.length === 0) return;
   const sheet = workbook.addWorksheet('claim details');
   sheet.columns = [
     { width: 14 },
@@ -588,7 +651,6 @@ function claimDetails(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     'Claim Remarks',
     'Insurer',
   ]);
-  if (record.claims.length === 0) sheet.addRow(['No claims reported']);
   for (const claim of record.claims) {
     const row = sheet.addRow([
       claim.period,
@@ -610,19 +672,23 @@ export function addonCovers(
   addons: readonly CatalogItem<'addons'>[],
 ) {
   if (record.addons.length === 0) return;
-  const sheet = workbook.addWorksheet('add-on covers');
-  sheet.columns = [{ width: 6 }, { width: 18 }, { width: 60 }, { width: 50 }];
-  title(sheet, `ADD-ON COVERS${record.product ? ` — ${record.product.name}` : ''}`, 4);
-  header(sheet, ['S No', 'List', 'Addon cover', 'Sum insured limit']);
-  record.addons.forEach((addon, index) => {
-    const known = addons.find(
+  const limitOf = (addon: (typeof record.addons)[number]) =>
+    addons.find(
       (item) => item.list === addon.list && item.name.toLowerCase() === addon.name.toLowerCase(),
-    );
+    )?.limit ?? null;
+  // The limit column only when some cover has a limit.
+  const limits = record.addons.some((addon) => limitOf(addon));
+  const span = limits ? 4 : 3;
+  const sheet = workbook.addWorksheet('add-on covers');
+  sheet.columns = [{ width: 6 }, { width: 18 }, { width: 60 }, { width: 50 }].slice(0, span);
+  title(sheet, `ADD-ON COVERS${record.product ? ` — ${record.product.name}` : ''}`, span);
+  header(sheet, ['S No', 'List', 'Addon cover', ...(limits ? ['Sum insured limit'] : [])]);
+  record.addons.forEach((addon, index) => {
     const row = sheet.addRow([
       index + 1,
       ADDON_LIST_LABELS[addon.list],
       addon.name,
-      known?.limit ?? null,
+      ...(limits ? [limitOf(addon)] : []),
     ]);
     row.alignment = { wrapText: true, vertical: 'top' };
   });

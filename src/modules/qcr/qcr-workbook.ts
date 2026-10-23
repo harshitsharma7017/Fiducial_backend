@@ -56,7 +56,7 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
   for (const option of qcr.options.filter((item) => item.quotes.length > 0)) {
     sheet.addRow([]);
     sheet.addRow([
-      `${QUOTE_OPTION_LABELS[option.option]} — premium (Fire section without terrorism)`,
+      `${QUOTE_OPTION_LABELS[option.option]} — premium with and without terrorism`,
     ]).font = {
       bold: true,
     };
@@ -76,46 +76,101 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
       if (quote?.lowest) head.getCell((renewal ? 4 : 2) + index + 1).fill = LOWEST_FILL;
     });
     const firstColumn = renewal ? 5 : 3;
+    const moneyColumns = Array.from({ length: span - 1 }, (_, index) => index + 2);
+    const quoted = (premium: string | null | undefined) =>
+      premium ? Number(premium) : 'Not quoted';
     for (const section of option.sections) {
+      const existing = renewal
+        ? [amount(section.existingSumInsured), amount(section.existingPremium)]
+        : [];
+      if (section.code === 'FIRE') {
+        // Fire is quoted with and without terrorism, as the RFQ asks: both premiums are shown,
+        // each when at least one insurer gave it.
+        const kinds = (['withTerrorism', 'withoutTerrorism'] as const).filter((kind) =>
+          quotes.some((quote) => quote && quote.fire[kind] !== null),
+        );
+        kinds.forEach((kind, index) => {
+          money(
+            sheet.addRow([
+              `${section.name} (premium ${kind === 'withTerrorism' ? 'with' : 'without'} terrorism)`,
+              ...(index === 0 ? existing : renewal ? [null, null] : []),
+              index === 0 ? amount(section.sumInsured) : null,
+              ...quotes.map((quote) => (quote ? quoted(quote.fire[kind]) : null)),
+            ]),
+            moneyColumns,
+          );
+        });
+        continue;
+      }
       const row = sheet.addRow([
         section.name,
-        ...(renewal ? [amount(section.existingSumInsured), amount(section.existingPremium)] : []),
+        ...existing,
         amount(section.sumInsured),
+        ...quotes.map((quote) =>
+          quote ? quoted(quote.premiums.find((item) => item.code === section.code)?.premium) : null,
+        ),
+      ]);
+      money(row, moneyColumns);
+    }
+
+    // Net, GST and total with terrorism and without (Fire is the only section it changes). The
+    // comparison, and the lowest total, use Fire without terrorism where the insurer quoted it so.
+    type Quote = (typeof option.quotes)[number];
+    type Totals = Quote['totals'];
+    const hasFire = option.sections.some((section) => section.code === 'FIRE');
+    const withTerrorism = (quote: Quote): Totals | null =>
+      quote.fire.withTerrorism === null
+        ? quote.fire.withoutTerrorism === null
+          ? quote.totals
+          : null
+        : quote.fire.withoutTerrorism === null
+          ? quote.totals
+          : quote.totalsWithTerrorism;
+    const withoutTerrorism = (quote: Quote): Totals | null =>
+      quote.fire.withoutTerrorism !== null || quote.fire.withTerrorism === null
+        ? quote.totals
+        : null;
+    const totalRows = (
+      suffix: string,
+      pick: (quote: Quote) => Totals | null,
+      existing: boolean,
+    ) => {
+      const values = (key: keyof Totals) => [
+        ...(renewal ? [null, existing ? amount(option.existing?.[key] ?? null) : null] : []),
+        null,
         ...quotes.map((quote) => {
           if (!quote) return null;
-          const premium = quote.premiums.find((item) => item.code === section.code)?.premium;
-          return premium ? Number(premium) : 'Not quoted';
+          const totals = pick(quote);
+          return totals ? Number(totals[key]) : 'Not quoted';
         }),
-      ]);
-      money(
-        row,
-        Array.from({ length: span - 1 }, (_, index) => index + 2),
-      );
-    }
-    const totals = (pick: 'net' | 'gst' | 'total') => [
-      ...(renewal ? [null, amount(option.existing?.[pick] ?? null)] : []),
-      null,
-      ...quotes.map((quote) => amount(quote?.totals[pick] ?? null)),
-    ];
-    const rows = [
-      sheet.addRow(['Net Premium', ...totals('net')]),
-      sheet.addRow([`Add: GST ${qcr.gstRatePercent}%`, ...totals('gst')]),
-      sheet.addRow(['Total Premium', ...totals('total')]),
-    ];
-    for (const row of rows) {
-      row.font = { bold: true };
-      money(
-        row,
-        Array.from({ length: span - 1 }, (_, index) => index + 2),
-      );
-    }
+      ];
+      const rows = [
+        sheet.addRow([`Net Premium${suffix}`, ...values('net')]),
+        sheet.addRow([`Add: GST ${qcr.gstRatePercent}%`, ...values('gst')]),
+        sheet.addRow([`Total Premium${suffix}`, ...values('total')]),
+      ];
+      for (const row of rows) {
+        row.font = { bold: true };
+        money(row, moneyColumns);
+      }
+      return rows[2]!;
+    };
+    // Each block when at least one insurer has its figures.
+    const any = (pick: (quote: Quote) => Totals | null) =>
+      quotes.some((quote) => quote && pick(quote) !== null);
+    const totalWith =
+      hasFire && any(withTerrorism) ? totalRows(' (with terrorism)', withTerrorism, false) : null;
+    const totalWithout = !hasFire
+      ? totalRows('', (quote) => quote.totals, true)
+      : any(withoutTerrorism)
+        ? totalRows(' (without terrorism)', withoutTerrorism, true)
+        : null;
     quotes.forEach((quote, index) => {
-      const total = rows[2];
-      if (quote?.lowest && total) total.getCell(firstColumn + index).fill = LOWEST_FILL;
+      if (!quote?.lowest) return;
+      const row = totalWithout && withoutTerrorism(quote) ? totalWithout : totalWith;
+      if (row) row.getCell(firstColumn + index).fill = LOWEST_FILL;
     });
-    // B2: the terrorism cover's own extra net premium, and the total premium including terrorism,
-    // per insurer — shown as their own rows so the comparison (Fire without terrorism) and the
-    // premium with terrorism are both clear. Only insurers that quoted both Fire figures have them.
+    // B2: the terrorism cover's own extra net premium, per insurer that quoted both Fire figures.
     if (
       quotes.some((quote) => quote?.terrorismExtra !== null && quote?.terrorismExtra !== undefined)
     ) {
@@ -125,21 +180,8 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
         null,
         ...quotes.map((quote) => amount(quote?.terrorismExtra ?? null)),
       ]);
-      money(
-        terrorismRow,
-        Array.from({ length: span - 1 }, (_, index) => index + 2),
-      );
-      const totalWithRow = sheet.addRow([
-        'Total Premium (including terrorism)',
-        ...(renewal ? [null, null] : []),
-        null,
-        ...quotes.map((quote) => amount(quote?.totalsWithTerrorism?.total ?? null)),
-      ]);
-      totalWithRow.font = { italic: true };
-      money(
-        totalWithRow,
-        Array.from({ length: span - 1 }, (_, index) => index + 2),
-      );
+      terrorismRow.font = { italic: true };
+      money(terrorismRow, moneyColumns);
     }
     for (const difference of option.differences) {
       labelled(
