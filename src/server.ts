@@ -10,6 +10,7 @@ import { ensureEmailTemplates } from './modules/email-templates/email-templates.
 import { linkEmployeeIdentities } from './modules/employees/employee-link.ts';
 import { ensureDefaultFamilyPlans } from './modules/family-plans/default-plans.ts';
 import { ensureDefaultAgeBandSets } from './modules/age-bands/age-bands.service.ts';
+import { ChatHub } from './modules/chat/chat-hub.ts';
 import { transportFromEnv } from './modules/mail/transport.ts';
 import { ensureSystemRoles } from './modules/roles/roles.service.ts';
 
@@ -61,7 +62,9 @@ try {
 }
 
 const mailTransport = transportFromEnv(config, logger);
-const app = createApp({ config, logger, mailTransport });
+// The chat's live connections, ended on shutdown so they do not hold the server open.
+const chatHub = new ChatHub();
+const app = createApp({ config, logger, mailTransport, chatHub });
 // Sends queued claim emails and retries failed ones in the background (C3).
 const stopClaimWorker = startClaimNotificationWorker({ transport: mailTransport, logger });
 // A4: raises "renewal due" notifications for placed policies nearing their end date.
@@ -99,6 +102,7 @@ function shutdown(signal: NodeJS.Signals): void {
       });
   });
   server.closeIdleConnections();
+  chatHub.closeAll();
 }
 
 process.once('SIGTERM', shutdown);

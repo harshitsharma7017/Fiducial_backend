@@ -657,6 +657,8 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
   }
   const end = findRow(sheet, 'Warranties', { from: title + 1, prefix: true }) ?? title + 1;
   const printed = printColumns(sheet);
+  // The format's first heading cell sets the look of every heading (rows added copy plainer ones).
+  const headingFont = { ...sheet.getCell(title + 1, printed.from).font };
   let free = end - title - 1;
   // The block's merges (headings down column A, wording across) are rebuilt for the new rows.
   for (const address of [...((sheet.model as { merges?: string[] }).merges ?? [])]) {
@@ -693,6 +695,7 @@ function fillClauses(sheet: ExcelJS.Worksheet, context: FillContext) {
         sheet.mergeCells(title + 1 + start, printed.from, title + offset, printed.from);
       }
       restyle(sheet.getCell(title + 1 + start, printed.from), {
+        font: headingFont,
         alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' },
       });
       start = offset;

@@ -24,7 +24,12 @@ import { istDay } from '../../lib/ist-day.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
-import { appendSignOff, openTemplate, saveWorkbook } from '../documents/excel-template.ts';
+import {
+  appendSignOff,
+  emboldenWorkbook,
+  openTemplate,
+  saveWorkbook,
+} from '../documents/excel-template.ts';
 import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
@@ -370,6 +375,8 @@ async function qcrWorkbook(
 
 async function fileOf(loaded: Loaded, format: MailAttachmentFormat, defaultGstRatePercent: string) {
   const { workbook, letterhead } = await qcrWorkbook(loaded, defaultGstRatePercent);
+  // Every line bold, so the QCR reads easily (client review, 28 Oct 2026).
+  emboldenWorkbook(workbook);
   const name = `QCR-${loaded.record.reference}`;
   const sheets = pdfSheets(workbook, loaded.record);
   // Who prepared the QCR (who last saved the broker's part, else the case's staff), on its last

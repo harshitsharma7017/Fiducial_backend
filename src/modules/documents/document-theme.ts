@@ -63,6 +63,9 @@ export const DOCUMENT_COLORS = {
 /** The same table-header tint as an exceljs ARGB, for the workbook documents (one source). */
 export const TABLE_HEADER_FILL_ARGB = 'FFDCEBFA';
 
+/** Section headings of the built-in documents: the navy of the client's formats (white text). */
+export const SECTION_HEADING_FILL_ARGB = 'FF12285E';
+
 /**
  * An add-on cover asked for is marked with a green tick rather than the word "Required" (client
  * review of 27 Oct 2026). The PDF draws the tick (the bundled font has no ✓); Excel shows the

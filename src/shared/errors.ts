@@ -30,6 +30,8 @@ export const ERROR_CODES = {
   CLOUD_STORAGE_OFF: 'CLOUD_STORAGE_OFF',
   /** The cloud storage service refused or failed; nothing was saved. */
   CLOUD_STORAGE_FAILED: 'CLOUD_STORAGE_FAILED',
+  /** A group action (rename, members, leave) on a direct chat. */
+  CHAT_NOT_A_GROUP: 'CHAT_NOT_A_GROUP',
   RFQ_ATTACHMENT_TOO_LARGE: 'RFQ_ATTACHMENT_TOO_LARGE',
   QCR_INCOMPLETE: 'QCR_INCOMPLETE',
   RFQ_NOT_APPROVED: 'RFQ_NOT_APPROVED',

@@ -519,7 +519,8 @@ describe('new-business proposals', () => {
     const rowNumber = (label: string) =>
       sheet.getSheetValues().findIndex((row) => Array.isArray(row) && row[2] === label);
     const transformer = sheet.getRow(rowNumber('Transformer and all its accessories'));
-    expect(transformer.getCell(1).alignment?.indent).toBe(1);
+    // The S No is centred (client review, 27 Oct 2026); the description is indented.
+    expect(transformer.getCell(1).alignment?.horizontal).toBe('center');
     expect(transformer.getCell(2).alignment?.indent).toBe(2);
     expect(
       sheet.getRow(rowNumber('All types of Plant and Machinery and all its accessories')).getCell(2)

@@ -454,6 +454,15 @@ describe('Placement slip', () => {
     expect(text(premium, rowOf(premium, 'Remarks if any'), 1)).toBe(
       'Remarks if any: Premium to be paid by cheque before inception.',
     );
+    // Client review, 28 Oct 2026: each placed section by its own name, its premium across both
+    // premium columns, right-aligned and bold; the remarks a closed box.
+    expect(text(premium, fire, 1)).toBe('Fire & Allied Perils');
+    const merges = (premium.model as { merges: string[] }).merges;
+    expect(merges).toEqual(expect.arrayContaining([`C${fire}:D${fire}`, `C${money}:D${money}`]));
+    expect(premium.getCell(fire, 3).alignment.horizontal).toBe('right');
+    expect(premium.getCell(fire, 3).font.bold).toBe(true);
+    const remarks = rowOf(premium, 'Remarks if any');
+    expect(premium.getCell(remarks, 4).border.right?.style).toBe('thin');
 
     const schedule = workbook.getWorksheet('schedule')!;
     // No policy number issued yet: the row is left out.

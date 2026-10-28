@@ -31,8 +31,10 @@ import type { ClientDoc } from '../clients/client.model.ts';
 import {
   COVER_TICK,
   COVER_TICK_ARGB,
+  SECTION_HEADING_FILL_ARGB,
   TABLE_HEADER_FILL_ARGB,
 } from '../documents/document-theme.ts';
+import { frameSheet } from '../documents/excel-template.ts';
 
 // The RFQ in the client's layout (document 07): premium details for the insurer to fill in,
 // the schedule, Fire by location, risk details and claim details. Amounts are whole rupees.
@@ -72,20 +74,43 @@ const amount = (value: string | null) => (value === null ? null : Number(value))
 export const filled = (value: string | null | undefined): value is string =>
   value !== null && value !== undefined && value.trim() !== '' && Number(value) !== 0;
 
-export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
+// Headings as the client's formats print them: white on navy, across the table.
+const HEADING_FILL: ExcelJS.Fill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: SECTION_HEADING_FILL_ARGB },
+};
+
+/** A heading row across the table: white bold text on navy, centred. */
+export function sectionHeading(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sheet.addRow([text]);
-  row.font = { bold: true, size: 13 };
-  sheet.mergeCells(row.number, 1, row.number, span);
+  if (span > 1) sheet.mergeCells(row.number, 1, row.number, span);
+  const cell = row.getCell(1);
+  cell.fill = HEADING_FILL;
+  cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  row.height = 18;
+  return row;
+}
+
+/** The sheet's title: a larger navy heading. */
+export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
+  const row = sectionHeading(sheet, text, span);
+  row.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+  row.height = 22;
 }
 
 export function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
   const row = sheet.addRow(values);
   row.font = { bold: true };
   row.alignment = { wrapText: true, vertical: 'top' };
-  row.eachCell((cell) => {
+  row.eachCell({ includeEmpty: true }, (cell) => {
     cell.fill = HEADER_FILL;
-    cell.border = { bottom: { style: 'thin' } };
   });
+  // The S No column is centred, heading and numbers alike.
+  if (values[0] === 'S No') {
+    row.getCell(1).alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+  }
   return row;
 }
 
@@ -162,10 +187,7 @@ function premiumDetails(
   ] as const) {
     if (!asked.includes(option)) continue;
     sheet.addRow([]);
-    const caption = sheet.addRow([
-      `Quote Option ${number}: For Proposed Sum Insured Option ${number}`,
-    ]);
-    caption.font = { bold: true };
+    sectionHeading(sheet, `Quote Option ${number}: For Proposed Sum Insured Option ${number}`, 4);
     header(sheet, [
       'Coverage Section',
       'Sum Insured',
@@ -364,7 +386,7 @@ export function schedule(
     'Proposed Sum Insured - Option 2',
     ...(withOption3 ? ['Proposed Sum Insured - Option 3'] : []),
   ]).getCell(1).alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
-  sheet.addRow(['Fire & Allied Perils']).font = { bold: true };
+  sectionHeading(sheet, 'Fire & Allied Perils', span);
   // Lines with no figure are left out; the others are numbered in order.
   let fireNumber = 0;
   for (const line of record.fire.groups) {
@@ -446,7 +468,7 @@ export function schedule(
     const asked = section.covers.some((cover) => cover.required === true);
     if (lines.length === 0 && !sumInsured && !asked) continue;
     sheet.addRow([]);
-    sheet.addRow([section.name]).font = { bold: true };
+    sectionHeading(sheet, section.name, span);
     let number = 1;
     for (const line of lines) {
       const row = numbered(
@@ -514,7 +536,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   for (const location of record.locations) {
     sheet.addRow([]);
     const place = location.location;
-    sheet.addRow([place?.name ?? location.locationId]).font = { bold: true };
+    sectionHeading(sheet, place?.name ?? location.locationId, 5);
     if (place) {
       sheet.addRow([addressLine(place)]);
       sheet.addRow([
@@ -561,6 +583,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
         const subtotal = itemsSubtotal + buildingsSubtotal;
         const row = sheet.addRow([heading.number, heading.label, null, null, subtotal || null]);
         row.font = { bold: true };
+        row.getCell(1).alignment = { horizontal: 'center' };
         row.getCell(2).alignment = { wrapText: true };
         money(row, [5]);
         // D1: list each building under the Building heading, with its area, rate and sum insured.
@@ -590,8 +613,8 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
         amount(values?.ratePerSqFt ?? null),
         values ? amount(values.sumInsured) || null : null,
       ]);
-      // Sub-items sit under their heading: the letter and the description are both indented.
-      if (sub) row.getCell(1).alignment = { indent: 1 };
+      // The S No is centred; a sub-item's description is indented under its heading.
+      row.getCell(1).alignment = { horizontal: 'center' };
       row.getCell(2).alignment = { wrapText: true, indent: sub ? 2 : 0 };
       money(row, [4, 5]);
     }
@@ -604,6 +627,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     ] as const;
     for (const [index, [label, value]] of extras.filter(([, text]) => text?.trim()).entries()) {
       const row = sheet.addRow([String(index + 1), label, value]);
+      row.getCell(1).alignment = { horizontal: 'center' };
       sheet.mergeCells(row.number, 3, row.number, 5);
       row.getCell(3).alignment = { wrapText: true, vertical: 'top' };
     }
@@ -630,9 +654,7 @@ export function annexure(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     const code = section.code as AnnexureSection;
     const columns = ANNEXURE_SECTIONS[code].columns as readonly AnnexureColumn[];
     sheet.addRow([]);
-    const heading = sheet.addRow([ANNEXURE_SECTIONS[code].title]);
-    heading.font = { bold: true };
-    sheet.mergeCells(heading.number, 1, heading.number, 6);
+    sectionHeading(sheet, ANNEXURE_SECTIONS[code].title, 6);
     header(sheet, [
       'S No',
       ...columns.map((column) => annexureColumnLabel(code, column)),
@@ -768,7 +790,13 @@ export function buildRfqWorkbookDocument(
   riskDetails(workbook, record);
   claimDetails(workbook, record);
   addonCovers(workbook, record, masters.addons ?? []);
+  frameWorkbook(workbook);
   return workbook;
+}
+
+/** Boxes every sheet of a built-in document across its own columns (as the client's formats). */
+export function frameWorkbook(workbook: ExcelJS.Workbook): void {
+  for (const sheet of workbook.worksheets) frameSheet(sheet, sheet.columns.length);
 }
 
 export async function buildRfqWorkbook(

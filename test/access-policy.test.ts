@@ -95,6 +95,23 @@ describe('access policies', () => {
         'POST /:id/read',
         'POST /logout',
         'POST /read-all',
+        // The internal chat: every employee, on the conversations they are a member of only
+        // (membership is checked in the chat services; 404 for anyone else).
+        'DELETE /conversations/:conversationId/members/:userId',
+        'DELETE /conversations/:conversationId/messages/:messageId',
+        'GET /conversations',
+        'GET /conversations/:conversationId',
+        'GET /conversations/:conversationId/files/:fileId',
+        'GET /conversations/:conversationId/messages',
+        'GET /directory',
+        'GET /events',
+        'POST /conversations/:conversationId/files',
+        'POST /conversations/:conversationId/members',
+        'POST /conversations/:conversationId/messages',
+        'POST /conversations/:conversationId/read',
+        'POST /conversations/direct',
+        'POST /conversations/groups',
+        'PUT /conversations/:conversationId/name',
       ].sort(),
     );
   });

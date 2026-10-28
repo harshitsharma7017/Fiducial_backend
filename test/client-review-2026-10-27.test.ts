@@ -312,6 +312,8 @@ describe('a third proposed Fire option and covers added on the case', () => {
 
     const schedule = workbook.getWorksheet('schedule')!;
     const header = rowOf(schedule, 'S No');
+    // Every line of the RFQ is bold (client review, 28 Oct 2026).
+    expect(schedule.getCell(rowOf(schedule, 'Insured Name'), 2).font.bold).toBe(true);
     expect(schedule.getCell(header, 6).value).toBe('Proposed Sum Insured - Option 3');
     expect(schedule.pageSetup.printArea).toMatch(/^A1:F\d+$/);
     const stocks = rowsOf(schedule, 2).find((line) => line.text.startsWith('All types of stock'));
@@ -387,6 +389,12 @@ describe('the QCR (client review, 27 Oct 2026)', () => {
     const premium = workbook.getWorksheet('premium details')!;
     const policy = rowOf(premium, 'Policy Name:');
     expect(premium.getCell(policy, 2).value).toBe('Bharat Laghu Udyam Suraksha (BLUS)');
+    // Client review, 28 Oct 2026: boxed like the client's formats, every line bold, headings in
+    // white on navy.
+    expect(premium.getCell(policy, 1).border.top?.style).toBe('thin');
+    expect(premium.getCell(policy, 2).font.bold).toBe(true);
+    expect(premium.getCell(1, 1).fill).toMatchObject({ fgColor: { argb: 'FF12285E' } });
+    expect(premium.getCell(1, 1).font.color?.argb).toBe('FFFFFFFF');
     const recommendation = rowOf(premium, 'Our recommendation:');
     const note = rowOf(premium, 'NOTE:');
     expect(note).toBe(recommendation + 1);

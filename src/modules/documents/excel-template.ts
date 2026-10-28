@@ -547,3 +547,56 @@ export function appendSignOff(sheet: ExcelJS.Worksheet, lines: readonly string[]
   });
   extendPrintRows(sheet, at + lines.length);
 }
+
+/**
+ * Every written cell of the workbook in bold, as the client reads the RFQ and QCR (review of
+ * 28 Oct 2026: "visually bold, easy to understand"). Excel and the PDF drawn from it alike.
+ */
+export function emboldenWorkbook(workbook: ExcelJS.Workbook): void {
+  for (const sheet of workbook.worksheets) {
+    sheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        if (isCovered(cell) || cellText(cell) === '') return;
+        if (!cell.font?.bold) restyle(cell, { font: { ...cell.font, bold: true } });
+      });
+    });
+  }
+}
+
+const THIN: Partial<ExcelJS.Borders> = {
+  top: { style: 'thin' },
+  left: { style: 'thin' },
+  bottom: { style: 'thin' },
+  right: { style: 'thin' },
+};
+
+/**
+ * Boxes a built-in sheet as the client's formats are: every row with something in it is ruled
+ * across the table's columns; blank rows stay open, so each block reads as its own box.
+ */
+export function frameSheet(sheet: ExcelJS.Worksheet, columns: number): void {
+  sheet.eachRow((row) => {
+    let used = false;
+    for (let column = 1; column <= columns; column += 1) {
+      if (cellText(row.getCell(column)) !== '') used = true;
+    }
+    if (!used) return;
+    // A line of text written in the first cell only (an address, a caption) runs across the
+    // table: a boxed cell cannot spill into its neighbours, so it is merged instead of wrapping
+    // in a narrow first column.
+    const first = row.getCell(1);
+    const alone = Array.from({ length: columns - 1 }, (_, index) => row.getCell(index + 2)).every(
+      (cell) => cellText(cell) === '' && !cell.isMerged,
+    );
+    if (columns > 1 && !first.isMerged && cellText(first) !== '' && alone) {
+      sheet.mergeCells(row.number, 1, row.number, columns);
+      restyle(first, {
+        alignment: { ...first.alignment, horizontal: 'left', vertical: 'top', wrapText: true },
+      });
+    }
+    for (let column = 1; column <= columns; column += 1) {
+      const cell = row.getCell(column);
+      cell.border = { ...THIN, ...cell.border };
+    }
+  });
+}

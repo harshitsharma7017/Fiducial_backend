@@ -4,7 +4,7 @@ import type { Express } from 'express';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, inject } from 'vitest';
-import { createApp } from '../../src/app.ts';
+import { createApp, type AppDependencies } from '../../src/app.ts';
 import { loadEnv, type Env } from '../../src/config/env.ts';
 import { createLogger } from '../../src/lib/logger.ts';
 import type { CloudStore } from '../../src/modules/cloud-storage/cloud-store.ts';
@@ -49,6 +49,7 @@ export function createTestApp(
   mailTransport?: MailTransport,
   quoteReader?: QuoteReader,
   cloudStore?: CloudStore,
+  chat: Pick<AppDependencies, 'chatHub' | 'chatPingMs'> = {},
 ): Express {
   return createApp({
     config: { ...TEST_ENV, ...overrides },
@@ -57,6 +58,7 @@ export function createTestApp(
     mailTransport,
     quoteReader,
     cloudStore,
+    ...chat,
   });
 }
 

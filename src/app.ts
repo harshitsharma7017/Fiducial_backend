@@ -43,6 +43,8 @@ import { createClientApprovalRouter } from './modules/client-approval/client-app
 import { createPlacementSlipRouter } from './modules/placement-slip/placement-slip.routes.ts';
 import { createCoverageConfirmationRouter } from './modules/coverage-confirmation/coverage-confirmation.routes.ts';
 import { createCloudDocumentsRouter } from './modules/cloud-storage/cloud-documents.routes.ts';
+import { ChatHub } from './modules/chat/chat-hub.ts';
+import { createChatRouter } from './modules/chat/chat.routes.ts';
 import { cloudStoreFromEnv, type CloudStore } from './modules/cloud-storage/cloud-store.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
@@ -69,6 +71,10 @@ export interface AppDependencies {
   quoteReader?: QuoteReader;
   /** Where users' saved documents go; from CLOUD_STORAGE when not given (tests pass a memory store). */
   cloudStore?: CloudStore;
+  /** The chat's live delivery; a new one when not given (tests pass theirs to watch it). */
+  chatHub?: ChatHub;
+  /** How often the chat's live connection is pinged (tests use a short one). */
+  chatPingMs?: number;
 }
 
 /** Builds the Express app without listening, so tests can drive it with Supertest. */
@@ -79,6 +85,8 @@ export function createApp({
   mailTransport,
   quoteReader,
   cloudStore,
+  chatHub,
+  chatPingMs,
 }: AppDependencies): Express {
   const transport = mailTransport ?? transportFromEnv(config, logger);
   const store = cloudStore ?? cloudStoreFromEnv(config, logger);
@@ -150,6 +158,8 @@ export function createApp({
   api.use('/mail', createMailRouter({ ...jwt, transport }));
   // A4: the signed-in user's in-app notifications.
   api.use('/notifications', createNotificationsRouter(jwt));
+  // The internal chat: direct messages, groups and file sharing, delivered live.
+  api.use('/chat', createChatRouter({ ...jwt, hub: chatHub ?? new ChatHub(), pingMs: chatPingMs }));
   api.use('/proposals/:id', liveCaseOnly());
   api.use(
     '/proposals',

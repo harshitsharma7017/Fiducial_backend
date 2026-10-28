@@ -10,6 +10,7 @@ export * from './age-bands.ts';
 export * from './audit.ts';
 export * from './auth.ts';
 export * from './census-rules.ts';
+export * from './chat.ts';
 export * from './catalog.ts';
 export * from './client-approval.ts';
 export * from './claims.ts';

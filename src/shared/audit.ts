@@ -75,6 +75,8 @@ export const AUDIT_ACTIONS = {
   CLOUD_DOCUMENT_SAVED: 'CLOUD_DOCUMENT_SAVED',
   CLOUD_DOCUMENT_DOWNLOADED: 'CLOUD_DOCUMENT_DOWNLOADED',
   CLOUD_DOCUMENT_REMOVED: 'CLOUD_DOCUMENT_REMOVED',
+  CHAT_GROUP_CREATED: 'CHAT_GROUP_CREATED',
+  CHAT_GROUP_UPDATED: 'CHAT_GROUP_UPDATED',
   COVERAGE_CONFIRMATION_UPDATED: 'COVERAGE_CONFIRMATION_UPDATED',
   COVERAGE_CONFIRMATION_DOWNLOADED: 'COVERAGE_CONFIRMATION_DOWNLOADED',
   COVERAGE_CONFIRMATION_EMAILED: 'COVERAGE_CONFIRMATION_EMAILED',
@@ -266,6 +268,8 @@ export const AUDIT_ENTITIES = {
   INSURED_POLICY: 'insured_policy',
   /** A company's policy years and renewal analyses (entity id: the client's id) (N8). */
   RENEWAL: 'renewal',
+  /** A chat group (entity id: the conversation's id). */
+  CHAT_GROUP: 'chat_group',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -349,6 +353,8 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   CLOUD_DOCUMENT_SAVED: 'EXPORT',
   CLOUD_DOCUMENT_DOWNLOADED: 'EXPORT',
   CLOUD_DOCUMENT_REMOVED: 'EDIT',
+  CHAT_GROUP_CREATED: 'CREATE',
+  CHAT_GROUP_UPDATED: 'EDIT',
   COVERAGE_CONFIRMATION_UPDATED: 'EDIT',
   COVERAGE_CONFIRMATION_DOWNLOADED: 'EXPORT',
   COVERAGE_CONFIRMATION_EMAILED: 'SEND',
@@ -558,6 +564,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CLOUD_DOCUMENT_SAVED: 'Document saved to cloud storage',
   CLOUD_DOCUMENT_DOWNLOADED: 'Document downloaded from cloud storage',
   CLOUD_DOCUMENT_REMOVED: 'Document removed from cloud storage',
+  CHAT_GROUP_CREATED: 'Chat group created',
+  CHAT_GROUP_UPDATED: 'Chat group changed',
   COVERAGE_CONFIRMATION_UPDATED: 'Coverage confirmation edited',
   COVERAGE_CONFIRMATION_DOWNLOADED: 'Coverage confirmation downloaded',
   COVERAGE_CONFIRMATION_EMAILED: 'Coverage confirmation emailed to the insured',
@@ -739,6 +747,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   tpa_format: 'TPA format',
   insured_policy: 'Placed policy',
   renewal: 'Renewal analysis',
+  chat_group: 'Chat group',
 };
 
 /** The actions of one kind, for filtering the log. */

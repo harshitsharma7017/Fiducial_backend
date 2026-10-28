@@ -273,6 +273,8 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     }
     setValue(sheet, row, sumColumn, amount(section.sumInsured), { rupees: true });
     setValue(sheet, row, premiumColumn, Number(section.premium), { rupees: true });
+    // The section's own name, not the format's short label (client review, 28 Oct 2026).
+    setValue(sheet, row, 1, section.code === 'FIRE' ? 'Fire & Allied Perils' : section.name);
   }
   const placedRows = [...rows.entries()]
     .filter(([code]) => slip.sections.some((section) => section.code === code))
@@ -293,10 +295,32 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     `SUM(${letter}${end}:${letter}${gstRow})`,
     slip.premium.total,
   );
-  // The template's second premium column repeats the first (a merge in some rows only).
-  for (const row of [end, gstRow, totalRow]) {
-    const next = sheet.getCell(row, premiumColumn + 1);
-    if (!next.isMerged && next.formula) next.value = null;
+  // The template's second premium column repeats the first, merged in its header rows only: the
+  // figures span both columns too, right-aligned, so they sit under the insurer's name instead of
+  // beside an empty column (client review, 28 Oct 2026).
+  const printed = printColumns(sheet);
+  if (premiumColumn + 1 <= printed.to) {
+    for (let row = sectionsStart; row <= totalRow; row += 1) {
+      const next = sheet.getCell(row, premiumColumn + 1);
+      if (next.isMerged && next.master === sheet.getCell(row, premiumColumn)) continue;
+      next.value = null;
+      mergeCellsOf(sheet, row, premiumColumn, premiumColumn + 1);
+    }
+  }
+  // Every row ruled, labels on the left, figures on the right.
+  for (let row = sectionsStart; row <= totalRow; row += 1) {
+    for (let column = printed.from; column <= printed.to; column += 1) {
+      const cell = sheet.getCell(row, column);
+      restyle(cell, {
+        border: BOX,
+        alignment: {
+          ...cell.alignment,
+          vertical: 'middle',
+          wrapText: true,
+          horizontal: column === printed.from ? 'left' : 'right',
+        },
+      });
+    }
   }
   const remarksRow = findRow(sheet, 'Remarks if any', { prefix: true });
   if (remarksRow) {
@@ -307,10 +331,34 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     if (slip.remarks) {
       sheet.getRow(remarksRow).height = Math.max(18, Math.ceil(slip.remarks.length / 90) * 15);
     } else hideRow(sheet, remarksRow);
+    // A closed box, as wide as the table above it.
+    mergeCellsOf(sheet, remarksRow, printed.from, printed.to);
+    for (let column = printed.from; column <= printed.to; column += 1) {
+      restyle(sheet.getCell(remarksRow, column), { border: BOX });
+    }
     // The format's print area stops above the remarks.
-    const printed = printColumns(sheet);
     sheet.pageSetup.printArea = `${sheet.getColumn(printed.from).letter}1:${sheet.getColumn(printed.to).letter}${remarksRow}`;
   }
+}
+
+const BOX: Partial<ExcelJS.Borders> = {
+  top: { style: 'thin' },
+  left: { style: 'thin' },
+  bottom: { style: 'thin' },
+  right: { style: 'thin' },
+};
+
+/** Merges cells of one row, taking apart only the merges that overlap them. */
+function mergeCellsOf(sheet: ExcelJS.Worksheet, row: number, from: number, to: number) {
+  for (const address of [...((sheet.model as { merges?: string[] }).merges ?? [])]) {
+    const [start = '', end = start] = address.split(':');
+    const first = sheet.getCell(start);
+    const last = sheet.getCell(end);
+    const rows = Number(first.row) <= row && row <= Number(last.row);
+    const columns = Number(first.col) <= to && Number(last.col) >= from;
+    if (rows && columns) sheet.unMergeCells(address);
+  }
+  if (to > from) sheet.mergeCells(row, from, row, to);
 }
 
 /** Merges a row across the given columns, taking apart any template merge on that row first. */
@@ -341,7 +389,12 @@ function linesBelow(sheet: ExcelJS.Worksheet, title: string, next: string, lines
     const row = titleRow + 1 + offset;
     mergeAcross(sheet, row, printed.from, printed.to);
     setValue(sheet, row, printed.from, line);
-    restyle(sheet.getCell(row, printed.from), { alignment: { wrapText: true, vertical: 'top' } });
+    // Body text, not the blue of the format's labels this row was styled like.
+    const cell = sheet.getCell(row, printed.from);
+    restyle(cell, {
+      font: { ...cell.font, bold: false, color: { argb: 'FF000000' } },
+      alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+    });
     sheet.getRow(row).height = Math.max(15, Math.ceil(line.length / 110) * 15);
   });
   // Leftover reserved rows (including the whole block when there are no lines) are hidden.

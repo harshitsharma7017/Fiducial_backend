@@ -12,10 +12,12 @@ import { documentNotes, fillContextOf } from '../proposals/rfq-template.ts';
 import {
   addonCovers,
   annexure,
+  frameWorkbook,
   header,
   labelled,
   money,
   riskDetails,
+  sectionHeading,
   schedule,
   title,
   type RfqMasters,
@@ -64,11 +66,11 @@ function comparison(
 
   for (const option of qcr.options.filter((item) => item.quotes.length > 0)) {
     sheet.addRow([]);
-    sheet.addRow([
+    sectionHeading(
+      sheet,
       `${QUOTE_OPTION_LABELS[option.option]} — premium with and without terrorism`,
-    ]).font = {
-      bold: true,
-    };
+      span,
+    );
     const quotes = qcr.insurers.map((insurer) =>
       option.quotes.find((quote) => quote.insurerId === insurer.insurerId),
     );
@@ -252,5 +254,6 @@ export function buildQcrWorkbookDocument(
   annexure(workbook, record);
   riskDetails(workbook, record);
   addonCovers(workbook, record, masters.addons);
+  frameWorkbook(workbook);
   return workbook;
 }

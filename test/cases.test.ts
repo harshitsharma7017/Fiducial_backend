@@ -250,7 +250,8 @@ describe('D-2: renewals', () => {
       .getWorksheet('schedule')!
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
-    expect(rows[0]).toEqual(['Policy No: EGI/FIRE/2025/0042']);
+    // One line across the table (a merged row: every column reads the same value).
+    expect(rows[0]?.[0]).toBe('Policy No: EGI/FIRE/2025/0042');
     expect(rows).toContainEqual([
       'S No',
       'Description',

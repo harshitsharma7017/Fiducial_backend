@@ -12,6 +12,7 @@ import {
 } from './modules/claims/claim-settings.model.ts';
 import { CatalogItemModel } from './modules/catalog/catalog-item.model.ts';
 import { CloudDocumentModel } from './modules/cloud-storage/cloud-document.model.ts';
+import { ChatFileModel, ChatMessageModel, ConversationModel } from './modules/chat/chat.model.ts';
 import { DocumentTemplateModel } from './modules/documents/document-template.model.ts';
 import { EmailTemplateModel } from './modules/email-templates/email-template.model.ts';
 import { MailAttachmentModel } from './modules/mail/mail-attachment.model.ts';
@@ -77,6 +78,9 @@ const MODELS = [
   CounterModel,
   CatalogItemModel,
   CloudDocumentModel,
+  ConversationModel,
+  ChatMessageModel,
+  ChatFileModel,
   DocumentTemplateModel,
   AddonFavouritesModel,
   EmailTemplateModel,
