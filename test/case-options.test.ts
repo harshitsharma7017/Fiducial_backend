@@ -560,9 +560,11 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
       throw new Error(`No "${text}" row`);
     };
 
-    // C-6: Fire's covers asked for are marked in the Option 1 column; Terrorism (not required)
-    // and Storm (left unanswered) are left out: their rows are hidden.
-    expect(schedule.getCell(rowOf('Earthquake'), 4).value).toBe('Required');
+    // C-6: Fire's covers asked for are marked with a green tick in the Option 1 column (client
+    // review, 27 Oct 2026); Terrorism (not required) and Storm (left unanswered) are left out:
+    // their rows are hidden.
+    expect(schedule.getCell(rowOf('Earthquake'), 4).value).toBe('✓');
+    expect(schedule.getCell(rowOf('Earthquake'), 4).font.color?.argb).toBe('FF00A04A');
     expect(schedule.getRow(rowOf('Earthquake')).hidden).toBeFalsy();
     expect(schedule.getRow(rowOf('Terrorism')).hidden).toBe(true);
     expect(schedule.getRow(rowOf('Storm, Tempest, Flood & Inundation')).hidden).toBe(true);

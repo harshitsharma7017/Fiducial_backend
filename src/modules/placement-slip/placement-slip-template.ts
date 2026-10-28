@@ -1,5 +1,6 @@
 import {
   formatDate,
+  optionSumInsured,
   type PlacementSlip,
   type ProposalRecord,
   type QuoteOption,
@@ -78,8 +79,10 @@ export function checkPlacementSlipTemplate(workbook: ExcelJS.Workbook): Template
 /**
  * The case as if the option accepted were its only option, with its product decided: the slip's
  * schedule has one sum insured column and names the product placed; Fire accepted without
- * terrorism marks its terrorism cover not required. Option 2 takes its second figures where given (Fire lines without one are not
- * in Option 2); the existing sum insured takes last year's figures.
+ * terrorism marks its terrorism cover not required. Option 2 takes its second figures where given
+ * (Fire lines without one are not in Option 2); Option 3 takes the Fire lines' third figures (Fire
+ * lines without one are not in it) and the other sections' Option 1 figures; the existing sum
+ * insured takes last year's figures.
  */
 export function recordForOption(
   record: ProposalRecord,
@@ -90,22 +93,20 @@ export function recordForOption(
     existing: string | null;
     proposed1: string | null;
     proposed2: string | null;
-  }) =>
-    option === 'EXISTING'
-      ? values.existing
-      : option === 'P1'
-        ? values.proposed1
-        : (values.proposed2 ?? values.proposed1);
+  }) => optionSumInsured(option, values);
   const pickFire = (values: {
     existing: string | null;
     proposed1: string;
     proposed2: string | null;
+    proposed3: string | null;
   }) =>
     (option === 'EXISTING'
       ? values.existing
       : option === 'P1'
         ? values.proposed1
-        : values.proposed2) ?? '0';
+        : option === 'P2'
+          ? values.proposed2
+          : values.proposed3) ?? '0';
   const given = (values: Readonly<Record<string, string | null>>): Record<string, string | null> =>
     Object.fromEntries(Object.entries(values).filter(([, value]) => value !== null));
   return {
@@ -129,10 +130,12 @@ export function recordForOption(
         existing: null,
         proposed1: pickFire(line),
         proposed2: null,
+        proposed3: null,
       })),
       existing: null,
       proposed1: pickFire(record.fire),
       proposed2: null,
+      proposed3: null,
     },
     sections: record.sections.map((section) => ({
       ...section,

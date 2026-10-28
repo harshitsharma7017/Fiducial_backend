@@ -7,6 +7,7 @@ import { afterAll, beforeAll, inject } from 'vitest';
 import { createApp } from '../../src/app.ts';
 import { loadEnv, type Env } from '../../src/config/env.ts';
 import { createLogger } from '../../src/lib/logger.ts';
+import type { CloudStore } from '../../src/modules/cloud-storage/cloud-store.ts';
 import { ensureIndexes } from '../../src/models.ts';
 import { ensureSystemRoles } from '../../src/modules/roles/roles.service.ts';
 import type { MailTransport } from '../../src/modules/mail/transport.ts';
@@ -47,6 +48,7 @@ export function createTestApp(
   existingPolicySource?: ExistingPolicySource,
   mailTransport?: MailTransport,
   quoteReader?: QuoteReader,
+  cloudStore?: CloudStore,
 ): Express {
   return createApp({
     config: { ...TEST_ENV, ...overrides },
@@ -54,6 +56,7 @@ export function createTestApp(
     existingPolicySource,
     mailTransport,
     quoteReader,
+    cloudStore,
   });
 }
 

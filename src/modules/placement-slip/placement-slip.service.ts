@@ -426,6 +426,30 @@ export async function placementSlipDocument(
   data: Buffer;
   status: PlacementSlip['status'];
 }> {
+  const { reference, ...file } = await placementSlipFile(id, format, deps);
+  await writeAudit({
+    userId: actor.id,
+    action: AUDIT_ACTIONS.PLACEMENT_SLIP_DOWNLOADED,
+    entity: AUDIT_ENTITIES.PROPOSAL,
+    entityId: id,
+    after: { reference, format, status: file.status },
+    requestId: actor.requestId,
+  });
+  return file;
+}
+
+/** The slip as a file, as downloaded; 409 until the client's acceptance. Not audited. */
+export async function placementSlipFile(
+  id: string,
+  format: MailAttachmentFormat,
+  deps: Pick<PlacementSlipDeps, 'defaultGstRatePercent'>,
+): Promise<{
+  fileName: string;
+  contentType: string;
+  data: Buffer;
+  status: PlacementSlip['status'];
+  reference: string;
+}> {
   const loaded = await load(id, deps);
   if (!loaded.slip.accepted) {
     throw conflict(
@@ -437,15 +461,7 @@ export async function placementSlipDocument(
     );
   }
   const file = await fileOf(loaded, format, deps.defaultGstRatePercent);
-  await writeAudit({
-    userId: actor.id,
-    action: AUDIT_ACTIONS.PLACEMENT_SLIP_DOWNLOADED,
-    entity: AUDIT_ENTITIES.PROPOSAL,
-    entityId: id,
-    after: { reference: loaded.record.reference, format, status: loaded.slip.status },
-    requestId: actor.requestId,
-  });
-  return { ...file, status: loaded.slip.status };
+  return { ...file, status: loaded.slip.status, reference: loaded.record.reference };
 }
 
 /** Moves the case forward to a stage when it is before it, in the same transaction. */

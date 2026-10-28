@@ -165,6 +165,8 @@ export interface ProposalDoc {
   fireCovers?: CoverDoc[];
   locations: ProposalLocationDoc[];
   fireOption2: Array<{ group: FireGroup; amount: Money }>;
+  /** Fire Option 3 by line; missing on proposals saved before it existed. */
+  fireOption3?: Array<{ group: FireGroup; amount: Money }>;
   sections: Array<{
     code: OtherSection;
     included: boolean;
@@ -383,6 +385,15 @@ const proposalSchema = new Schema<ProposalDoc>(
         noId,
       ),
     ],
+    fireOption3: {
+      type: [
+        new Schema(
+          { group: { type: String, enum: FIRE_GROUPS, required: true }, amount: money },
+          noId,
+        ),
+      ],
+      default: undefined,
+    },
     sections: [
       new Schema(
         {

@@ -196,13 +196,15 @@ describe('R-1: the RFQ is generated from the case', () => {
     const schedule = workbook.getWorksheet('schedule')!;
     const texts: string[] = [];
     schedule.eachRow((row) => row.eachCell((cell) => texts.push(cell.text)));
-    // Each location's sum insured, hypothecation, stock in the open and the notes for insurers.
+    // Each location's sum insured; the bank of the hypothecation in the Agreed Bank Clause. The
+    // RFQ has no note section (client review, 27 Oct 2026): the notes are on the QCR only.
     expect(texts.join('\n')).toContain(
       'Plant 1: Plot 1, Mumbai, Mumbai 400001 — Fire sum insured ₹1,00,00,000',
     );
-    expect(texts).toContain('Hypothecation (Plant 1): State Bank of India, Fort branch');
-    expect(texts).toContain('Stock kept at open space (Plant 2): Bales in the yard, up to 20 L');
-    expect(texts).toContain('Notes for the insurers: Please quote with and without terrorism.');
+    expect(texts.some((text) => text.includes('State Bank of India, Fort branch'))).toBe(true);
+    expect(texts).not.toContain('NOTE:');
+    expect(texts).not.toContain('Hypothecation (Plant 1): State Bank of India, Fort branch');
+    expect(texts).not.toContain('Notes for the insurers: Please quote with and without terrorism.');
     expect(workbook.getWorksheet('risk details')!.getCell('D3').value).toBe(
       'Fire fighting arrangement answer',
     );

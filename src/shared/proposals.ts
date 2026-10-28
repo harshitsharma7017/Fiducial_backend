@@ -628,6 +628,13 @@ export const DataSheetInputSchema = z
     locations: z.array(LocationDataInputSchema).max(200),
     /** Proposed Option 2 for each Fire line; blank when there is no second option. */
     fireOption2: z.array(z.strictObject({ group: z.enum(FIRE_GROUPS), amount: OptionalRupees })),
+    /**
+     * Proposed Option 3 for each Fire line; blank when there is no third option. Option 3 is a
+     * Fire figure only: the other sections are quoted at their Option 1 figures in it.
+     */
+    fireOption3: z
+      .array(z.strictObject({ group: z.enum(FIRE_GROUPS), amount: OptionalRupees }))
+      .default([]),
     /** Fire's add-on covers asked for (C-6). */
     fireCovers: z.array(CoverInputSchema).max(50).default([]),
     /**
@@ -1038,12 +1045,15 @@ export const ProposalRecordSchema = z.object({
         existing: z.string().nullable(),
         proposed1: z.string(),
         proposed2: z.string().nullable(),
+        proposed3: z.string().nullable(),
       }),
     ),
     existing: z.string().nullable(),
     proposed1: z.string(),
     /** Null when no Fire line has a second option. */
     proposed2: z.string().nullable(),
+    /** Null when no Fire line has a third option. */
+    proposed3: z.string().nullable(),
     /** Fire's add-on covers (C-6), from the coverage section master. */
     covers: z.array(CoverSchema),
   }),

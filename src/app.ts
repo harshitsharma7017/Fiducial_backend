@@ -42,6 +42,8 @@ import { createProposalsRouter, liveCaseOnly } from './modules/proposals/proposa
 import { createClientApprovalRouter } from './modules/client-approval/client-approval.routes.ts';
 import { createPlacementSlipRouter } from './modules/placement-slip/placement-slip.routes.ts';
 import { createCoverageConfirmationRouter } from './modules/coverage-confirmation/coverage-confirmation.routes.ts';
+import { createCloudDocumentsRouter } from './modules/cloud-storage/cloud-documents.routes.ts';
+import { cloudStoreFromEnv, type CloudStore } from './modules/cloud-storage/cloud-store.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
 import { quoteReaderFromEnv, type QuoteReader } from './modules/quotes/quote-reader.ts';
@@ -65,6 +67,8 @@ export interface AppDependencies {
   mailTransport?: MailTransport;
   /** Q1: who reads quote files for the auto-fill; from OCR_PROVIDER when not given (tests pass a fake). */
   quoteReader?: QuoteReader;
+  /** Where users' saved documents go; from CLOUD_STORAGE when not given (tests pass a memory store). */
+  cloudStore?: CloudStore;
 }
 
 /** Builds the Express app without listening, so tests can drive it with Supertest. */
@@ -74,8 +78,10 @@ export function createApp({
   existingPolicySource,
   mailTransport,
   quoteReader,
+  cloudStore,
 }: AppDependencies): Express {
   const transport = mailTransport ?? transportFromEnv(config, logger);
+  const store = cloudStore ?? cloudStoreFromEnv(config, logger);
   const reader = quoteReader ?? quoteReaderFromEnv(config, logger);
   const policySource =
     existingPolicySource ??
@@ -183,6 +189,11 @@ export function createApp({
       gstRatePercent: config.GST_RATE_PERCENT,
       mailTransport: transport,
     }),
+  );
+  // Documents users save to cloud storage (S3); everything else stays in the database.
+  api.use(
+    '/proposals',
+    createCloudDocumentsRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT, store }),
   );
   // Group health (GHI): its own cases and routes beside Property's proposals.
   api.use('/ghi', createGhiRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));

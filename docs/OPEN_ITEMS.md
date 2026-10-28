@@ -455,6 +455,32 @@ On the property quote form, "Fill the form from this PDF" reads a kept PDF (`POS
 | QA-2 | Scanned PDFs, pictures and mails          | With `OCR_PROVIDER=none`: not read, the screen says so. With `OCR_PROVIDER=gemini`: scanned PDFs and PNG/JPEG are read by Gemini (values always "check"); mails are never read. See QUOTE_OCR_GEMINI.md. |
 | QA-3 | Sum insured, terms, deductibles, capacity | Not filled; only premiums and the valid-until date are.                                                                                                                                                  |
 
+## Client review of 27 Oct 2026 (decisions taken, please confirm)
+
+Built: policy period typed in full (no end date worked out from the start); a third proposed Fire
+option; add-on covers added on the case; the QCR's policy name, highlighted notes under the payment and
+recommendation, "Prepared By" and in-order, centred S No with highlighted headings and one font size; the
+RFQ's totals with and then without terrorism; no note section on the RFQ or placement slip; a green tick
+for each add-on cover asked for; documents saved to an S3 bucket only on "Save to cloud". The internal
+chat was left out on request.
+
+- **Option 3 is a Fire figure.** The other sections have no third figure: they are quoted at their Option 1
+  figures in Option 3 (as a section without an Option 2 figure is in Option 2), and the schedule's Option 3
+  column carries Fire only. Confirm, or say which sections need their own Option 3.
+- **"Policy name"** on the QCR's first page is the case's product (for example Bharat Laghu Udyam Suraksha).
+- **"Prepared By"** on the QCR's last page is the user who last saved the broker's part of the QCR, else the
+  case's assigned staff.
+- **"Note section"** of the QCR: the terrorism note, the case's notes (hypothecation, stock in the open, notes
+  for the insurers) and the standard notes marked "On QCR" (the template's own notes when there are none).
+- **Removing the RFQ's note section** also removes the Data Sheet's "Notes for the insurers" and "Stock kept
+  at open space" from the RFQ (they were only in that section). The bank of a hypothecation still prints in
+  the Agreed Bank Clause. Confirm, or say which lines insurers must still see.
+- **Policy period**: a renewal's start is still the day after last year's policy ends (a copy, not a
+  calculation); its end is typed.
+- **Cloud storage**: "data stored locally by default" is the app's own database (MongoDB), as before. The RFQ
+  (latest version), QCR and placement slip can be saved to the bucket, as PDF or Excel; quote files, policy
+  documents and other uploads are not offered for the cloud yet.
+
 ## Data issues found during import
 
 Counts are from the import report for `IIB_Code_Master.xlsx` (299 occupancies; 20,611 pincode rows, 20,606 after

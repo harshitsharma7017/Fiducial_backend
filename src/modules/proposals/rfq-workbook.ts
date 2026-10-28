@@ -3,7 +3,6 @@ import {
   BURGLARY_BASIS_LABELS,
   DEFAULT_FIRE_COVERS,
   FIRE_GROUP_LABELS,
-  FIRE_GROUPS,
   ANNEXURE_SECTIONS,
   FIRE_ITEM_HEADINGS,
   FIRE_ITEMS,
@@ -22,13 +21,18 @@ import {
   type SectionWithLines,
   formatDate,
   productRangeText,
+  quoteOptionsOf,
   type CatalogItem,
   type Cover,
   type ProposalRecord,
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
-import { TABLE_HEADER_FILL_ARGB } from '../documents/document-theme.ts';
+import {
+  COVER_TICK,
+  COVER_TICK_ARGB,
+  TABLE_HEADER_FILL_ARGB,
+} from '../documents/document-theme.ts';
 
 // The RFQ in the client's layout (document 07): premium details for the insurer to fill in,
 // the schedule, Fire by location, risk details and claim details. Amounts are whole rupees.
@@ -149,13 +153,17 @@ function premiumDetails(
     }
   }
   labelled(sheet, 'Quotes needed by:', formatDate(record.dueDate), 4);
-  const hasOption2 =
-    record.fire.proposed2 !== null || record.sections.some((s) => s.included && s.proposed2);
+  const asked = quoteOptionsOf(record);
 
-  for (const option of hasOption2 ? [1, 2] : [1]) {
+  for (const [option, number] of [
+    ['P1', 1],
+    ['P2', 2],
+    ['P3', 3],
+  ] as const) {
+    if (!asked.includes(option)) continue;
     sheet.addRow([]);
     const caption = sheet.addRow([
-      `Quote Option ${option}: For Proposed Sum Insured Option ${option}`,
+      `Quote Option ${number}: For Proposed Sum Insured Option ${number}`,
     ]);
     caption.font = { bold: true };
     header(sheet, [
@@ -165,39 +173,60 @@ function premiumDetails(
       'Premium without terrorism',
     ]);
     const first = sheet.rowCount + 1;
-    const fire = option === 1 ? record.fire.proposed1 : record.fire.proposed2;
+    const fire =
+      option === 'P1'
+        ? record.fire.proposed1
+        : option === 'P2'
+          ? record.fire.proposed2
+          : record.fire.proposed3;
     if (filled(fire)) money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
     // B5: only sections marked required appear; Not-required ones are omitted entirely, and so
-    // is a section with no sum insured for this option.
+    // is a section with no sum insured for this option. Option 3 is Fire's: the other sections
+    // are quoted at their Option 1 figures in it.
     for (const section of record.sections.filter(isSectionShown)) {
-      const value = option === 1 ? section.proposed1 : section.proposed2;
+      const value = option === 'P2' ? section.proposed2 : section.proposed1;
       if (!filled(value)) continue;
       const row = sheet.addRow([section.name, amount(value)]);
       money(row, [2, 3, 4]);
     }
-    const last = sheet.rowCount;
-    const net = sheet.addRow([
-      'Net Premium',
-      null,
-      { formula: `SUM(C${first}:C${last})` },
-      { formula: `SUM(D${first}:D${last})` },
-    ]);
-    const gst = sheet.addRow([
-      `Add: GST ${gstRate}%`,
-      null,
-      { formula: `C${net.number}*${gstRate / 100}` },
-      { formula: `D${net.number}*${gstRate / 100}` },
-    ]);
-    const total = sheet.addRow([
-      'Total Premium',
-      null,
-      { formula: `C${net.number}+C${gst.number}` },
-      { formula: `D${net.number}+D${gst.number}` },
-    ]);
-    for (const row of [net, gst, total]) {
-      row.font = { bold: true };
-      money(row, [3, 4]);
+    terrorismTotals(sheet, { first, last: sheet.rowCount }, gstRate);
+  }
+}
+
+/**
+ * The totals of a quote block as the client reads them (27 Oct 2026): "With Terrorism" then
+ * "Without Terrorism", each with its Net Value, GST and Total across the two premium columns,
+ * as formulas over the premiums the insurer fills in.
+ */
+function terrorismTotals(
+  sheet: ExcelJS.Worksheet,
+  sections: { first: number; last: number },
+  gstRate: number,
+) {
+  for (const [label, column] of [
+    ['With Terrorism', 'C'],
+    ['Without Terrorism', 'D'],
+  ] as const) {
+    const heading = sheet.addRow([label]);
+    sheet.mergeCells(heading.number, 1, heading.number, 4);
+    heading.font = { bold: true };
+    heading.getCell(1).fill = HEADER_FILL;
+    const at = sheet.rowCount + 1;
+    const rows = [
+      sheet.addRow([
+        'Net Value',
+        null,
+        { formula: `SUM(${column}${sections.first}:${column}${sections.last})` },
+      ]),
+      sheet.addRow([`GST ${gstRate}%`, null, { formula: `ROUND(C${at}*${gstRate / 100},2)` }]),
+      sheet.addRow(['Total', null, { formula: `C${at}+C${at + 1}` }]),
+    ];
+    for (const row of rows) {
+      sheet.mergeCells(row.number, 3, row.number, 4);
+      money(row, [3]);
+      row.getCell(3).alignment = { horizontal: 'right' };
     }
+    rows[2]!.font = { bold: true };
   }
 }
 
@@ -214,36 +243,57 @@ export function schedule(
   const withExisting = record.existing !== null;
   const existing = record.existing;
   const copy = record.existingPolicy;
-  const span = withExisting ? 5 : 4;
-  const amountColumns = withExisting ? [3, 4, 5] : [3, 4];
+  // Option 3 is a Fire figure: its column is there only when a Fire line has one.
+  const withOption3 = record.fire.proposed3 !== null;
+  const span = (withExisting ? 5 : 4) + (withOption3 ? 1 : 0);
+  const amountColumns = Array.from({ length: span - 2 }, (_, index) => index + 3);
   const figures = (
     existingValue: string | null | undefined,
     p1: string | null | undefined,
     p2: string | null | undefined,
-  ) =>
-    withExisting
-      ? [amount(existingValue ?? null), amount(p1 ?? null), amount(p2 ?? null)]
-      : [amount(p1 ?? null), amount(p2 ?? null)];
-  // C-6: the add-on covers asked for, in the option columns; those not required, or not
-  // answered, are left out.
-  const covers = (list: readonly Cover[], option2: boolean) => {
+    p3: string | null | undefined = null,
+  ) => [
+    ...(withExisting ? [amount(existingValue ?? null)] : []),
+    amount(p1 ?? null),
+    amount(p2 ?? null),
+    ...(withOption3 ? [amount(p3 ?? null)] : []),
+  ];
+  // The S No column is centred (client review, 27 Oct 2026).
+  const numbered = (row: ExcelJS.Row) => {
+    row.getCell(1).alignment = { horizontal: 'center', vertical: 'top' };
+    return row;
+  };
+  // C-6: the add-on covers asked for, a green tick in each option column; those not required, or
+  // not answered, are left out.
+  const covers = (list: readonly Cover[], option2: boolean, option3 = false) => {
     list
       .filter((cover) => cover.required === true)
       .forEach((cover, index) => {
-        sheet.addRow([
+        const row = sheet.addRow([
           index === 0 ? 'Addon coverages' : null,
           cover.name,
           ...(withExisting ? [null] : []),
-          'Required',
-          option2 ? 'Required' : null,
+          COVER_TICK,
+          option2 ? COVER_TICK : null,
+          ...(withOption3 ? [option3 ? COVER_TICK : null] : []),
         ]);
+        row.eachCell((cell) => {
+          if (cell.value !== COVER_TICK) return;
+          cell.font = { bold: true, color: { argb: COVER_TICK_ARGB } };
+          cell.alignment = { horizontal: 'center' };
+        });
       });
   };
   const sheet = workbook.addWorksheet('schedule');
-  sheet.columns = [{ width: 24 }, { width: 70 }, { width: 22 }, { width: 22 }, { width: 22 }].slice(
-    0,
-    span,
-  );
+  // The description is narrower than the client's sheet so the PDF keeps a readable size.
+  sheet.columns = [
+    { width: 16 },
+    { width: 52 },
+    { width: 20 },
+    { width: 20 },
+    { width: 20 },
+    { width: 20 },
+  ].slice(0, span);
   if (withExisting && existing?.policyNumber) {
     sheet.addRow([`Policy No: ${existing.policyNumber}`]).font = { bold: true };
   }
@@ -312,23 +362,33 @@ export function schedule(
     ...(withExisting ? ['Existing Sum Insured'] : []),
     'Proposed Sum Insured - Option 1',
     'Proposed Sum Insured - Option 2',
-  ]);
+    ...(withOption3 ? ['Proposed Sum Insured - Option 3'] : []),
+  ]).getCell(1).alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
   sheet.addRow(['Fire & Allied Perils']).font = { bold: true };
-  // Lines with no figure are left out; the others keep their Data Sheet numbers.
+  // Lines with no figure are left out; the others are numbered in order.
+  let fireNumber = 0;
   for (const line of record.fire.groups) {
-    if (![line.existing, line.proposed1, line.proposed2].some(filled)) continue;
-    const row = sheet.addRow([
-      FIRE_GROUPS.indexOf(line.group) + 1,
-      FIRE_GROUP_LABELS[line.group],
-      ...figures(line.existing, line.proposed1, line.proposed2),
-    ]);
+    if (![line.existing, line.proposed1, line.proposed2, line.proposed3].some(filled)) continue;
+    fireNumber += 1;
+    const row = numbered(
+      sheet.addRow([
+        fireNumber,
+        FIRE_GROUP_LABELS[line.group],
+        ...figures(line.existing, line.proposed1, line.proposed2, line.proposed3),
+      ]),
+    );
     row.getCell(2).alignment = { wrapText: true };
     money(row, amountColumns);
   }
   const total = sheet.addRow([
     null,
     'Total Sum Insured - Fire & Allied Perils',
-    ...figures(record.fire.existing, record.fire.proposed1, record.fire.proposed2),
+    ...figures(
+      record.fire.existing,
+      record.fire.proposed1,
+      record.fire.proposed2,
+      record.fire.proposed3,
+    ),
   ]);
   total.font = { bold: true };
   money(total, amountColumns);
@@ -338,6 +398,7 @@ export function schedule(
       ? record.fire.covers
       : (fire ? fire.addons : DEFAULT_FIRE_COVERS).map((name) => ({ name, required: null })),
     record.fire.proposed2 !== null,
+    withOption3,
   );
   // C-1: the product the case chose, else every product with its range.
   const decided = record.product && record.product.source !== 'SUGGESTED' ? record.product : null;
@@ -388,15 +449,17 @@ export function schedule(
     sheet.addRow([section.name]).font = { bold: true };
     let number = 1;
     for (const line of lines) {
-      const row = sheet.addRow([
-        number,
-        line.label,
-        ...figures(
-          section.existingLines[line.key],
-          section.lines[line.key],
-          section.lines2[line.key],
-        ),
-      ]);
+      const row = numbered(
+        sheet.addRow([
+          number,
+          line.label,
+          ...figures(
+            section.existingLines[line.key],
+            section.lines[line.key],
+            section.lines2[line.key],
+          ),
+        ]),
+      );
       if (line.kind === 'rupees') money(row, amountColumns);
       number += 1;
     }
@@ -405,13 +468,15 @@ export function schedule(
         (line) => line.key === SUM_INSURED_LINE[section.code],
       );
       money(
-        sheet.addRow([
-          number,
-          isAnnexureSection(section.code)
-            ? `As per Annexure${annexureItems > 0 ? ` (${annexureItems} ${annexureItems === 1 ? 'item' : 'items'})` : ''}`
-            : (sumInsuredLine?.label ?? 'Sum insured'),
-          ...figures(section.existing, section.proposed1, section.proposed2),
-        ]),
+        numbered(
+          sheet.addRow([
+            number,
+            isAnnexureSection(section.code)
+              ? `As per Annexure${annexureItems > 0 ? ` (${annexureItems} ${annexureItems === 1 ? 'item' : 'items'})` : ''}`
+              : (sumInsuredLine?.label ?? 'Sum insured'),
+            ...figures(section.existing, section.proposed1, section.proposed2),
+          ]),
+        ),
         amountColumns,
       );
     }
@@ -432,22 +497,9 @@ export function schedule(
     }
     covers(section.covers, section.proposed2 !== null);
   }
-  // B5: the "Not required: …" line is removed; Not-required sections are simply omitted.
-  if (record.notes) labelled(sheet, 'Notes', record.notes, span);
-
-  const notes = masters.notes.filter(
-    (note) => note.active && (document === 'QCR' ? note.onQcr : note.onRfq),
-  );
-  if (notes.length > 0) {
-    sheet.addRow([]);
-    sheet.addRow(['NOTE:']).font = { bold: true };
-    for (const note of notes) {
-      const row = sheet.addRow([note.text]);
-      row.alignment = { wrapText: true, vertical: 'top' };
-      sheet.mergeCells(row.number, 1, row.number, span);
-      row.height = Math.max(15, Math.ceil(note.text.length / 110) * 15);
-    }
-  }
+  // B5: the "Not required: …" line is removed; Not-required sections are simply omitted. The
+  // notes are not on the schedule (client review, 27 Oct 2026): the RFQ has none, the QCR shows
+  // them on its premium comparison.
 }
 
 /**

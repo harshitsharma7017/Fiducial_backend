@@ -15,6 +15,7 @@ export * from './client-approval.ts';
 export * from './claims.ts';
 export * from './claims-analysis.ts';
 export * from './clients.ts';
+export * from './cloud-documents.ts';
 export * from './common.ts';
 export * from './contacts.ts';
 export * from './data-sheet-import.ts';

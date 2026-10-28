@@ -755,6 +755,9 @@ export async function updateDataSheet(
     fireOption2: input.fireOption2
       .filter((line) => line.amount !== null)
       .map((line) => ({ group: line.group, amount: money(line.amount) })),
+    fireOption3: input.fireOption3
+      .filter((line) => line.amount !== null)
+      .map((line) => ({ group: line.group, amount: money(line.amount) })),
     fireCovers: input.fireCovers,
     product: input.product.code ? { code: input.product.code, reason: input.product.reason } : null,
     addons: input.addons,

@@ -484,8 +484,9 @@ describe('Placement slip', () => {
       ['Fire & Burglary', 'Agreed Bank Clause: State Bank of India, Fort branch'],
       ['Money', 'Cash in transit: From insured premises to bank'],
     ]);
-    // The notes (here the hypothecation) come after the conditions, above the broker's footer.
-    expect(rowOf(schedule, 'NOTE:')).toBeGreaterThan(rowOf(schedule, 'Excess'));
+    // No note section on the placement slip (client review, 27 Oct 2026).
+    const labels = Array.from({ length: schedule.rowCount }, (_, i) => text(schedule, i + 1, 1));
+    expect(labels).not.toContain('NOTE:');
     // Fire was accepted without terrorism: its terrorism cover is left out (the row is hidden).
     const fireTerrorism = rowOf(schedule, 'Terrorism', 2);
     expect(schedule.getRow(fireTerrorism).hidden).toBe(true);

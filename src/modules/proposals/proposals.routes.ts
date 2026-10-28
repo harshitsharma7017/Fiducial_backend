@@ -406,7 +406,7 @@ documentRoute({
   tags: ['Proposals'],
   summary: 'Save the Data Sheet',
   description:
-    'Needs property.edit. Replaces the Data Sheet: locations with their Fire items, the Fire Option 2 lines, the other sections (with their lines in three options, the Burglary basis and the add-on covers asked for), the product and add-ons, a renewal’s Existing column, claims and notes. A measured item without an amount is priced as area × rate. With a basis, Burglary’s sum insured is the Fire contents. A product the Fire sum insured does not suggest needs product.reason, and add-ons must come from the product’s lists (400 otherwise). 409 PROPOSAL_LOCKED once the RFQ has been sent. Audited.',
+    'Needs property.edit. Replaces the Data Sheet: locations with their Fire items, the Fire Option 2 and Option 3 lines (Option 3 is Fire only: the other sections are quoted at Option 1 in it), the other sections (with their lines in three options, the Burglary basis and the add-on covers asked for), the product and add-ons, a renewal’s Existing column, claims and notes. A measured item without an amount is priced as area × rate. With a basis, Burglary’s sum insured is the Fire contents. A product the Fire sum insured does not suggest needs product.reason, and add-ons must come from the product’s lists (400 otherwise). 409 PROPOSAL_LOCKED once the RFQ has been sent. Audited.',
   request: { params: ProposalIdParamsSchema, body: json(DataSheetInputSchema) },
   responses: {
     200: { description: 'The proposal', ...json(ProposalRecordSchema) },

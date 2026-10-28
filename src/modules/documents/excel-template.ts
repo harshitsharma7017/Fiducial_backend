@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { withoutNotes } from '../imports/strip-notes.ts';
+import { COVER_TICK, COVER_TICK_ARGB, TABLE_HEADER_FILL_ARGB } from './document-theme.ts';
 
 // The document engine's Excel tools: open a template, find cells by the labels a person sees,
 // write values that keep the template's look, and insert rows without breaking merged cells or
@@ -336,4 +337,213 @@ export function printRows(sheet: ExcelJS.Worksheet): { from: number; to: number 
     : null;
   if (match) return { from: Number(match[1]), to: Number(match[2]) };
   return { from: 1, to: sheet.rowCount };
+}
+
+/** Marks an add-on cover asked for: a green tick, centred (in place of the word "Required"). */
+export function markTick(cell: ExcelJS.Cell): void {
+  cell.value = COVER_TICK;
+  restyle(cell, {
+    font: { ...cell.font, bold: true, color: { argb: COVER_TICK_ARGB } },
+    alignment: { ...cell.alignment, horizontal: 'center', vertical: 'middle' },
+  });
+}
+
+/** A heading row stands out: the table-header tint and bold text (client review, 27 Oct 2026). */
+export function highlightHeading(
+  sheet: ExcelJS.Worksheet,
+  row: number,
+  columns: { from: number; to: number },
+): void {
+  for (let column = columns.from; column <= columns.to; column += 1) {
+    const cell = sheet.getCell(row, column);
+    if (isCovered(cell)) continue;
+    // A heading the template already fills (the navy section titles) keeps its own fill.
+    const filled = cell.fill?.type === 'pattern' && cell.fill.pattern === 'solid';
+    restyle(cell, {
+      ...(filled
+        ? {}
+        : {
+            fill: {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: TABLE_HEADER_FILL_ARGB },
+            } satisfies ExcelJS.Fill,
+          }),
+      font: { ...cell.font, bold: true },
+    });
+  }
+}
+
+/**
+ * Numbers the shown rows of a block 1, 2, 3… in the column, centred, so the S No reads in order
+ * even when lines are left out (client review, 27 Oct 2026). Only cells that already hold a number
+ * are renumbered; hidden rows are skipped.
+ */
+export function renumberRows(sheet: ExcelJS.Worksheet, rows: readonly number[], column = 1): void {
+  let number = 0;
+  for (const row of rows) {
+    if (sheet.getRow(row).hidden) continue;
+    const cell = sheet.getCell(row, column);
+    if (isCovered(cell) || !/^\d+$/.test(cellText(cell).trim())) continue;
+    number += 1;
+    cell.value = number;
+    restyle(cell, { alignment: { ...cell.alignment, horizontal: 'center', vertical: 'middle' } });
+  }
+}
+
+/** A formula with its row references inside `from`..`to` moved by `delta`. */
+function shiftFormula(formula: string, from: number, to: number, delta: number): string {
+  return formula.replace(/(\$?[A-Z]{1,3})(\$?)(\d+)/g, (match, column: string, dollar, row) => {
+    const number = Number(row);
+    return number >= from && number <= to ? `${column}${dollar}${number + delta}` : match;
+  });
+}
+
+/**
+ * Copies rows `from`..`to` (values, formulas, styles, heights and the merges inside them) to new
+ * rows inserted before row `at` (below the source), so a template block can be repeated — a
+ * fourth quote option when the template has three. Formulas move with their rows.
+ */
+export function duplicateRows(
+  sheet: ExcelJS.Worksheet,
+  from: number,
+  to: number,
+  at: number,
+): void {
+  const count = to - from + 1;
+  if (count <= 0 || at <= to) return;
+  const inside = mergeRanges(sheet).filter((range) => range.top >= from && range.bottom <= to);
+  const columns = Math.max(sheet.columnCount, 1);
+  const source = Array.from({ length: count }, (_, offset) => {
+    const row = sheet.getRow(from + offset);
+    return {
+      height: row.height,
+      hidden: row.hidden,
+      cells: Array.from({ length: columns }, (_, index) => {
+        const cell = sheet.getCell(from + offset, index + 1);
+        return {
+          value: isCovered(cell) ? null : cell.value,
+          style: JSON.parse(JSON.stringify(cell.style)) as Partial<ExcelJS.Style>,
+        };
+      }),
+    };
+  });
+  insertRows(sheet, at, count, to);
+  const delta = at - from;
+  source.forEach((line, offset) => {
+    const row = sheet.getRow(at + offset);
+    row.hidden = line.hidden;
+    if (line.height) row.height = line.height;
+    // Merges copied from the `like` row by insertRows are taken apart before the block's own.
+    for (const range of mergeRanges(sheet)) {
+      if (range.top === at + offset && range.bottom === at + offset) {
+        sheet.unMergeCells(...rangeAddress(range));
+      }
+    }
+    line.cells.forEach((cell, index) => {
+      const target = row.getCell(index + 1);
+      target.style = cell.style;
+      const value = cell.value;
+      target.value =
+        value &&
+        typeof value === 'object' &&
+        'formula' in value &&
+        typeof value.formula === 'string'
+          ? { formula: shiftFormula(value.formula, from, to, delta) }
+          : value;
+    });
+  });
+  for (const range of inside) {
+    sheet.mergeCells(range.top + delta, range.left, range.bottom + delta, range.right);
+  }
+}
+
+/**
+ * Adds a column after `like` that looks like it (styles and width) and extends every merge that
+ * ends at `like` (titles across the table) to it, and the print area too. Used for the schedule's
+ * "Proposed Sum Insured - Option 3" column when the template has none.
+ */
+export function addColumnAfter(sheet: ExcelJS.Worksheet, like: number): number {
+  const column = like + 1;
+  const rows = Math.max(sheet.rowCount, 1);
+  for (const range of mergeRanges(sheet)) {
+    if (range.right === like && range.left < like) {
+      sheet.unMergeCells(...rangeAddress(range));
+      sheet.mergeCells(range.top, range.left, range.bottom, column);
+    }
+  }
+  for (let row = 1; row <= rows; row += 1) {
+    const cell = sheet.getCell(row, column);
+    if (isCovered(cell)) continue;
+    if (!cell.isMerged) cell.value = null;
+    cell.style = JSON.parse(
+      JSON.stringify(sheet.getCell(row, like).style),
+    ) as Partial<ExcelJS.Style>;
+  }
+  const width = sheet.getColumn(like).width;
+  if (width) sheet.getColumn(column).width = width;
+  const area = sheet.pageSetup.printArea;
+  if (area) {
+    const printed = printColumns(sheet);
+    if (printed.to === like) {
+      sheet.pageSetup.printArea = area
+        .split(',')
+        .map((part, index) =>
+          index === 0
+            ? part.replace(
+                /:(\$?)([A-Z]+)(\$?\d+)$/,
+                (_, dollar: string, _letter, rest: string) =>
+                  `:${dollar}${sheet.getColumn(column).letter}${rest}`,
+              )
+            : part,
+        )
+        .join(',');
+    }
+  }
+  return column;
+}
+
+/** Makes the print area reach row `to` at least (a template's area can stop above its blocks). */
+export function extendPrintRows(sheet: ExcelJS.Worksheet, to: number): void {
+  const area = sheet.pageSetup.printArea;
+  if (!area || printRows(sheet).to >= to) return;
+  sheet.pageSetup.printArea = area
+    .split(',')
+    .map((part, index) =>
+      index === 0
+        ? part.replace(/(\$?[A-Z]+\$?)(\d+)$/, (_, column: string) => `${column}${to}`)
+        : part,
+    )
+    .join(',');
+}
+
+/**
+ * Lines at the foot of a sheet, after a blank row, across its printed columns and inside its
+ * print area: the QCR's "Prepared by" on its last page (client review, 27 Oct 2026).
+ */
+export function appendSignOff(sheet: ExcelJS.Worksheet, lines: readonly string[]): void {
+  if (lines.length === 0) return;
+  const at = printRows(sheet).to + 1;
+  const columns = printColumns(sheet);
+  insertRows(sheet, at, lines.length + 1, Math.max(at - 1, 1));
+  for (let row = at; row <= at + lines.length; row += 1) {
+    for (let column = columns.from; column <= columns.to; column += 1) {
+      const cell = sheet.getCell(row, column);
+      if (cell.isMerged) sheet.unMergeCells(row, columns.from, row, columns.to);
+      cell.value = null;
+      cell.style = {};
+    }
+    sheet.getRow(row).hidden = false;
+  }
+  lines.forEach((line, offset) => {
+    const row = at + 1 + offset;
+    if (columns.to > columns.from) sheet.mergeCells(row, columns.from, row, columns.to);
+    const cell = sheet.getCell(row, columns.from);
+    cell.value = line;
+    cell.style = {
+      font: { bold: true, size: 11 },
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    };
+  });
+  extendPrintRows(sheet, at + lines.length);
 }

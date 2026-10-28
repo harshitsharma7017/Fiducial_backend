@@ -16,13 +16,16 @@ import {
   findRows,
   hideRow,
   hideRowsBetween,
+  highlightHeading,
   insertRows,
   labelKey,
   printColumns,
+  printRows,
   restyle,
   setValue,
   sheetNamed,
 } from '../documents/excel-template.ts';
+import { NOTE_FILL_ARGB } from '../documents/document-theme.ts';
 import { letterheadOf } from '../documents/sheet-pdf.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
 import {
@@ -30,6 +33,7 @@ import {
   SHEETS,
   amount,
   dayBefore,
+  documentNotes,
   fillAddonSheets,
   fillAnnexure,
   fillContextOf,
@@ -37,6 +41,8 @@ import {
   fillSchedule,
   findLocationHeader,
   policyYear,
+  quoteBlockRows,
+  quoteBlocks,
 } from '../proposals/rfq-template.ts';
 import type { RfqMasters } from '../proposals/rfq-workbook.ts';
 
@@ -157,19 +163,20 @@ function fillPremiumComparison(
         : `Policy Start Date: ${record.policyStart ? formatDate(record.policyStart) : 'From the date of payment'}`,
     );
   }
+  // The policy's name on the first page, under the dates (client review, 27 Oct 2026).
+  const nameAfter = expiryRow ?? insuredRow;
+  if (record.product && nameAfter) {
+    insertRows(sheet, nameAfter + 1, 1, nameAfter);
+    clearCells(sheet, { from: nameAfter + 1, to: nameAfter + 1 }, printColumns(sheet));
+    setValue(sheet, nameAfter + 1, 1, `Policy Name: ${record.product.name}`);
+  }
 
-  const plans: { option: QcrOption['option']; caption: string }[] = renewal
-    ? [
-        { option: 'EXISTING', caption: 'Renewal Quote Option 1: For Existing Sum Insured' },
-        { option: 'P1', caption: 'Renewal Quote Option 2: For Proposed Sum Insured Option 1' },
-        { option: 'P2', caption: 'Renewal Quote Option 3: For Proposed Sum Insured Option 2' },
-      ]
-    : [
-        { option: 'P1', caption: 'Quote Option 1: For Proposed Sum Insured Option 1' },
-        { option: 'P2', caption: 'Quote Option 2: For Proposed Sum Insured Option 2' },
-      ];
+  const plans: { option: QcrOption['option']; caption: string }[] = quoteBlocks(renewal);
+  const quoted = new Set(
+    qcr.options.filter((option) => option.quotes.length > 0).map((option) => option.option),
+  );
 
-  findRows(sheet, 'Coverage Section').forEach((top, index) => {
+  quoteBlockRows(sheet, plans, quoted).forEach((top, index) => {
     const end = findRow(sheet, 'Total Premium', { from: top }) ?? top + 20;
     const plan = plans[index];
     const data = plan ? qcr.options.find((option) => option.option === plan.option) : undefined;
@@ -216,6 +223,9 @@ function fillPremiumComparison(
       }) ??
       top + 3;
     setValue(sheet, captionRow, quoteColumn, plan.caption);
+    for (let row = top; row <= captionRow; row += 1) {
+      highlightHeading(sheet, row, printColumns(sheet));
+    }
     const sumColumn = findColumn(sheet, namesRow, 'Sum Insured') ?? quoteColumn;
     const existingSum = findColumn(sheet, top + 2, 'Sum Insured') ?? existingColumn;
     const existingPremium = existingSum + 1;
@@ -368,12 +378,28 @@ function fillPremiumComparison(
     // Not given: the row is left out (after the lines above have taken its style).
     if (!qcr.paymentInFavourOf) hideRow(sheet, paymentRow);
   }
+  fillNotes(sheet, context, qcr, paymentRow === null ? null : paymentRow + lines.length);
+}
 
-  // The terrorism note: the extra premium of the recommended (else the lowest) quote per option.
-  const noteRow = findRow(sheet, '*New / Renewal Quote is given as per recommended coverage', {
+/**
+ * The note section on the first page, highlighted, directly under the payment and the
+ * recommendation (client review, 27 Oct 2026): the terrorism note with the recommended (else the
+ * lowest) quote's extra premium per option, then the case's notes and the standard QCR notes from
+ * the notes master (the template's own notes when the master has none). The template's note rows
+ * further down are left out.
+ */
+function fillNotes(
+  sheet: ExcelJS.Worksheet,
+  context: ReturnType<typeof fillContextOf>,
+  qcr: Qcr,
+  after: number | null,
+) {
+  const terrorismRow = findRow(sheet, '*New / Renewal Quote is given as per recommended coverage', {
     prefix: true,
   });
-  if (noteRow) {
+  const headingRow = findRow(sheet, 'NOTE:');
+  const notes: string[] = [];
+  if (terrorismRow) {
     const extras = qcr.options.flatMap((option) => {
       const quote =
         option.quotes.find((item) => item.insurerId === qcr.recommendedInsurerId) ??
@@ -382,22 +408,70 @@ function fillPremiumComparison(
         ? [`${rupees(quote.terrorismExtra)} for ${QUOTE_OPTION_LABELS[option.option]}`]
         : [];
     });
-    const text = cellText(sheet.getCell(noteRow, 1));
-    if (extras.length > 0) {
-      setValue(
-        sheet,
-        noteRow,
-        1,
-        text.replace(
-          /If you opt for the same,[\s\S]*$/,
-          `If you opt for terrorism cover, additional premium of ${extras.join(' & ')} (before GST) will be charged.`,
-        ),
-      );
-    } else {
-      // No terrorism figure to give: the sentence with blanks for it is left out.
-      setValue(sheet, noteRow, 1, text.replace(/\s*If you opt for the same,[\s\S]*$/, ''));
+    const text = cellText(sheet.getCell(terrorismRow, 1));
+    // No terrorism figure to give: the sentence with blanks for it is left out.
+    notes.push(
+      extras.length > 0
+        ? text.replace(
+            /If you opt for the same,[\s\S]*$/,
+            `If you opt for terrorism cover, additional premium of ${extras.join(' & ')} (before GST) will be charged.`,
+          )
+        : text.replace(/\s*If you opt for the same,[\s\S]*$/, ''),
+    );
+  }
+  // The template's own notes, under its "NOTE:" heading, until a blank row.
+  const templateNotes: string[] = [];
+  let lastNoteRow = Math.max(terrorismRow ?? 0, headingRow ?? 0);
+  if (headingRow) {
+    for (let row = headingRow + 1; row <= sheet.rowCount; row += 1) {
+      const text = cellText(sheet.getCell(row, 1)).trim();
+      if (!text) break;
+      templateNotes.push(text);
+      lastNoteRow = row;
     }
   }
+  const standard = context.masters.notes.some((note) => note.active && note.onQcr);
+  notes.push(...(standard ? [] : templateNotes), ...documentNotes(context));
+  if (notes.length === 0) return;
+
+  const firstNoteRow = Math.min(
+    ...[terrorismRow, headingRow].filter((row): row is number => row !== null),
+    Number.MAX_SAFE_INTEGER,
+  );
+  const at =
+    (after ?? (firstNoteRow < Number.MAX_SAFE_INTEGER ? firstNoteRow - 1 : printRows(sheet).to)) +
+    1;
+  // The template's note rows (and the blank rows before them) are left out below the new ones.
+  const old = lastNoteRow >= at ? { from: at, to: lastNoteRow } : null;
+  insertRows(sheet, at, notes.length + 1, Math.max(at - 1, 1));
+  if (old) hideRowsBetween(sheet, old.from + notes.length + 1, old.to + notes.length + 2);
+  const width = printColumns(sheet);
+  const fill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: NOTE_FILL_ARGB },
+  };
+  const border: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin' },
+    left: { style: 'thin' },
+    bottom: { style: 'thin' },
+    right: { style: 'thin' },
+  };
+  ['NOTE:', ...notes].forEach((text, offset) => {
+    const row = at + offset;
+    clearCells(sheet, { from: row, to: row }, width);
+    mergeAcross(sheet, row, width.from, width.to);
+    setValue(sheet, row, width.from, text);
+    const cell = sheet.getCell(row, width.from);
+    restyle(cell, {
+      fill,
+      border,
+      font: { ...cell.font, bold: offset === 0, color: { argb: 'FF000000' } },
+      alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+    });
+    sheet.getRow(row).hidden = false;
+    sheet.getRow(row).height = offset === 0 ? 18 : Math.max(18, Math.ceil(text.length / 140) * 15);
+  });
 }
 
 /** The schedule's Warranties / Conditions rows: each insurer's deductibles and conditions. */

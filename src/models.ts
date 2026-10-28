@@ -11,6 +11,7 @@ import {
   ClaimLinkModel,
 } from './modules/claims/claim-settings.model.ts';
 import { CatalogItemModel } from './modules/catalog/catalog-item.model.ts';
+import { CloudDocumentModel } from './modules/cloud-storage/cloud-document.model.ts';
 import { DocumentTemplateModel } from './modules/documents/document-template.model.ts';
 import { EmailTemplateModel } from './modules/email-templates/email-template.model.ts';
 import { MailAttachmentModel } from './modules/mail/mail-attachment.model.ts';
@@ -75,6 +76,7 @@ const MODELS = [
   ProposalModel,
   CounterModel,
   CatalogItemModel,
+  CloudDocumentModel,
   DocumentTemplateModel,
   AddonFavouritesModel,
   EmailTemplateModel,

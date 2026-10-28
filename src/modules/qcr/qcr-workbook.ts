@@ -7,6 +7,8 @@ import {
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
+import { NOTE_FILL_ARGB } from '../documents/document-theme.ts';
+import { documentNotes, fillContextOf } from '../proposals/rfq-template.ts';
 import {
   addonCovers,
   annexure,
@@ -31,7 +33,12 @@ const LOWEST_FILL: ExcelJS.Fill = {
 };
 const amount = (value: string | null) => (value === null ? null : Number(value));
 
-function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr) {
+function comparison(
+  workbook: ExcelJS.Workbook,
+  record: ProposalRecord,
+  qcr: Qcr,
+  notes: readonly string[],
+) {
   const renewal = record.type === 'EXISTING';
   const sheet = workbook.addWorksheet('premium details');
   const span = 2 + (renewal ? 2 : 0) + qcr.insurers.length;
@@ -48,6 +55,8 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
     labelled(sheet, 'Existing insurer:', record.existing.insurer, span);
   }
   if (record.policyStart) labelled(sheet, 'Policy starts:', formatDate(record.policyStart), span);
+  // The policy's name on the first page (client review, 27 Oct 2026).
+  if (record.product) labelled(sheet, 'Policy Name:', record.product.name, span);
   const name = (insurerId: string) => {
     const insurer = qcr.insurers.find((item) => item.insurerId === insurerId);
     return insurer ? `${insurer.company}, ${insurer.branch}` : '';
@@ -203,6 +212,30 @@ function comparison(workbook: ExcelJS.Workbook, record: ProposalRecord, qcr: Qcr
     );
   }
   if (qcr.remarks) labelled(sheet, 'Remarks:', qcr.remarks, span);
+  // The note section, highlighted, directly under the recommendation (client review, 27 Oct
+  // 2026).
+  if (notes.length > 0) {
+    const fill: ExcelJS.Fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: NOTE_FILL_ARGB },
+    };
+    ['NOTE:', ...notes].forEach((text, index) => {
+      const row = sheet.addRow([text]);
+      sheet.mergeCells(row.number, 1, row.number, span);
+      const cell = row.getCell(1);
+      cell.fill = fill;
+      cell.font = { bold: index === 0 };
+      cell.alignment = { wrapText: true, vertical: 'top' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+      if (index > 0) row.height = Math.max(15, Math.ceil(text.length / 110) * 15);
+    });
+  }
 }
 
 /** The built-in QCR layout. */
@@ -214,7 +247,7 @@ export function buildQcrWorkbookDocument(
 ): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiducial';
-  comparison(workbook, record, qcr);
+  comparison(workbook, record, qcr, documentNotes(fillContextOf(record, client, masters, 'QCR')));
   schedule(workbook, record, client, masters, 'QCR');
   annexure(workbook, record);
   riskDetails(workbook, record);

@@ -5,7 +5,7 @@ import { ClientApprovalSchema } from './client-approval.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { MAX_MAIL_RECIPIENTS, MailAttachmentFormatSchema } from './mail.ts';
 import { ProposalStageSchema } from './proposals.ts';
-import { QUOTE_ATTACHMENT_TYPES } from './quotes.ts';
+import { QUOTE_ATTACHMENT_TYPES, QuoteOptionSchema } from './quotes.ts';
 
 // The placement slip: the quote the client accepted, filled into the client's Placement Slip
 // format (premium details for the insurer chosen, the schedule for the option accepted, the
@@ -183,7 +183,7 @@ export const PlacementSlipSummarySchema = z.object({
   accepted: z.object({
     company: z.string(),
     branch: z.string(),
-    option: z.enum(['EXISTING', 'P1', 'P2']),
+    option: QuoteOptionSchema,
     withTerrorism: z.boolean().nullable(),
     total: z.string(),
     acceptedOn: z.iso.date(),

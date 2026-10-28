@@ -253,7 +253,7 @@ describe('new-business proposals', () => {
     expect(partial.body.locations[0].risk.fireFighting).toBe('Extinguishers and hydrant');
     expect(partial.body.fire).toMatchObject({ proposed1: '2700000', proposed2: '1000000' });
     expect(partial.body.fire.groups.find((g: { group: string }) => g.group === 'BUILDING')).toEqual(
-      { group: 'BUILDING', existing: null, proposed1: '2000000', proposed2: null },
+      { group: 'BUILDING', existing: null, proposed1: '2000000', proposed2: null, proposed3: null },
     );
 
     const complete = await request(app)
@@ -781,9 +781,16 @@ describe('new-business proposals', () => {
       'Proposed Sum Insured - Option 1',
       'Proposed Sum Insured - Option 2',
     ]);
-    expect(
-      rows.find((row) => row[1] === 'All types of stock pertaining to insured business'),
-    ).toEqual([6, 'All types of stock pertaining to insured business', 900000, 1000000]);
+    // Numbered in order among the lines shown (client review, 27 Oct 2026), not by Data Sheet line.
+    const stocks = rows.find(
+      (row) => row[1] === 'All types of stock pertaining to insured business',
+    );
+    expect(stocks?.slice(1)).toEqual([
+      'All types of stock pertaining to insured business',
+      900000,
+      1000000,
+    ]);
+    expect(stocks?.[0]).toBeLessThan(6);
   });
 
   it('leaves out of the RFQ whatever is empty or not required', async () => {

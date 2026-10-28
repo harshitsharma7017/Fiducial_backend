@@ -12,6 +12,7 @@ import {
   formatDate,
   formatIndianNumber,
   productRangeText,
+  quoteOptionsOf,
   rfqAttributionRows,
   type AnnexureSection,
   type CatalogItem,
@@ -20,24 +21,30 @@ import {
   type FireGroup,
   type OtherSection,
   type ProposalRecord,
+  type QuoteOption,
   type RfqAttribution,
   type SectionWithLines,
   type TemplateCheck,
 } from '../../shared/index.ts';
 import type ExcelJS from 'exceljs';
 import {
+  addColumnAfter,
   cellText,
   clearCells,
   copyColumnStyle,
+  duplicateRows,
+  extendPrintRows,
   findColumn,
   findRow,
   findRows,
   hideRow,
+  highlightHeading,
   insertRows,
   isCovered,
   labelKey,
+  markTick,
   printColumns,
-  printRows,
+  renumberRows,
   restyle,
   setValue,
   sheetNamed,
@@ -304,25 +311,20 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
     );
   }
 
-  // The quote blocks: a renewal quotes the existing sum insured, then Proposed 1 and 2; new
-  // business quotes Proposed 1 and 2. A block with nothing to quote is hidden.
-  const options: { caption: string; option: 'EXISTING' | 'P1' | 'P2' }[] = renewal
-    ? [
-        { caption: 'Renewal Quote Option 1: For Existing Sum Insured', option: 'EXISTING' },
-        { caption: 'Renewal Quote Option 2: For Proposed Sum Insured Option 1', option: 'P1' },
-        { caption: 'Renewal Quote Option 3: For Proposed Sum Insured Option 2', option: 'P2' },
-      ]
-    : [
-        { caption: 'Quote Option 1: For Proposed Sum Insured Option 1', option: 'P1' },
-        { caption: 'Quote Option 2: For Proposed Sum Insured Option 2', option: 'P2' },
-      ];
-  const hasOption2 =
-    record.fire.proposed2 !== null || record.sections.some((s) => s.included && s.proposed2);
-  const blocks = findRows(sheet, 'Coverage Section');
-  blocks.forEach((top, index) => {
+  // The quote blocks: a renewal quotes the existing sum insured, then Proposed 1, 2 and 3; new
+  // business quotes Proposed 1, 2 and 3. A block with nothing to quote is hidden.
+  const options = quoteBlocks(renewal);
+  const asked = new Set(quoteOptionsOf(record));
+  const blocks = quoteBlockRows(sheet, options, asked);
+  // Bottom up, so the rows the totals add to a block do not move the blocks still to fill. The
+  // last block shown moves down by what the blocks above it add.
+  let lastShown = 0;
+  let addedAbove = 0;
+  blocks.toReversed().forEach((top, reversed) => {
+    const index = blocks.length - 1 - reversed;
     const end = findRow(sheet, 'Total Premium', { from: top }) ?? top + 20;
     const plan = options[index];
-    if (!plan || (plan.option === 'P2' && !hasOption2)) {
+    if (!plan || !asked.has(plan.option)) {
       for (let row = top - 1; row <= end; row += 1) sheet.getRow(row).hidden = true;
       return;
     }
@@ -391,16 +393,19 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
         setValue(sheet, row, existingSumColumn, amount(last?.sumInsured), { rupees: true });
       if (renewal && existingPremiumColumn)
         setValue(sheet, row, existingPremiumColumn, amount(last?.premium), { rupees: true });
+      // Option 3 is a Fire figure: the other sections are quoted at their Option 1 figures in it.
       const value =
         plan.option === 'EXISTING'
           ? (last?.sumInsured ?? null)
           : code === 'FIRE'
             ? plan.option === 'P1'
               ? record.fire.proposed1
-              : record.fire.proposed2
-            : plan.option === 'P1'
-              ? (section?.proposed1 ?? null)
-              : (section?.proposed2 ?? null);
+              : plan.option === 'P2'
+                ? record.fire.proposed2
+                : record.fire.proposed3
+            : plan.option === 'P2'
+              ? (section?.proposed2 ?? null)
+              : (section?.proposed1 ?? null);
       // A section with no sum insured for this option, and nothing from last year, is left out.
       if (!filled(value) && !(renewal && (filled(last?.sumInsured) || filled(last?.premium)))) {
         hideRow(sheet, row);
@@ -408,7 +413,25 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
       }
       setValue(sheet, row, sumColumn, amount(value), { rupees: true });
     }
-    // GST at the proposal's rate (the template says 18%).
+    // The totals, with terrorism and then without (client review, 27 Oct 2026); a template
+    // without the two premium columns keeps its own rows, with GST at the proposal's rate.
+    const withColumn = findColumn(sheet, top + 1, 'Premium with terrorism', true);
+    const withoutColumn = findColumn(sheet, top + 1, 'Premium without terrorism', true);
+    const sections = { from: (captionRow ?? top + 3) + 1, to: end - 1 };
+    const blockEnd =
+      withColumn && withoutColumn
+        ? terrorismTotals(sheet, {
+            top,
+            end,
+            sections,
+            columns: { with: withColumn, without: withoutColumn, existing: existingPremiumColumn },
+            renewal,
+            gstRatePercent: context.masters.gstRatePercent,
+          })
+        : end;
+    if (lastShown === 0) lastShown = blockEnd;
+    else addedAbove += blockEnd - end;
+    if (withColumn && withoutColumn) return;
     const gstRow = findRow(sheet, 'Add: GST', { from: top, to: end, prefix: true });
     if (gstRow) {
       setValue(sheet, gstRow, 1, `Add: GST ${context.masters.gstRatePercent}%`);
@@ -425,6 +448,141 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
       });
     }
   });
+  // The template's print area can stop above its last blocks; the blocks quoted are printed.
+  if (lastShown > 0) extendPrintRows(sheet, lastShown + addedAbove);
+}
+
+/** The quote blocks of premium details, in the template's order (RFQ and QCR alike). */
+export function quoteBlocks(renewal: boolean): { caption: string; option: QuoteOption }[] {
+  return renewal
+    ? [
+        { caption: 'Renewal Quote Option 1: For Existing Sum Insured', option: 'EXISTING' },
+        { caption: 'Renewal Quote Option 2: For Proposed Sum Insured Option 1', option: 'P1' },
+        { caption: 'Renewal Quote Option 3: For Proposed Sum Insured Option 2', option: 'P2' },
+        { caption: 'Renewal Quote Option 4: For Proposed Sum Insured Option 3', option: 'P3' },
+      ]
+    : [
+        { caption: 'Quote Option 1: For Proposed Sum Insured Option 1', option: 'P1' },
+        { caption: 'Quote Option 2: For Proposed Sum Insured Option 2', option: 'P2' },
+        { caption: 'Quote Option 3: For Proposed Sum Insured Option 3', option: 'P3' },
+      ];
+}
+
+/**
+ * The "Coverage Section" rows of premium details, one per quote block. A template with fewer
+ * blocks than the options asked (a renewal's Option 3 is its fourth) gets its last block repeated
+ * below it.
+ */
+export function quoteBlockRows(
+  sheet: ExcelJS.Worksheet,
+  options: readonly { option: QuoteOption }[],
+  asked: ReadonlySet<QuoteOption>,
+): number[] {
+  const blocks = findRows(sheet, 'Coverage Section');
+  const needed = options.reduce(
+    (count, plan, index) => (asked.has(plan.option) ? index + 1 : count),
+    0,
+  );
+  while (blocks.length > 0 && blocks.length < needed) {
+    const top = blocks[blocks.length - 1] ?? 1;
+    const end = findRow(sheet, 'Total Premium', { from: top }) ?? top + 20;
+    // The block with the spacer row above it.
+    duplicateRows(sheet, top - 1, end, end + 1);
+    blocks.push(end + 2);
+  }
+  return blocks;
+}
+
+/**
+ * The RFQ's totals of a quote block as the client reads them (27 Oct 2026): "With Terrorism"
+ * then "Without Terrorism", each with its Net Value, GST and Total, one figure per row across the
+ * two premium columns. The insurer's premiums fill the section rows; the totals are formulas over
+ * them. A renewal's existing premium (quoted without terrorism) totals in the second group.
+ * Returns the last row of the block.
+ */
+function terrorismTotals(
+  sheet: ExcelJS.Worksheet,
+  block: {
+    top: number;
+    end: number;
+    sections: { from: number; to: number };
+    columns: { with: number; without: number; existing: number | null };
+    renewal: boolean;
+    gstRatePercent: string;
+  },
+): number {
+  const netRow = findRow(sheet, 'Net Premium', { from: block.top, to: block.end });
+  if (!netRow) return block.end;
+  const first = block.sections.from;
+  const last = Math.min(block.sections.to, netRow - 1);
+  // A heading row for "With Terrorism" above the totals, then the four rows repeated below.
+  insertRows(sheet, netRow, 1, netRow);
+  const withHeading = netRow;
+  const withTotal = block.end + 1;
+  duplicateRows(sheet, withHeading, withTotal, withTotal + 1);
+  const printed = printColumns(sheet);
+  const rate = Number(block.gstRatePercent) / 100;
+  const groups = [
+    { heading: withHeading, label: 'With Terrorism', column: block.columns.with, existing: false },
+    {
+      heading: withTotal + 1,
+      label: 'Without Terrorism',
+      column: block.columns.without,
+      existing: block.renewal,
+    },
+  ];
+  const left = Math.min(block.columns.with, block.columns.without);
+  const right = Math.max(block.columns.with, block.columns.without);
+  for (const group of groups) {
+    const [net, gst, total] = [group.heading + 1, group.heading + 2, group.heading + 3];
+    // The heading spans the table.
+    clearCells(sheet, { from: group.heading, to: group.heading }, printed);
+    mergeRow(sheet, group.heading, printed.from, printed.to);
+    setValue(sheet, group.heading, printed.from, group.label);
+    restyle(sheet.getCell(group.heading, printed.from), {
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    });
+    highlightHeading(sheet, group.heading, printed);
+    const labels = ['Net Value', `GST ${block.gstRatePercent}%`, 'Total'];
+    [net, gst, total].forEach((row, offset) => {
+      clearCells(sheet, { from: row, to: row }, { from: 2, to: printed.to });
+      setValue(sheet, row, 1, labels[offset] ?? null);
+      // One figure across both premium columns.
+      mergeRow(sheet, row, left, right);
+    });
+    const figure = (column: number, target: number) => {
+      const letter = sheet.getColumn(column).letter;
+      const at = sheet.getColumn(target).letter;
+      sheet.getCell(net, target).value = { formula: `SUM(${letter}${first}:${letter}${last})` };
+      sheet.getCell(gst, target).value = { formula: `ROUND(${at}${net}*${rate},2)` };
+      sheet.getCell(total, target).value = { formula: `${at}${net}+${at}${gst}` };
+      for (const row of [net, gst, total]) {
+        restyle(sheet.getCell(row, target), {
+          numFmt: '#,##0.00',
+          alignment: { horizontal: 'right', vertical: 'middle' },
+        });
+      }
+    };
+    figure(group.column, left);
+    if (group.existing && block.columns.existing) {
+      figure(block.columns.existing, block.columns.existing);
+    }
+    restyle(sheet.getCell(total, 1), { font: { ...sheet.getCell(total, 1).font, bold: true } });
+  }
+  return withTotal + 4;
+}
+
+/** Merges a row across the given columns, taking apart any merge on that row first. */
+function mergeRow(sheet: ExcelJS.Worksheet, row: number, from: number, to: number) {
+  for (const address of [...((sheet.model as { merges?: string[] }).merges ?? [])]) {
+    const [start = '', end = start] = address.split(':');
+    const top = Number(sheet.getCell(start).row);
+    const bottom = Number(sheet.getCell(end).row);
+    const left = Number(sheet.getCell(start).col);
+    const right = Number(sheet.getCell(end).col);
+    if (top <= row && row <= bottom && left <= to && right >= from) sheet.unMergeCells(address);
+  }
+  if (to > from) sheet.mergeCells(row, from, row, to);
 }
 
 /** The rows of a schedule section: from its title to the next title (or the clauses). */
@@ -667,7 +825,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     }
   }
 
-  // The Fire table: Existing, Option 1 and Option 2 by line.
+  // The Fire table: Existing, Option 1, 2 and 3 by line.
   const header = findRow(sheet, 'S No') ?? 10;
   const existingFound = findColumn(sheet, header, 'Existing Sum Insured');
   const existingColumn = existingFound ?? 3;
@@ -677,7 +835,17 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     findColumn(sheet, header, 'Proposed Sum Insured - Option 1') ??
     findColumn(sheet, header, 'Proposed Sum Insured') ??
     4;
-  const option2Column = findColumn(sheet, header, 'Proposed Sum Insured - Option 2') ?? 5;
+  const option2Found = findColumn(sheet, header, 'Proposed Sum Insured - Option 2');
+  const option2Column = option2Found ?? 5;
+  // Option 3 (Fire only) gets its own column after Option 2 when the template has none.
+  let option3Column = findColumn(sheet, header, 'Proposed Sum Insured - Option 3');
+  if (record.fire.proposed3 !== null && option3Column === null && option2Found !== null) {
+    option3Column = addColumnAfter(sheet, option2Found);
+    setValue(sheet, header, option3Column, 'Proposed Sum Insured - Option 3');
+  } else if (record.fire.proposed3 === null && option3Column !== null) {
+    sheet.getColumn(option3Column).hidden = true;
+    option3Column = null;
+  }
   const lineOf = new Map(record.fire.groups.map((line) => [line.group, line]));
   const existingLine = new Map(
     record.fire.groups.flatMap((line) => (line.existing ? [[line.group, line.existing]] : [])),
@@ -690,12 +858,14 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     p1: string | null | undefined,
     p2: string | null | undefined,
     rupees = true,
+    p3: string | null | undefined = null,
   ) => {
     type Figure = readonly [column: number, name: string, value: string | null | undefined];
     const figures: Figure[] = [
       ...(withExisting ? [[existingColumn, 'Existing', existingValue] as const] : []),
       [option1Column, 'Option 1', p1],
       [option2Column, 'Option 2', p2],
+      ...(option3Column ? [[option3Column, 'Option 3', p3] as const] : []),
     ];
     const joined: string[] = [];
     let label: ExcelJS.Cell | null = null;
@@ -725,7 +895,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   const other = lineOf.get('OTHER');
   if (
     !findLine('OTHER') &&
-    ((other && other.proposed1 !== '0') || other?.proposed2 || existingLine.get('OTHER'))
+    ((other && other.proposed1 !== '0') ||
+      other?.proposed2 ||
+      other?.proposed3 ||
+      existingLine.get('OTHER'))
   ) {
     const after = (findLine('STOCKS') ?? totalRowOf() - 1) + 1;
     insertRows(sheet, after, 1, after - 1);
@@ -738,7 +911,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   for (const group of FIRE_GROUPS) {
     const row = findLine(group);
     const line = lineOf.get(group);
-    if (row && ![existingLine.get(group), line?.proposed1, line?.proposed2].some(filled)) {
+    if (
+      row &&
+      ![existingLine.get(group), line?.proposed1, line?.proposed2, line?.proposed3].some(filled)
+    ) {
       hideRow(sheet, row);
     } else if (row && line) {
       writeFigures(
@@ -746,6 +922,8 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
         existingLine.get(group),
         blankZero(line.proposed1),
         blankZero(line.proposed2),
+        true,
+        blankZero(line.proposed3),
       );
     }
   }
@@ -769,23 +947,30 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       context.existingOf('FIRE')?.sumInsured,
       record.fire.proposed1,
       record.fire.proposed2,
+      true,
+      record.fire.proposed3,
     );
 
   // Fire's add-on covers asked for (C-6), above the products.
   // The client's templates say "Product to be choosen"; the row is printed as the policy.
-  const productRow =
+  const productRowOf = () =>
     findRow(sheet, 'Policy to be', { prefix: true }) ??
     findRow(sheet, 'Product to be', { prefix: true });
   const fireTotalRow = totalRowOf();
   writeCovers(
     sheet,
-    { from: fireTotalRow + 1, to: (productRow ?? fireTotalRow + 4) - 1 },
+    { from: fireTotalRow + 1, to: (productRowOf() ?? fireTotalRow + 4) - 1 },
     record.fire.covers,
-    { option1: option1Column, option2: record.fire.proposed2 !== null ? option2Column : null },
+    {
+      option1: option1Column,
+      option2: record.fire.proposed2 !== null ? option2Column : null,
+      option3: option3Column,
+    },
   );
 
   // Products from the product master, in the rows the template keeps for them; once the case
-  // has chosen one (C-1), only that one.
+  // has chosen one (C-1), only that one. (Found again: covers added above may have moved it.)
+  const productRow = productRowOf();
   const decided = record.product && record.product.source !== 'SUGGESTED' ? record.product : null;
   const active = masters.products.filter((product) => product.active);
   const products = decided
@@ -889,13 +1074,16 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       if (row)
         writeFigures(row, null, section.basisAmounts.proposed1, section.basisAmounts.proposed2);
     }
-    const end = scheduleBlocks(sheet).get(section.code)?.end ?? block.end;
-    writeCovers(sheet, { from: first + 1, to: end }, section.covers, {
+    const blockEnd = scheduleBlocks(sheet).get(section.code)?.end ?? block.end;
+    // The Option 3 column is Fire's: the sections are quoted at Option 1 in it.
+    writeCovers(sheet, { from: first + 1, to: blockEnd }, section.covers, {
       option1: option1Column,
       option2: section.proposed2 ? option2Column : null,
     });
-    // A section with every row left out is left out too, title and all.
+    // A section with every row left out is left out too, title and all. (Found again: covers
+    // added to the block move its end.)
     const title = scheduleBlocks(sheet).get(section.code)?.title ?? block.title;
+    const end = scheduleBlocks(sheet).get(section.code)?.end ?? blockEnd;
     let shown = false;
     for (let row = title + 1; row <= end; row += 1) shown ||= !sheet.getRow(row).hidden;
     if (!shown) hideRow(sheet, title);
@@ -903,57 +1091,66 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
 
   fillClauses(sheet, context);
 
-  // Above the broker's footer: what the Data Sheet adds (hypothecation, stock in the open, its notes
-  // for the insurers), then the standard notes for the document.
+  // The S No of each block reads 1, 2, 3… whatever was left out, centred; the column headings are
+  // highlighted. The notes are not on the schedule (client review, 27 Oct 2026): the RFQ and the
+  // placement slip have none, the QCR shows them on its first page (documentNotes).
+  renumberSchedule(sheet, header);
+  highlightHeading(sheet, header, printColumns(sheet));
+  for (let column = 1; column <= printColumns(sheet).to; column += 1) {
+    const cell = sheet.getCell(header, column);
+    restyle(cell, { alignment: { ...cell.alignment, horizontal: 'center', wrapText: true } });
+  }
+}
+
+/** Each block's numbered rows (Fire and every section), numbered again in order. */
+function renumberSchedule(sheet: ExcelJS.Worksheet, header: number) {
+  const end = findRow(sheet, 'Clauses to be attached') ?? sheet.rowCount + 1;
+  let group: number[] = [];
+  for (let row = header + 1; row < end; row += 1) {
+    const cell = sheet.getCell(row, 1);
+    // A block's title spans the table (a merged row): the numbering starts again under it.
+    const title = cell.isMerged && cell.master === cell && sheet.getCell(row, 2).master === cell;
+    if (title) {
+      renumberRows(sheet, group);
+      group = [];
+    } else group.push(row);
+  }
+  renumberRows(sheet, group);
+}
+
+/**
+ * The notes of a document: what the Data Sheet adds (hypothecation, stock in the open, its notes
+ * for the insurers), then the standard notes marked for the document. Only the QCR prints them,
+ * on its premium comparison under the recommendation (client review, 27 Oct 2026).
+ */
+export function documentNotes(context: FillContext): string[] {
+  const { record, masters } = context;
   const name = (location: (typeof record.locations)[number]) =>
     location.location?.name ?? 'Location';
-  const notes = [
+  return [
     ...record.locations.flatMap((location) =>
       location.hypothecation
-        ? [{ text: `Hypothecation (${name(location)}): ${location.hypothecation}` }]
+        ? [`Hypothecation (${name(location)}): ${location.hypothecation}`]
         : [],
     ),
     ...record.locations.flatMap((location) =>
       location.openStock
-        ? [{ text: `Stock kept at open space (${name(location)}): ${location.openStock}` }]
+        ? [`Stock kept at open space (${name(location)}): ${location.openStock}`]
         : [],
     ),
-    ...(record.notes ? [{ text: `Notes for the insurers: ${record.notes}` }] : []),
-    ...masters.notes.filter(
-      (note) =>
-        note.active &&
-        (context.document === 'QCR'
-          ? note.onQcr
-          : context.document === 'PLACEMENT_SLIP'
-            ? note.onPlacementSlip
-            : note.onRfq),
-    ),
+    ...(record.notes ? [`Notes for the insurers: ${record.notes}`] : []),
+    ...masters.notes
+      .filter(
+        (note) =>
+          note.active &&
+          (context.document === 'QCR'
+            ? note.onQcr
+            : context.document === 'PLACEMENT_SLIP'
+              ? note.onPlacementSlip
+              : note.onRfq),
+      )
+      .map((note) => note.text),
   ];
-  const area = printRows(sheet);
-  const footer =
-    findRow(sheet, 'Fiducial', { prefix: true, from: area.from, to: area.to }) ??
-    (/brokers/i.test(cellText(sheet.getCell(area.to, 1))) ? area.to : null);
-  if (notes.length > 0) {
-    const at = footer ?? area.to + 1;
-    insertRows(sheet, at, notes.length + 1, at - 1);
-    for (let offset = 0; offset <= notes.length; offset += 1) {
-      const row = at + offset;
-      clearCells(sheet, { from: row, to: row }, { from: printed.from, to: printed.to });
-      for (let column = printed.from + 1; column <= printed.to; column += 1) {
-        const cell = sheet.getCell(row, column);
-        if (cell.isMerged) sheet.unMergeCells(row, printed.from, row, printed.to);
-      }
-      sheet.mergeCells(row, printed.from, row, printed.to);
-      const note = notes[offset - 1];
-      setValue(sheet, row, printed.from, offset === 0 ? 'NOTE:' : (note?.text ?? ''));
-      const cell = sheet.getCell(row, printed.from);
-      restyle(cell, {
-        font: { ...cell.font, bold: offset === 0, color: { argb: 'FF000000' } },
-        alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
-      });
-      if (note) sheet.getRow(row).height = Math.max(15, Math.ceil(note.text.length / 120) * 15);
-    }
-  }
 }
 
 /** "Total Sum Insured - Burglary on 1st loss basis 50% of sum insured", "... Burglary Floater on 100%". */
@@ -998,30 +1195,53 @@ function basisRow(
 }
 
 /**
- * Marks the add-on cover rows of a block asked for (C-6); a cover not required, or not answered,
- * is left out.
+ * Marks the add-on cover rows of a block asked for (C-6) with a green tick in each option column;
+ * a cover not required, or not answered, is left out.
  */
 function writeCovers(
   sheet: ExcelJS.Worksheet,
   rows: { from: number; to: number },
   covers: readonly Cover[],
-  columns: { option1: number; option2: number | null },
+  columns: { option1: number; option2: number | null; option3?: number | null },
 ) {
   const asked = new Set(
     covers.flatMap((cover) => (cover.required === true ? [labelKey(cover.name)] : [])),
   );
+  const tick = (row: number) => {
+    for (const column of [columns.option1, columns.option2, columns.option3]) {
+      if (column && !isCovered(sheet.getCell(row, column))) markTick(sheet.getCell(row, column));
+    }
+  };
+  const marked = new Set<string>();
+  let lastAddon = 0;
   for (let row = rows.from; row <= rows.to; row += 1) {
     if (labelKey(cellText(sheet.getCell(row, 1))) !== 'addon coverages') continue;
+    lastAddon = row;
     if (sheet.getRow(row).hidden) continue;
-    if (!asked.has(labelKey(cellText(sheet.getCell(row, 2))))) {
+    const name = labelKey(cellText(sheet.getCell(row, 2)));
+    if (!asked.has(name)) {
       hideRow(sheet, row);
       continue;
     }
-    for (const column of [columns.option1, columns.option2]) {
-      if (column && !isCovered(sheet.getCell(row, column)))
-        setValue(sheet, row, column, 'Required');
-    }
+    marked.add(name);
+    tick(row);
   }
+  // Covers the template has no row for (added on the case) get rows after the block's add-ons.
+  const extra = covers.filter(
+    (cover) => cover.required === true && !marked.has(labelKey(cover.name)),
+  );
+  if (extra.length === 0) return;
+  const like = lastAddon || rows.to;
+  const at = like + 1;
+  insertRows(sheet, at, extra.length, like);
+  const printed = printColumns(sheet);
+  extra.forEach((cover, offset) => {
+    const row = at + offset;
+    clearCells(sheet, { from: row, to: row }, { from: 2, to: printed.to });
+    if (!isCovered(sheet.getCell(row, 1))) setValue(sheet, row, 1, 'Addon coverages');
+    setValue(sheet, row, 2, cover.name);
+    tick(row);
+  });
 }
 
 export function fillRiskDetails(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
@@ -1049,13 +1269,14 @@ export function fillRiskDetails(sheet: ExcelJS.Worksheet, record: ProposalRecord
       if (row) setValue(sheet, row, column, location.risk[field.key] ?? null);
     });
   });
-  // A question no location answered is left out.
+  // A question no location answered is left out; the others are numbered in order.
   RISK_DETAIL_FIELDS.forEach((field, fieldIndex) => {
     const row = numbered[fieldIndex];
     if (row && !record.locations.some((location) => location.risk[field.key]?.trim())) {
       hideRow(sheet, row);
     }
   });
+  renumberRows(sheet, numbered, header.column - 2);
 }
 
 function fillClaims(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
@@ -1122,6 +1343,9 @@ export function fillAnnexure(sheet: ExcelJS.Worksheet, record: ProposalRecord) {
     section.annexure.forEach((item, index) => {
       const row = header + 1 + index;
       setValue(sheet, row, 1, index + 1);
+      restyle(sheet.getCell(row, 1), {
+        alignment: { ...sheet.getCell(row, 1).alignment, horizontal: 'center' },
+      });
       if (columns.description) setValue(sheet, row, columns.description, item.description);
       if (columns.quantity)
         setValue(
@@ -1218,6 +1442,9 @@ export function fillAddonSheets(
       items.forEach((item, index) => {
         style(index + 2);
         setValue(sheet, index + 2, 1, item.seq);
+        restyle(sheet.getCell(index + 2, 1), {
+          alignment: { ...sheet.getCell(index + 2, 1).alignment, horizontal: 'center' },
+        });
         setValue(sheet, index + 2, 2, item.name);
       });
     }

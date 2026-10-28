@@ -140,6 +140,30 @@ describe('quote reading (Q1) settings', () => {
     });
   });
 
+  it('keeps cloud storage off unless an S3 bucket and region are given', () => {
+    expect(loadEnv(VALID)).toMatchObject({ CLOUD_STORAGE: 'off', S3_PREFIX: 'fiducial' });
+    expect(() => loadEnv({ ...VALID, CLOUD_STORAGE: 's3' })).toThrow(
+      /S3_BUCKET: Required when CLOUD_STORAGE=s3[\s\S]*S3_REGION: Required when CLOUD_STORAGE=s3/,
+    );
+    expect(
+      loadEnv({
+        ...VALID,
+        CLOUD_STORAGE: 's3',
+        S3_BUCKET: 'fiducial-documents',
+        S3_REGION: 'ap-south-1',
+        S3_PREFIX: 'prod/cases',
+      }),
+    ).toMatchObject({
+      CLOUD_STORAGE: 's3',
+      S3_BUCKET: 'fiducial-documents',
+      S3_REGION: 'ap-south-1',
+      S3_PREFIX: 'prod/cases',
+    });
+    expect(() =>
+      loadEnv({ ...VALID, CLOUD_STORAGE: 's3', S3_BUCKET: 'Bad_Bucket', S3_REGION: 'mumbai' }),
+    ).toThrow(/S3_BUCKET[\s\S]*S3_REGION/);
+  });
+
   it('fails fast when Gemini is chosen without a key', () => {
     expect(() => loadEnv({ ...VALID, OCR_PROVIDER: 'gemini' })).toThrow(
       /GEMINI_API_KEY: Required when OCR_PROVIDER=gemini/,

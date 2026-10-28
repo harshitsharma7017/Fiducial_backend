@@ -8,6 +8,8 @@ import type { Content, TableCell } from 'pdfmake';
 import {
   BROKER,
   CONTENT_WIDTH,
+  COVER_TICK,
+  COVER_TICK_ARGB,
   DOCUMENT_COLORS,
   DOCUMENT_FONT,
   DOCUMENT_FONT_FAMILY,
@@ -100,17 +102,46 @@ export function letterheadOf(workbook: ExcelJS.Workbook): Letterhead {
 }
 
 /**
- * A template fill in the document design (Invoice-2): the light tints the templates use for
- * header rows become the light blue, dark fills become the navy, anything else is kept.
+ * A template fill in the document design (Invoice-2): the light greys and blues the templates use
+ * for header rows become the light blue, dark fills become the navy, anything else is kept. A
+ * light but coloured fill (the yellow of a highlighted note) is a highlight and stays as it is.
  */
 function designFill(hex: string | undefined): string | undefined {
   if (!hex) return undefined;
   const [r = 0, g = 0, b = 0] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  if (luminance > 0.82) return DOCUMENT_COLORS.tableHeader;
+  const brightest = Math.max(r, g, b);
+  const saturation = brightest === 0 ? 0 : (brightest - Math.min(r, g, b)) / brightest;
+  if (luminance > 0.82 && saturation < 0.15) return DOCUMENT_COLORS.tableHeader;
   if (luminance < 0.3) return DOCUMENT_COLORS.rule;
   return hex;
 }
+
+/** Narrowest a column with figures is drawn, in points, so an amount in crores fits on one line. */
+const MIN_COLUMN_POINTS = 62;
+
+/**
+ * Column widths in points that fit the page: the sheet's widths scaled down, but no column
+ * narrower than MIN_COLUMN_POINTS (or its own width, if less); the room that takes comes from the
+ * wider columns (descriptions), which wrap.
+ */
+function fitWidths(natural: readonly number[]): number[] {
+  const total = natural.reduce((sum, width) => sum + width, 0);
+  const scale = Math.min(1, CONTENT_WIDTH / total);
+  const floor = natural.map((width) => Math.min(width, MIN_COLUMN_POINTS));
+  const widths = natural.map((width, index) => Math.max(width * scale, floor[index] ?? 0));
+  const excess = widths.reduce((sum, width) => sum + width, 0) - CONTENT_WIDTH;
+  if (excess <= 0) return widths;
+  // Taken from each column in proportion to what it has above its floor.
+  const spare = widths.map((width, index) => width - (floor[index] ?? 0));
+  const room = spare.reduce((sum, value) => sum + value, 0);
+  return widths.map((width, index) =>
+    room > 0 ? width - (excess * (spare[index] ?? 0)) / room : (width * CONTENT_WIDTH) / total,
+  );
+}
+
+/** The add-on tick, drawn (the bundled font has no ✓ glyph). */
+const TICK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.5 8.5l3.5 3.5 7.5-8" fill="none" stroke="#${COVER_TICK_ARGB.slice(-6)}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function argbColour(argb: string | undefined, skip = 'FFFFFF'): string | undefined {
   if (!argb || argb.length < 6) return undefined;
@@ -180,8 +211,12 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
     0,
   );
   const scale = Math.min(1, CONTENT_WIDTH / naturalWidth);
-  const widths = characterWidths.map((width) => width * POINTS_PER_CHARACTER * scale - 4);
-  const fontSize = Math.max(6.5, Math.min(9, 11 * scale));
+  const widths = fitWidths(characterWidths.map((width) => width * POINTS_PER_CHARACTER)).map(
+    (width) => width - 4,
+  );
+  // One size for every sheet and cell, so the document reads the same throughout; a template
+  // title set larger than the body (11 pt) is a little larger.
+  const fontSize = DOCUMENT_FONT.table;
 
   const spans = merges(sheet);
   const masterOf = new Map<string, Span>();
@@ -258,7 +293,7 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         (typeof cell.value === 'object' && cell.value !== null && 'formula' in cell.value);
       const result: TableCell & Record<string, unknown> = {
         text,
-        fontSize: cell.font?.size ? Math.max(6.5, Math.min(10, cell.font.size * scale)) : fontSize,
+        fontSize: (cell.font?.size ?? 11) > 11 ? DOCUMENT_FONT.tableTitle : fontSize,
         bold: Boolean(cell.font?.bold),
         italics: Boolean(cell.font?.italic),
         alignment:
@@ -299,6 +334,11 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         if (spanned > 1) result.colSpan = spanned;
         const lastVisible = visible.filter((r) => r >= span.top && r <= span.bottom).length;
         if (lastVisible > 1) result.rowSpan = lastVisible;
+      }
+      if (text.trim() === COVER_TICK) {
+        // The tick is drawn, centred, in place of the character.
+        const { text: _tick, ...rest } = result;
+        return { ...rest, svg: TICK_SVG, width: 8, height: 8, alignment: 'center' };
       }
       return result;
     }),

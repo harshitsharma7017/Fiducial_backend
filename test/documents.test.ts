@@ -244,11 +244,13 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     const filled = await load(response.body as Buffer);
     const original = await load(CLIENT_RFQ);
     // Side by side with the client's file, the structure is identical, but for the schedule's
-    // merges: a label merged down from a row left out (hidden) moves to the first row still shown.
+    // merges (a label merged down from a row left out (hidden) moves to the first row still
+    // shown) and premium details, whose totals read with and then without terrorism (client
+    // review, 27 Oct 2026; checked below).
     const withoutScheduleMerges = (workbook: ExcelJS.Workbook) =>
-      structure(workbook).map((sheet) =>
-        sheet.name === 'schedule' ? { ...sheet, merges: [] } : sheet,
-      );
+      structure(workbook)
+        .filter((sheet) => sheet.name !== 'premium details')
+        .map((sheet) => (sheet.name === 'schedule' ? { ...sheet, merges: [] } : sheet));
     expect(withoutScheduleMerges(filled)).toEqual(withoutScheduleMerges(original));
     const filledSchedule = filled.getWorksheet('schedule')!;
     const filledMerges = new Set((filledSchedule.model as { merges?: string[] }).merges ?? []);
@@ -286,7 +288,29 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(premium.getCell('A1').value).toBe('RFQ FOR NEW BUSINESS 2026-27');
     // Money's sum insured is its cash in safe + single carrying limit (here the safe alone).
     expect(premium.getCell('D14').value).toBe(100000);
-    expect(premium.getCell('C24').value).toMatchObject({ formula: 'C23*0.18' });
+    // The totals: "With Terrorism" (the premiums with terrorism), then "Without Terrorism", each
+    // with its net value, GST and total across both premium columns.
+    expect(
+      [23, 24, 25, 26, 27, 28, 29, 30].map((row) => premium.getCell(row, 1).text.trim()),
+    ).toEqual([
+      'With Terrorism',
+      'Net Value',
+      'GST 18%',
+      'Total',
+      'Without Terrorism',
+      'Net Value',
+      'GST 18%',
+      'Total',
+    ]);
+    expect(premium.getCell('E24').value).toMatchObject({ formula: 'SUM(E9:E22)' });
+    expect(premium.getCell('E25').value).toMatchObject({ formula: 'ROUND(E24*0.18,2)' });
+    expect(premium.getCell('E26').value).toMatchObject({ formula: 'E24+E25' });
+    expect(premium.getCell('E28').value).toMatchObject({ formula: 'SUM(F9:F22)' });
+    expect((premium.model as { merges: string[] }).merges).toEqual(
+      expect.arrayContaining(['E24:F24', 'E28:F28', 'A23:F23', 'A27:F27']),
+    );
+    // The next block follows, moved down by the rows added.
+    expect(premium.getCell('A32').text).toBe('Coverage Section');
     // B5: in the premium table only Fire and the required Money are shown; every other section's
     // row is hidden, never written as "Not required". The GST and Total formulas stay as they were.
     const premiumRows = Array.from({ length: 14 }, (_, index) => 9 + index);
@@ -295,7 +319,6 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     expect(premium.getCell('D9').value).toBe(50000000);
     for (const row of premiumRows) expect(premium.getCell(row, 4).value).not.toBe('Not required');
     expect(JSON.stringify(premium.getSheetValues())).not.toContain('Not required');
-    expect(premium.getCell('C25').value).toMatchObject({ formula: 'SUM(C23:C24)' });
     const risk = filled.getWorksheet('risk details')!;
     expect(risk.getCell('D2').value).toBe('Plant 1');
     expect(risk.getCell('D3').value).toBe('Fire fighting arrangement answer');
@@ -339,8 +362,14 @@ describe('document templates and the RFQ (R-3, R-4)', () => {
     const id = await proposal({ manyItems: true });
     const filled = await load((await rfq(id, 'xlsx').expect(200)).body as Buffer);
     const schedule = filled.getWorksheet('schedule')!;
-    // A seventh Fire line for "Any other items", and the notes stay above the broker's footer.
-    expect(schedule.getCell('A18').value).toBe('7');
+    // A seventh Fire line for "Any other items"; the S No of the lines shown reads 1, 2, 3… in
+    // order (client review, 27 Oct 2026).
+    const shown = [12, 13, 14, 15, 16, 17, 18].filter((row) => !schedule.getRow(row).hidden);
+    expect(shown.map((row) => schedule.getCell(row, 1).value)).toEqual(
+      shown.map((_, index) => index + 1),
+    );
+    expect(schedule.getCell('A18').alignment.horizontal).toBe('center');
+    expect(schedule.getCell('B18').text).toMatch(/^Any other items/);
     expect(schedule.getCell('D18').value).toBe(2250000);
     expect(schedule.getCell('D19').value).toBe(152250000);
     expect(schedule.pageSetup.printArea).toBe('A1:E139');

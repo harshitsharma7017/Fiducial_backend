@@ -24,7 +24,7 @@ import { istDay } from '../../lib/ist-day.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
-import { openTemplate, saveWorkbook } from '../documents/excel-template.ts';
+import { appendSignOff, openTemplate, saveWorkbook } from '../documents/excel-template.ts';
 import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
@@ -371,12 +371,19 @@ async function qcrWorkbook(
 async function fileOf(loaded: Loaded, format: MailAttachmentFormat, defaultGstRatePercent: string) {
   const { workbook, letterhead } = await qcrWorkbook(loaded, defaultGstRatePercent);
   const name = `QCR-${loaded.record.reference}`;
+  const sheets = pdfSheets(workbook, loaded.record);
+  // Who prepared the QCR (who last saved the broker's part, else the case's staff), on its last
+  // page (client review, 27 Oct 2026).
+  const last = sheets.at(-1);
+  if (last) {
+    appendSignOff(last, [`Prepared By: ${loaded.qcr.updatedBy ?? loaded.record.owner.name}`]);
+  }
   return format === 'pdf'
     ? {
         fileName: `${name}.pdf`,
         contentType: PDF_CONTENT_TYPE,
         data: await workbookToPdf(workbook, {
-          sheets: pdfSheets(workbook, loaded.record),
+          sheets,
           letterhead,
           title: `QCR ${loaded.record.reference} — ${loaded.record.client.name}`,
           footer: `QCR ${loaded.record.reference} · ${loaded.record.client.name}`,
@@ -389,13 +396,18 @@ async function fileOf(loaded: Loaded, format: MailAttachmentFormat, defaultGstRa
       };
 }
 
-/** The QCR to download (QC-5), audited as an export. A draft can be downloaded to review. */
-export async function qcrDocument(
+/** The QCR as a file, as downloaded; 409 while there is nothing to compare. Not audited. */
+export async function qcrFile(
   id: string,
   format: MailAttachmentFormat,
-  actor: Actor,
   deps: Pick<QcrDeps, 'defaultGstRatePercent'>,
-): Promise<{ fileName: string; contentType: string; data: Buffer; status: Qcr['status'] }> {
+): Promise<{
+  fileName: string;
+  contentType: string;
+  data: Buffer;
+  status: Qcr['status'];
+  reference: string;
+}> {
   const loaded = await load(id, deps);
   if (!loaded.qcr.options.some((option) => option.quotes.length > 0)) {
     throw conflict(ERROR_CODES.QCR_INCOMPLETE, 'There are no quotes to compare yet.', {
@@ -403,15 +415,26 @@ export async function qcrDocument(
     });
   }
   const file = await fileOf(loaded, format, deps.defaultGstRatePercent);
+  return { ...file, status: loaded.qcr.status, reference: loaded.record.reference };
+}
+
+/** The QCR to download (QC-5), audited as an export. A draft can be downloaded to review. */
+export async function qcrDocument(
+  id: string,
+  format: MailAttachmentFormat,
+  actor: Actor,
+  deps: Pick<QcrDeps, 'defaultGstRatePercent'>,
+): Promise<{ fileName: string; contentType: string; data: Buffer; status: Qcr['status'] }> {
+  const { reference, ...file } = await qcrFile(id, format, deps);
   await writeAudit({
     userId: actor.id,
     action: AUDIT_ACTIONS.QCR_DOWNLOADED,
     entity: AUDIT_ENTITIES.PROPOSAL,
     entityId: id,
-    after: { reference: loaded.record.reference, format, status: loaded.qcr.status },
+    after: { reference, format, status: file.status },
     requestId: actor.requestId,
   });
-  return { ...file, status: loaded.qcr.status };
+  return file;
 }
 
 /** Mails the approved QCR to the insured (QC-6); an unapproved one cannot be sent. */

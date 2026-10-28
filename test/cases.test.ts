@@ -261,7 +261,16 @@ describe('D-2: renewals', () => {
     expect(
       rows.find((row) => row[1] === 'Total Sum Insured - Fire & Allied Perils')?.slice(2, 4),
     ).toEqual([120000000, 130000000]);
-    expect(rows.find((row) => row[0] === 6)?.slice(2, 4)).toEqual([50000000, 130000000]);
+    // The stocks line; the lines shown are numbered 1, 2… in order (client review, 27 Oct 2026).
+    const stocks = rows.find(
+      (row) => row[1] === 'All types of stock pertaining to insured business',
+    );
+    expect(stocks?.slice(2, 4)).toEqual([50000000, 130000000]);
+    const numbers = rows
+      .slice(rows.findIndex((row) => row[0] === 'Fire & Allied Perils') + 1)
+      .filter((row) => typeof row[0] === 'number')
+      .map((row) => row[0]);
+    expect(numbers.slice(0, 2)).toEqual([1, 2]);
     expect(workbook.getWorksheet('premium details')!.getRow(1).getCell(1).value).toBe(
       'RFQ FOR RENEWAL — PROPERTY INSURANCE',
     );

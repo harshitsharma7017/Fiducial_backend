@@ -11,14 +11,35 @@ import { InsurerStatusSchema, type ProposalRecord } from './proposals.ts';
 // most; net, GST and total are worked out exactly, here, for both the API and the screen.
 
 /** The quote options, as the RFQ's premium details asks for them. */
-export const QUOTE_OPTIONS = ['EXISTING', 'P1', 'P2'] as const;
+export const QUOTE_OPTIONS = ['EXISTING', 'P1', 'P2', 'P3'] as const;
 export const QuoteOptionSchema = z.enum(QUOTE_OPTIONS);
 export type QuoteOption = z.infer<typeof QuoteOptionSchema>;
 export const QUOTE_OPTION_LABELS: Record<QuoteOption, string> = {
   EXISTING: 'Existing',
   P1: 'Proposed – Option 1',
   P2: 'Proposed – Option 2',
+  P3: 'Proposed – Option 3',
 };
+
+/**
+ * A sum insured in a quote option. Option 2 falls back to Option 1 where no second figure is
+ * given; Option 3 is a Fire figure only (`proposed3`), so a section without one is quoted at its
+ * Option 1 figure.
+ */
+export function optionSumInsured<T extends string | null>(
+  option: QuoteOption,
+  values: {
+    existing: string | null;
+    proposed1: T;
+    proposed2: string | null;
+    proposed3?: string | null;
+  },
+): string | T | null {
+  if (option === 'EXISTING') return values.existing;
+  if (option === 'P1') return values.proposed1;
+  if (option === 'P2') return values.proposed2 ?? values.proposed1;
+  return values.proposed3 ?? values.proposed1;
+}
 
 /** Files accepted as the insurer's proof: its mail (.eml, .msg), a PDF, or a picture of it. */
 export const QUOTE_ATTACHMENT_TYPES = {
@@ -204,17 +225,22 @@ type RecordForQuotes = Pick<
   'type' | 'fire' | 'sections' | 'addons' | 'policyStart'
 >;
 
-/** The options of a case: a renewal also quotes the existing sum insured; Option 2 only if asked. */
+/**
+ * The options of a case: a renewal also quotes the existing sum insured; Option 2 only if asked,
+ * Option 3 only when a Fire line has a third figure.
+ */
 export function quoteOptionsOf(
   record: Pick<RecordForQuotes, 'type' | 'fire' | 'sections'>,
 ): QuoteOption[] {
   const option2 =
     record.fire.proposed2 !== null ||
     record.sections.some((s) => s.included && s.proposed2 !== null);
+  const option3 = record.fire.proposed3 !== null;
   return [
     ...(record.type === 'EXISTING' ? (['EXISTING'] as const) : []),
     'P1' as const,
     ...(option2 ? (['P2'] as const) : []),
+    ...(option3 ? (['P3'] as const) : []),
   ];
 }
 
@@ -226,16 +252,7 @@ export interface QuoteExpectation {
 
 /** What the RFQ asked insurers to quote for an option: the sections and their sums insured. */
 export function quoteExpectation(record: RecordForQuotes, option: QuoteOption): QuoteExpectation {
-  const pick = (values: {
-    existing: string | null;
-    proposed1: string | null;
-    proposed2: string | null;
-  }) =>
-    option === 'EXISTING'
-      ? values.existing
-      : option === 'P1'
-        ? values.proposed1
-        : (values.proposed2 ?? values.proposed1);
+  const pick = (values: Parameters<typeof optionSumInsured>[1]) => optionSumInsured(option, values);
   const fire = { code: 'FIRE' as const, name: 'Fire', sumInsured: pick(record.fire) };
   const sections = record.sections
     .filter((section) => section.included)

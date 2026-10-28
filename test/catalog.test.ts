@@ -541,12 +541,10 @@ describe('product and cover masters', () => {
     expect(after.gstRatePercent).toBe('28');
     const old = await request(app).get(`/api/v1/proposals/${before.id}`).set(bearer(manager));
     expect(old.body.gstRatePercent).toBe('18');
-    expect((await rfqSchedule(before.id)).some((line) => line.startsWith('Add: GST 18%'))).toBe(
-      true,
-    );
+    expect((await rfqSchedule(before.id)).some((line) => line.startsWith('GST 18%'))).toBe(true);
   });
 
-  it('M-9: an edited note is printed on the RFQ, with the masters’ names and add-ons', async () => {
+  it('M-9: the RFQ prints no note section (client review, 27 Oct 2026), with the masters’ names and add-ons', async () => {
     const note = (await list('notes'))[0]!;
     const { id, updatedAt: _u, ...row } = note;
     await request(app)
@@ -556,13 +554,29 @@ describe('product and cover masters', () => {
       .expect(200);
     const proposal = await newProposal();
     const lines = await rfqSchedule(proposal.id);
-    expect(lines).toContain('NOTE:');
+    expect(lines).not.toContain('NOTE:');
     expect(
       lines.some((line) => line.startsWith('Insure all assets at current replacement value.')),
-    ).toBe(true);
-    // The covers asked for are printed; one not required is left out.
-    expect(lines).toContain('Addon coverages | Theft | Required');
-    expect(lines).toContain('Riot Strike Malicious Damage | Required');
+    ).toBe(false);
+    // The covers asked for are printed with a tick; one not required is left out.
+    expect(lines).toContain('Addon coverages | Theft | ✓');
+    expect(lines).toContain('Riot Strike Malicious Damage | ✓');
+    // The totals: with terrorism, then without, each with its net value, GST and total.
+    // GST at the rate this proposal was created with (28% from M-8).
+    const labels = new Set(['With Terrorism', 'Without Terrorism', 'Net Value', 'GST', 'Total']);
+    const totals = lines
+      .map((line) => (line.split(' | ')[0] ?? '').replace(/^GST \d+%$/, 'GST'))
+      .filter((label) => labels.has(label));
+    expect(totals).toEqual([
+      'With Terrorism',
+      'Net Value',
+      'GST',
+      'Total',
+      'Without Terrorism',
+      'Net Value',
+      'GST',
+      'Total',
+    ]);
     expect(lines.some((line) => line.includes('Not required'))).toBe(false);
     // B5: a section marked not required (Money here) is omitted from the schedule, not shown as
     // "Not required".

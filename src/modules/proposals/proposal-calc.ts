@@ -71,19 +71,27 @@ export function buildingsTotal(location: LocationValues): Decimal {
 }
 
 export interface FireTotals {
-  groups: Array<{ group: FireGroup; proposed1: Decimal; proposed2: Decimal | null }>;
+  groups: Array<{
+    group: FireGroup;
+    proposed1: Decimal;
+    proposed2: Decimal | null;
+    proposed3: Decimal | null;
+  }>;
   proposed1: Decimal;
   /** Null when no line has a second option. */
   proposed2: Decimal | null;
+  /** Null when no line has a third option. */
+  proposed3: Decimal | null;
 }
 
 /**
- * The RFQ's Fire lines: Option 1 adds up every location's items in the line; Option 2 is the
- * amount entered for the line, if any.
+ * The RFQ's Fire lines: Option 1 adds up every location's items in the line; Options 2 and 3 are
+ * the amounts entered for the line, if any.
  */
 export function fireTotals(
   locations: readonly LocationValues[],
   option2: ReadonlyMap<FireGroup, string | null>,
+  option3: ReadonlyMap<FireGroup, string | null> = new Map(),
 ): FireTotals {
   const groups = FIRE_GROUPS.map((group) => {
     const items = sumOf(
@@ -97,13 +105,21 @@ export function fireTotals(
     const buildings = group === 'BUILDING' ? sumOf(locations.map(buildingsTotal)) : new Decimal(0);
     const proposed1 = items.plus(buildings);
     const second = option2.get(group) ?? null;
-    return { group, proposed1, proposed2: second === null ? null : new Decimal(second) };
+    const third = option3.get(group) ?? null;
+    return {
+      group,
+      proposed1,
+      proposed2: second === null ? null : new Decimal(second),
+      proposed3: third === null ? null : new Decimal(third),
+    };
   });
   const seconds = groups.flatMap((line) => (line.proposed2 === null ? [] : [line.proposed2]));
+  const thirds = groups.flatMap((line) => (line.proposed3 === null ? [] : [line.proposed3]));
   return {
     groups,
     proposed1: sumOf(groups.map((line) => line.proposed1)),
     proposed2: seconds.length > 0 ? sumOf(seconds) : null,
+    proposed3: thirds.length > 0 ? sumOf(thirds) : null,
   };
 }
 

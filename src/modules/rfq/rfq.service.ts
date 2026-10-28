@@ -242,7 +242,6 @@ export async function rfqVersionFile(
   actor: Actor,
   defaultGstRatePercent: string,
 ): Promise<{ fileName: string; contentType: string; data: Buffer }> {
-  const doc = await versionDoc(id, version);
   await writeAudit({
     userId: actor.id,
     action: AUDIT_ACTIONS.RFQ_DOWNLOADED,
@@ -251,6 +250,33 @@ export async function rfqVersionFile(
     after: { version, format },
     requestId: actor.requestId,
   });
+  return rfqFileOfVersion(await versionDoc(id, version), format, defaultGstRatePercent);
+}
+
+/**
+ * The latest RFQ version as a file, as downloaded (the version's own record and edits); 404 when
+ * no RFQ has been generated. Not audited.
+ */
+export async function latestRfqFile(
+  id: string,
+  format: 'xlsx' | 'pdf',
+  defaultGstRatePercent: string,
+): Promise<{ fileName: string; contentType: string; data: Buffer; version: number }> {
+  const doc = await RfqVersionModel.findOne({ proposalId: new Types.ObjectId(id) })
+    .sort({ version: -1 })
+    .lean();
+  if (!doc) throw notFound('Generate the RFQ first');
+  return {
+    ...(await rfqFileOfVersion(doc, format, defaultGstRatePercent)),
+    version: doc.version,
+  };
+}
+
+async function rfqFileOfVersion(
+  doc: Awaited<ReturnType<typeof versionDoc>>,
+  format: 'xlsx' | 'pdf',
+  defaultGstRatePercent: string,
+): Promise<{ fileName: string; contentType: string; data: Buffer }> {
   // A2: regenerate from the version's own frozen record and edits so the attribution block shows
   // THIS version's preparer and approver (version-specific). The document body is unchanged —
   // the record and edits are the snapshot kept with the version.

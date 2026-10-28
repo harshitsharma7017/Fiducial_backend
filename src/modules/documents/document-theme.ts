@@ -63,9 +63,26 @@ export const DOCUMENT_COLORS = {
 /** The same table-header tint as an exceljs ARGB, for the workbook documents (one source). */
 export const TABLE_HEADER_FILL_ARGB = 'FFDCEBFA';
 
+/**
+ * An add-on cover asked for is marked with a green tick rather than the word "Required" (client
+ * review of 27 Oct 2026). The PDF draws the tick (the bundled font has no ✓); Excel shows the
+ * character in this green.
+ */
+export const COVER_TICK = '✓';
+export const COVER_TICK_ARGB = 'FF00A04A';
+
+/** The highlight of a document's note section: a soft yellow the PDF keeps (not the table tint). */
+export const NOTE_FILL_ARGB = 'FFFFF2CC';
+
 /** Font sizes in points, shared so every document reads the same. */
 export const DOCUMENT_FONT = {
   body: 8,
+  /**
+   * Every table cell of a sheet drawn to PDF, whatever the sheet's width (client review of 27 Oct
+   * 2026: one readable size); titles in a larger template font get `tableTitle`.
+   */
+  table: 8,
+  tableTitle: 9.5,
   footer: 7,
   caption: 7,
   letterheadAddress: 9,

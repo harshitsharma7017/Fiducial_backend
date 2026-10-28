@@ -5,6 +5,13 @@ import { z } from 'zod';
 export const OCR_PROVIDERS = ['none', 'gemini'] as const;
 export type OcrProvider = (typeof OCR_PROVIDERS)[number];
 
+/**
+ * Where documents a user saves to the cloud go (client review, 27 Oct 2026). off: no cloud
+ * storage, everything stays in the app's own database. s3: an Amazon S3 bucket, for the documents
+ * users explicitly save there and nothing else.
+ */
+export const CLOUD_STORAGES = ['off', 's3'] as const;
+
 /** Express "trust proxy": false, true, a hop count, or a list such as "loopback, 10.0.0.0/8". */
 const TrustProxySchema = z
   .string()
@@ -119,6 +126,29 @@ export const EnvSchema = z
       .transform((value) => value === 'true'),
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASSWORD: z.string().min(1).optional(),
+    CLOUD_STORAGE: z.enum(CLOUD_STORAGES).default('off'),
+    /** The bucket and its region; required for s3. */
+    S3_BUCKET: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'Must be an S3 bucket name')
+      .optional(),
+    S3_REGION: z
+      .string()
+      .trim()
+      .regex(/^[a-z]{2}(-[a-z]+)+-\d$/, 'Must be an AWS region such as ap-south-1')
+      .optional(),
+    /** The folder (key prefix) the documents go under in the bucket. */
+    S3_PREFIX: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9!_.*'()-]+(\/[A-Za-z0-9!_.*'()-]+)*$/, 'Must be a folder such as fiducial')
+      .default('fiducial'),
+    /**
+     * Credentials come from the server's IAM role (preferred on EC2) or the standard
+     * AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY variables, read by the AWS SDK itself; they are never
+     * part of this configuration or logged.
+     */
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.startsWith('dev-only')) {
@@ -150,6 +180,16 @@ export const EnvSchema = z
         path: ['GEMINI_API_KEY'],
         message: 'Required when OCR_PROVIDER=gemini',
       });
+    }
+    if (env.CLOUD_STORAGE === 's3') {
+      for (const [name, value] of Object.entries({
+        S3_BUCKET: env.S3_BUCKET,
+        S3_REGION: env.S3_REGION,
+      })) {
+        if (value === undefined) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'Required when CLOUD_STORAGE=s3' });
+        }
+      }
     }
     if (env.SMTP_PASSWORD !== undefined && env.SMTP_USER === undefined) {
       ctx.addIssue({

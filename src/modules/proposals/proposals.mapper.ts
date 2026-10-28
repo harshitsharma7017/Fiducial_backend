@@ -330,6 +330,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   const totals = fireTotals(
     locations,
     new Map(doc.fireOption2.map((line) => [line.group, str(line.amount)])),
+    new Map((doc.fireOption3 ?? []).map((line) => [line.group, str(line.amount)])),
   );
   const byCode = new Map(doc.sections.map((section) => [section.code, section]));
   const existing = existingColumn(doc);
@@ -491,10 +492,12 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
         existing: existing?.fireLine(line.group) ?? null,
         proposed1: line.proposed1.toFixed(),
         proposed2: line.proposed2?.toFixed() ?? null,
+        proposed3: line.proposed3?.toFixed() ?? null,
       })),
       existing: existing?.fireTotal ?? null,
       proposed1: totals.proposed1.toFixed(),
       proposed2: totals.proposed2?.toFixed() ?? null,
+      proposed3: totals.proposed3?.toFixed() ?? null,
       covers: coversOf(fireMaster ? fireMaster.addons : DEFAULT_FIRE_COVERS, doc.fireCovers),
     },
     product,
@@ -611,6 +614,7 @@ export function toProposalAuditView(record: ProposalRecord) {
     ),
     fireProposed1: record.fire.proposed1,
     fireProposed2: record.fire.proposed2,
+    fireProposed3: record.fire.proposed3,
     sectionsIncluded: record.sections
       .filter((section) => section.included)
       .map(
