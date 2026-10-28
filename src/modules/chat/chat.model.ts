@@ -3,7 +3,7 @@ import { Schema, model, type Types } from 'mongoose';
 
 // The internal chat's records (client review, 27 Oct 2026): conversations with their members,
 // messages (append-only; a sender may delete one, which keeps the row and clears its text), and
-// the files shared in them (in the database, like every other document).
+// the files shared in them (their bytes in the file store, S3, like every other file).
 
 export interface ChatMemberDoc {
   userId: Types.ObjectId;
@@ -134,7 +134,10 @@ export interface ChatFileDoc {
   fileName: string;
   contentType: string;
   size: number;
-  data: Buffer;
+  /** The file's key in the file store (S3). */
+  storageKey: string | null;
+  /** Legacy: the bytes of a file saved before files moved to S3 (npm run files:to-s3). */
+  data?: Buffer;
   /** The message that shared it; null until sent (an unsent upload is never shown). */
   messageId: Types.ObjectId | null;
   createdAt: Date;
@@ -147,7 +150,8 @@ const chatFileSchema = new Schema<ChatFileDoc>(
     fileName: { type: String, required: true },
     contentType: { type: String, required: true },
     size: { type: Number, required: true },
-    data: { type: Buffer, required: true },
+    storageKey: { type: String, default: null },
+    data: { type: Buffer, default: undefined },
     messageId: { type: Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
     createdAt: { type: Date, required: true },
   },

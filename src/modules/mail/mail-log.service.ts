@@ -8,6 +8,7 @@ import {
 import { createHash } from 'node:crypto';
 import { Types, mongo, type QueryFilter } from 'mongoose';
 import { notFound } from '../../lib/errors.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { UserModel } from '../users/user.model.ts';
 import { MailAttachmentModel } from './mail-attachment.model.ts';
@@ -52,13 +53,24 @@ export async function storeAttachment(file: {
     data: file.data,
   });
   if (existing) return stored(existing._id);
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('mail', file.data, file.contentType, file.fileName);
   try {
     const [doc] = await MailAttachmentModel.create([
-      { sha256, ...file, size: file.data.length, createdAt: new Date() },
+      {
+        sha256,
+        fileName: file.fileName,
+        contentType: file.contentType,
+        storageKey,
+        size: file.data.length,
+        createdAt: new Date(),
+      },
     ]);
     if (!doc) throw new Error('Attachment was not stored');
     return stored(doc._id);
   } catch (error) {
+    // Not recorded (or another send stored the same file first): this copy is not needed.
+    await removeFile(storageKey);
     if (!isDuplicateKey(error)) throw error;
     const raced = await MailAttachmentModel.findOne(
       { sha256, fileName: file.fileName },
@@ -194,10 +206,11 @@ export async function caseMailAttachment(
   if (!doc.attachmentId) throw notFound('This mail had no attachment');
   const file = await MailAttachmentModel.findById(doc.attachmentId).lean();
   if (!file) throw notFound('This mail had no attachment');
-  // Read without Mongoose documents, a stored file comes back as a BSON Binary.
-  const raw: unknown = file.data;
-  const data = Buffer.isBuffer(raw) ? raw : Buffer.from((raw as { buffer: Uint8Array }).buffer);
-  return { fileName: file.fileName, contentType: file.contentType, data };
+  return {
+    fileName: file.fileName,
+    contentType: file.contentType,
+    data: await readFile(file, file.data),
+  };
 }
 
 /** The mails a send already made (a repeated sendId), by insurer. */

@@ -46,6 +46,7 @@ import { createCloudDocumentsRouter } from './modules/cloud-storage/cloud-docume
 import { ChatHub } from './modules/chat/chat-hub.ts';
 import { createChatRouter } from './modules/chat/chat.routes.ts';
 import { cloudStoreFromEnv, type CloudStore } from './modules/cloud-storage/cloud-store.ts';
+import { useFileStore } from './modules/files/file-store.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
 import { quoteReaderFromEnv, type QuoteReader } from './modules/quotes/quote-reader.ts';
@@ -69,7 +70,7 @@ export interface AppDependencies {
   mailTransport?: MailTransport;
   /** Q1: who reads quote files for the auto-fill; from OCR_PROVIDER when not given (tests pass a fake). */
   quoteReader?: QuoteReader;
-  /** Where users' saved documents go; from CLOUD_STORAGE when not given (tests pass a memory store). */
+  /** Where every file goes (S3); from CLOUD_STORAGE when not given (tests pass a memory store). */
   cloudStore?: CloudStore;
   /** The chat's live delivery; a new one when not given (tests pass theirs to watch it). */
   chatHub?: ChatHub;
@@ -90,6 +91,8 @@ export function createApp({
 }: AppDependencies): Express {
   const transport = mailTransport ?? transportFromEnv(config, logger);
   const store = cloudStore ?? cloudStoreFromEnv(config, logger);
+  // Every file of the app goes to this store (S3 in production); the database keeps only keys.
+  useFileStore(store, cloudStore !== undefined);
   const reader = quoteReader ?? quoteReaderFromEnv(config, logger);
   const policySource =
     existingPolicySource ??

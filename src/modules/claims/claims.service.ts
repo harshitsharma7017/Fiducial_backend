@@ -29,6 +29,7 @@ import { conflict, forbidden, notFound, validationError } from '../../lib/errors
 import { escapeRegExp } from '../../lib/text.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { ClientModel } from '../clients/client.model.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { GhiCaseModel } from '../ghi/ghi-case.model.ts';
 import { GhiMemberModel } from '../ghi/ghi-census.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
@@ -624,6 +625,8 @@ export async function storeClaimDocument(
   }
   const staff = actor.kind === 'STAFF';
   const actorId = staff && actor.id ? new Types.ObjectId(actor.id) : null;
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('claims', data, contentType, fileName);
   const saved = await withTransaction(async (session) => {
     const [file] = await ClaimFileModel.create(
       [
@@ -634,7 +637,7 @@ export async function storeClaimDocument(
           contentType,
           size: data.length,
           sha256: createHash('sha256').update(data).digest('hex'),
-          data,
+          storageKey,
           uploadedBy: actorId,
           uploadedVia: staff ? 'STAFF' : 'EMPLOYEE_LINK',
         },
@@ -670,6 +673,9 @@ export async function storeClaimDocument(
     );
     const { data: _data, ...rest } = file.toObject();
     return rest;
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
   return toDocument(saved, await userNames([saved.uploadedBy]));
 }
@@ -700,11 +706,10 @@ export async function claimDocument(id: string, fileId: string, actor: ClaimActo
     kind: file.kind,
     fileName: file.fileName,
   });
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }
 

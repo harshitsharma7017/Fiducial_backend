@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
 
 // The internal chat (client review, 27 Oct 2026): employees message each other one to one and in
-// groups, and share files, in real time. A conversation is seen only by its members. Files stay in
-// the app's own database, like every other document.
+// groups, and share files, in real time. A conversation is seen only by its members. Files are
+// kept in the file store (S3), like every other file of the app.
 
 export const CHAT_KINDS = ['DIRECT', 'GROUP'] as const;
 export const ChatKindSchema = z.enum(CHAT_KINDS);

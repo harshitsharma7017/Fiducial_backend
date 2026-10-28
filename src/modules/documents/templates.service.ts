@@ -15,6 +15,7 @@ import { Types } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import type { Actor } from '../clients/clients.service.ts';
 import { checkPlacementSlipTemplate } from '../placement-slip/placement-slip-template.ts';
 import { checkQcrTemplate } from '../qcr/qcr-template.ts';
@@ -101,12 +102,12 @@ export async function listTemplates(): Promise<DocumentTemplateList> {
 export async function templateFile(
   kind: DocumentKind,
 ): Promise<{ data: Buffer; fileName: string } | null> {
-  const doc = await DocumentTemplateModel.findOne({ kind }, { data: 1, fileName: 1 }).lean();
+  const doc = await DocumentTemplateModel.findOne(
+    { kind },
+    { data: 1, storageKey: 1, fileName: 1 },
+  ).lean();
   if (!doc) return null;
-  // Read without Mongoose documents, a stored file comes back as a BSON Binary.
-  const raw: unknown = doc.data;
-  const data = Buffer.isBuffer(raw) ? raw : Buffer.from((raw as { buffer: Uint8Array }).buffer);
-  return { data, fileName: doc.fileName };
+  return { data: await readFile(doc, doc.data), fileName: doc.fileName };
 }
 
 /** Checks an uploaded template and, when the engine can fill it, keeps it as the kind's template. */
@@ -120,22 +121,32 @@ export async function uploadTemplate(
   const check = await checkTemplate(kind, data, log);
   if (!check.ok) return { saved: false, check, template: null };
   const sha256 = createHash('sha256').update(data).digest('hex');
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile(
+    'templates',
+    data,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    fileName,
+  );
+  let replaced: string | null = null;
   const saved = await withTransaction(async (session) => {
     const before = await DocumentTemplateModel.findOne({ kind }, { data: 0 })
       .session(session)
       .lean();
+    replaced = before?.storageKey ?? null;
     const doc = await DocumentTemplateModel.findOneAndUpdate(
       { kind },
       {
         $set: {
           kind,
           fileName,
-          data,
+          storageKey,
           size: data.length,
           sha256,
           check,
           uploadedBy: new Types.ObjectId(actor.id),
         },
+        $unset: { data: 1 },
       },
       { upsert: true, returnDocument: 'after', session, projection: { data: 0 } },
     ).lean();
@@ -155,7 +166,12 @@ export async function uploadTemplate(
       session,
     );
     return doc;
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
+  // The template it replaces is no longer used.
+  await removeFile(replaced);
   const user = await UserModel.findById(actor.id, { name: 1 }).lean();
   return { saved: true, check, template: toDto(saved, user?.name ?? 'Unknown user') };
 }

@@ -405,7 +405,7 @@ doc(
   'post',
   '/conversations/{conversationId}/files',
   'Upload a file to share',
-  `The file is the request body (${Object.values(CHAT_FILE_TYPES).join(', ')}; up to ${MAX_CHAT_FILE_BYTES / 1024 / 1024} MB), kept in the app's database. Send it with a message by its id.`,
+  `The file is the request body (${Object.values(CHAT_FILE_TYPES).join(', ')}; up to ${MAX_CHAT_FILE_BYTES / 1024 / 1024} MB), kept in the file store (S3). Send it with a message by its id.`,
   { params: ConversationParamsSchema, query: ChatFileUploadQuerySchema },
   {
     201: { description: 'The file', ...json(ChatAttachmentSchema) },

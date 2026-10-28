@@ -7,9 +7,9 @@ import {
 import type { Env } from '../../config/env.ts';
 import type { Logger } from '../../lib/logger.ts';
 
-// Cloud storage for the documents users save there (client review, 27 Oct 2026). Everything else
-// stays in the app's own database: this store is written only by cloud-documents.service.ts, on a
-// user's explicit "Save to cloud". Tests inject a MemoryCloudStore and never reach AWS.
+// Where every file of the app is kept: an S3 bucket (production), or memory (development, tests).
+// The database keeps only each file's key (files/file-store.ts). Tests inject a MemoryCloudStore
+// and never reach AWS.
 
 export interface StoredObject {
   key: string;
@@ -20,10 +20,9 @@ export interface StoredObject {
 }
 
 export interface CloudStore {
-  /** 'off' when no cloud storage is configured: nothing can be saved. */
-  readonly name: 'off' | 's3' | 'memory';
-  /** Where the objects go, for the audit log ("s3://bucket"); null when off. */
-  readonly location: string | null;
+  readonly name: 's3' | 'memory';
+  /** Where the objects go, for the audit log ("s3://bucket"). */
+  readonly location: string;
   /** The key under the store's folder for a new object. */
   keyFor(parts: readonly string[]): string;
   put(object: StoredObject): Promise<void>;
@@ -40,17 +39,6 @@ export class CloudStoreError extends Error {
 }
 
 const safePart = (part: string) => part.replace(/[^A-Za-z0-9!_.*'()-]+/g, '_');
-
-/** No cloud storage on this server (the default). */
-export const offCloudStore: CloudStore = {
-  name: 'off',
-  location: null,
-  keyFor: (parts) => parts.map(safePart).join('/'),
-  put: () => Promise.reject(new CloudStoreError('Cloud storage is not configured on this server')),
-  get: () => Promise.reject(new CloudStoreError('Cloud storage is not configured on this server')),
-  remove: () =>
-    Promise.reject(new CloudStoreError('Cloud storage is not configured on this server')),
-};
 
 /** An Amazon S3 bucket; objects are encrypted at rest (SSE-S3) and private to the bucket. */
 export class S3CloudStore implements CloudStore {
@@ -119,10 +107,10 @@ export class S3CloudStore implements CloudStore {
   }
 }
 
-/** An in-memory store, for tests. */
+/** An in-memory store, for development without AWS and for tests (lost on restart). */
 export class MemoryCloudStore implements CloudStore {
   readonly name = 'memory' as const;
-  readonly location = 'memory://test';
+  readonly location = 'memory://';
   readonly objects = new Map<string, StoredObject>();
 
   keyFor(parts: readonly string[]): string {
@@ -147,11 +135,16 @@ export class MemoryCloudStore implements CloudStore {
   }
 }
 
-/** The store CLOUD_STORAGE configures. */
+/** The store CLOUD_STORAGE configures (S3 is enforced in production by the config). */
 export function cloudStoreFromEnv(config: Env, logger: Logger): CloudStore {
   if (config.CLOUD_STORAGE === 's3' && config.S3_BUCKET && config.S3_REGION) {
-    logger.info({ bucket: config.S3_BUCKET, region: config.S3_REGION }, 'Cloud storage: S3');
+    logger.info({ bucket: config.S3_BUCKET, region: config.S3_REGION }, 'File storage: S3');
     return new S3CloudStore(config.S3_BUCKET, config.S3_REGION, config.S3_PREFIX, logger);
   }
-  return offCloudStore;
+  if (config.NODE_ENV !== 'test') {
+    logger.warn(
+      'File storage: in memory (CLOUD_STORAGE=memory). Uploaded files are lost when the API restarts; set CLOUD_STORAGE=s3 to keep them.',
+    );
+  }
+  return new MemoryCloudStore();
 }

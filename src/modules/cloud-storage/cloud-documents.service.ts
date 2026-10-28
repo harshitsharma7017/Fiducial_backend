@@ -9,7 +9,7 @@ import {
 } from '../../shared/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { Types } from 'mongoose';
-import { AppError, conflict, notFound } from '../../lib/errors.ts';
+import { AppError, notFound } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
 import { placementSlipFile } from '../placement-slip/placement-slip.service.ts';
 import {
@@ -25,9 +25,9 @@ import { UserModel } from '../users/user.model.ts';
 import { CloudDocumentModel, type CloudDocumentDoc } from './cloud-document.model.ts';
 import { CloudStoreError, type CloudStore } from './cloud-store.ts';
 
-// A case's documents saved to cloud storage (client review, 27 Oct 2026). Nothing reaches the
-// store but what a user saves here: the document is generated as it downloads (the latest RFQ
-// version, the QCR, the placement slip), put in the store, and recorded with who saved it.
+// A case's documents saved to cloud storage (client review, 27 Oct 2026): the QCR and placement
+// slip are generated on each download and not kept otherwise; "Save to cloud" keeps a copy, as it
+// downloads (the latest RFQ version, the QCR, the placement slip), recorded with who saved it.
 
 export interface CloudDeps {
   store: CloudStore;
@@ -38,15 +38,6 @@ const failed = (error: unknown) =>
   error instanceof CloudStoreError
     ? new AppError(502, ERROR_CODES.CLOUD_STORAGE_FAILED, error.message)
     : error;
-
-function off(store: CloudStore) {
-  if (store.name === 'off') {
-    throw conflict(
-      ERROR_CODES.CLOUD_STORAGE_OFF,
-      'Cloud storage is not set up on this server. Documents stay in the app; ask an Admin to configure the S3 bucket.',
-    );
-  }
-}
 
 async function namesOf(ids: readonly Types.ObjectId[]): Promise<Map<string, string>> {
   const users = await UserModel.find(
@@ -70,10 +61,7 @@ function toCloudDocument(doc: CloudDocumentDoc, names: Map<string, string>): Clo
 }
 
 /** The case's documents in cloud storage, newest first, and whether saving is possible. */
-export async function listCloudDocuments(
-  id: string,
-  deps: Pick<CloudDeps, 'store'>,
-): Promise<CloudDocumentList> {
+export async function listCloudDocuments(id: string): Promise<CloudDocumentList> {
   await loadDoc(id);
   const docs = await CloudDocumentModel.find({
     proposalId: new Types.ObjectId(id),
@@ -83,7 +71,8 @@ export async function listCloudDocuments(
     .lean();
   const names = await namesOf(docs.map((doc) => doc.savedBy));
   return {
-    enabled: deps.store.name !== 'off',
+    // Files are always kept in the store (S3 in production), so saving is always possible.
+    enabled: true,
     items: docs.map((doc) => toCloudDocument(doc, names)),
   };
 }
@@ -108,7 +97,6 @@ export async function saveCloudDocument(
   actor: Actor,
   deps: CloudDeps,
 ): Promise<CloudDocument> {
-  off(deps.store);
   const proposal = await loadDoc(id);
   const file = await generate(id, input, deps);
   const sha256 = createHash('sha256').update(file.data).digest('hex');
@@ -190,7 +178,6 @@ export async function cloudDocumentFile(
   actor: Actor,
   deps: Pick<CloudDeps, 'store'>,
 ): Promise<{ fileName: string; contentType: string; data: Buffer }> {
-  off(deps.store);
   const doc = await savedDoc(id, documentId);
   let data: Buffer;
   try {
@@ -217,7 +204,6 @@ export async function removeCloudDocument(
   actor: Actor,
   deps: Pick<CloudDeps, 'store'>,
 ): Promise<void> {
-  off(deps.store);
   const doc = await savedDoc(id, documentId);
   try {
     await deps.store.remove(doc.key);

@@ -26,8 +26,6 @@ export const ERROR_CODES = {
   PROPOSAL_LOCKED: 'PROPOSAL_LOCKED',
   DATA_SHEET_INCOMPLETE: 'DATA_SHEET_INCOMPLETE',
   MAIL_DISABLED: 'MAIL_DISABLED',
-  /** No cloud storage is configured on this server (CLOUD_STORAGE=off). */
-  CLOUD_STORAGE_OFF: 'CLOUD_STORAGE_OFF',
   /** The cloud storage service refused or failed; nothing was saved. */
   CLOUD_STORAGE_FAILED: 'CLOUD_STORAGE_FAILED',
   /** A group action (rename, members, leave) on a direct chat. */

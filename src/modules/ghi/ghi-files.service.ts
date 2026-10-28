@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { Types, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { notFound, validationError } from '../../lib/errors.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { sniff } from '../quotes/quotes.service.ts';
 import {
   assertWritable,
@@ -60,6 +61,8 @@ export async function uploadFile(
       },
     ]);
   }
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('ghi', data, contentType, fileName);
   const saved = await withTransaction(async (session) => {
     const [file] = await GhiFileModel.create(
       [
@@ -70,7 +73,7 @@ export async function uploadFile(
           contentType,
           size: data.length,
           sha256: createHash('sha256').update(data).digest('hex'),
-          data,
+          storageKey,
           uploadedBy: new Types.ObjectId(actor.id),
         },
       ],
@@ -92,6 +95,9 @@ export async function uploadFile(
       scope,
     );
     return file.toObject();
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
   return toFile(saved, await userNames([saved.uploadedBy]));
 }
@@ -123,11 +129,10 @@ export async function caseFile(
     caseId: doc._id,
   }).lean();
   if (!file) throw notFound('File not found');
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }
 

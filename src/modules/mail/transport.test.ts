@@ -151,7 +151,18 @@ describe('transportFromEnv', () => {
       host: null,
     });
     expect(
-      mailStatusOf(transportFromEnv(loadEnv({ ...base, NODE_ENV: 'production' }), logger)),
+      mailStatusOf(
+        transportFromEnv(
+          loadEnv({
+            ...base,
+            NODE_ENV: 'production',
+            CLOUD_STORAGE: 's3',
+            S3_BUCKET: 'fiducial-documents',
+            S3_REGION: 'ap-south-1',
+          }),
+          logger,
+        ),
+      ),
     ).toEqual({ transport: 'off', from: null, host: null });
   });
 

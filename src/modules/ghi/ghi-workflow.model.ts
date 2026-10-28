@@ -289,7 +289,10 @@ export interface GhiFileDoc {
   contentType: string;
   size: number;
   sha256: string;
-  data: Buffer;
+  /** The file's key in the file store (S3). */
+  storageKey: string | null;
+  /** Legacy: the bytes of a file saved before files moved to S3 (npm run files:to-s3). */
+  data?: Buffer;
   uploadedBy: Types.ObjectId;
   createdAt: Date;
 }
@@ -302,7 +305,8 @@ const ghiFileSchema = new Schema<GhiFileDoc>(
     contentType: { type: String, required: true },
     size: { type: Number, required: true },
     sha256: { type: String, required: true },
-    data: { type: Buffer, required: true },
+    storageKey: { type: String, default: null },
+    data: { type: Buffer, default: undefined },
     uploadedBy: by,
   },
   { collection: 'ghi_files', timestamps: { createdAt: true, updatedAt: false }, strict: 'throw' },

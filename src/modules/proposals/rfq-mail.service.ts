@@ -48,7 +48,8 @@ import {
   recordOf,
   type Actor,
 } from './proposals.service.ts';
-import { approvedRfq, bufferOf, rfqStanding } from '../rfq/rfq-approval.ts';
+import { readFile } from '../files/file-store.ts';
+import { approvedRfq, rfqStanding } from '../rfq/rfq-approval.ts';
 
 export interface MailDeps {
   transport: MailTransport;
@@ -183,12 +184,12 @@ async function rfqAttachment(
       ? {
           fileName: `${version.fileName}.pdf`,
           contentType: PDF_CONTENT_TYPE,
-          data: bufferOf(version.pdf),
+          data: await readFile({ storageKey: version.pdfKey }, version.pdf),
         }
       : {
           fileName: `${version.fileName}.xlsx`,
           contentType: XLSX_CONTENT_TYPE,
-          data: bufferOf(version.xlsx),
+          data: await readFile({ storageKey: version.xlsxKey }, version.xlsx),
         };
   if (!fitsAttachmentLimit(file.data.length)) {
     throw unprocessable(

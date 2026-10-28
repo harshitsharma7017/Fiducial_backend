@@ -29,6 +29,8 @@
     "db:drop": "node --env-file-if-exists=.env src/scripts/drop-db.ts",
     "db:drop:prod": "node --env-file-if-exists=.env dist/scripts/drop-db.js",
     "sync:stages": "node --env-file-if-exists=.env src/scripts/sync-stages.ts",
+    "files:to-s3": "node --env-file-if-exists=.env src/scripts/migrate-files-to-s3.ts",
+    "files:to-s3:prod": "node --env-file-if-exists=.env dist/scripts/migrate-files-to-s3.js",
     "prepare": "husky"
   },
   "lint-staged": {

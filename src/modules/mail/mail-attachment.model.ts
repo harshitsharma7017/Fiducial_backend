@@ -10,7 +10,10 @@ export interface MailAttachmentDoc {
   fileName: string;
   contentType: string;
   size: number;
-  data: Buffer;
+  /** The file's key in the file store (S3). */
+  storageKey: string | null;
+  /** Legacy: the bytes of a file saved before files moved to S3 (npm run files:to-s3). */
+  data?: Buffer;
   createdAt: Date;
 }
 
@@ -20,7 +23,8 @@ const mailAttachmentSchema = new Schema<MailAttachmentDoc>(
     fileName: { type: String, required: true },
     contentType: { type: String, required: true },
     size: { type: Number, required: true },
-    data: { type: Buffer, required: true },
+    storageKey: { type: String, default: null },
+    data: { type: Buffer, default: undefined },
     createdAt: { type: Date, required: true, default: () => new Date() },
   },
   { collection: 'mail_attachments', versionKey: false, strict: 'throw' },

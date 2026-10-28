@@ -41,7 +41,7 @@ export function createCloudDocumentsRouter(options: {
     '/:id/cloud-documents',
     requirePermission('property.view'),
     route({ params: ProposalIdParamsSchema }, async ({ params }, _req, res) => {
-      res.json(await listCloudDocuments(params.id, deps));
+      res.json(await listCloudDocuments(params.id));
     }),
   );
 
@@ -90,7 +90,7 @@ documentRoute({
   tags: ['Cloud storage'],
   summary: 'The case’s documents saved to cloud storage',
   description:
-    'Needs property.view. Every document and all data stay in the app by default; this lists only what users saved to cloud storage (newest first), and whether cloud storage is set up on this server.',
+    'Needs property.view. The copies of the case’s documents users saved (newest first). Every uploaded file is kept in the file store (S3) anyway; the QCR and placement slip are otherwise generated on each download.',
   request: { params: ProposalIdParamsSchema },
   responses: {
     200: { description: 'The saved documents', ...json(CloudDocumentListSchema) },
@@ -104,7 +104,7 @@ documentRoute({
   tags: ['Cloud storage'],
   summary: 'Save a document of the case to cloud storage',
   description:
-    'Needs property.export. Generates the document as it downloads (the latest RFQ version, the QCR, or the placement slip; PDF or Excel), puts it in the S3 bucket and records who saved it. 409 CLOUD_STORAGE_OFF when no bucket is configured; 409 when the document cannot be produced yet; 502 CLOUD_STORAGE_FAILED when S3 refuses (nothing is recorded). Audited.',
+    'Needs property.export. Generates the document as it downloads (the latest RFQ version, the QCR, or the placement slip; PDF or Excel), puts it in the S3 bucket and records who saved it. 409 when the document cannot be produced yet; 502 CLOUD_STORAGE_FAILED when S3 refuses (nothing is recorded). Audited.',
   request: {
     params: ProposalIdParamsSchema,
     body: json(SaveCloudDocumentRequestSchema),

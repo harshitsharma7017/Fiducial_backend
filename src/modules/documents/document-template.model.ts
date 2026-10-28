@@ -6,7 +6,10 @@ export interface DocumentTemplateDoc {
   _id: Types.ObjectId;
   kind: DocumentKind;
   fileName: string;
-  data: Buffer;
+  /** The file's key in the file store (S3). */
+  storageKey: string | null;
+  /** Legacy: the bytes of a file saved before files moved to S3 (npm run files:to-s3). */
+  data?: Buffer;
   size: number;
   sha256: string;
   check: TemplateCheck;
@@ -19,7 +22,8 @@ const documentTemplateSchema = new Schema<DocumentTemplateDoc>(
   {
     kind: { type: String, enum: DOCUMENT_KINDS, required: true },
     fileName: { type: String, required: true },
-    data: { type: Buffer, required: true },
+    storageKey: { type: String, default: null },
+    data: { type: Buffer, default: undefined },
     size: { type: Number, required: true },
     sha256: { type: String, required: true },
     check: { type: Schema.Types.Mixed, required: true },

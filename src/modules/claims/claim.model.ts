@@ -190,7 +190,10 @@ export interface ClaimFileDoc {
   contentType: string;
   size: number;
   sha256: string;
-  data: Buffer;
+  /** The file's key in the file store (S3). */
+  storageKey: string | null;
+  /** Legacy: the bytes of a file saved before files moved to S3 (npm run files:to-s3). */
+  data?: Buffer;
   uploadedBy: Types.ObjectId | null;
   uploadedVia: 'STAFF' | 'EMPLOYEE_LINK';
   createdAt: Date;
@@ -204,7 +207,8 @@ const claimFileSchema = new Schema<ClaimFileDoc>(
     contentType: { type: String, required: true },
     size: { type: Number, required: true },
     sha256: { type: String, required: true },
-    data: { type: Buffer, required: true },
+    storageKey: { type: String, default: null },
+    data: { type: Buffer, default: undefined },
     uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     uploadedVia: { type: String, enum: ['STAFF', 'EMPLOYEE_LINK'], required: true },
   },

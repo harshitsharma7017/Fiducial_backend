@@ -46,8 +46,12 @@ export interface RfqVersionDoc {
   /** What the RFQ was made from; a different one now means the case or the edits changed. */
   fingerprint: string;
   fileName: string;
-  xlsx: Buffer;
-  pdf: Buffer;
+  /** The version's Excel and PDF, kept in the file store (S3) under these keys. */
+  xlsxKey: string | null;
+  pdfKey: string | null;
+  /** Legacy: the bytes of a version saved before files moved to S3 (npm run files:to-s3). */
+  xlsx?: Buffer;
+  pdf?: Buffer;
   events: RfqEventDoc[];
   createdBy: Types.ObjectId;
   createdAt: Date;
@@ -63,8 +67,10 @@ const rfqVersionSchema = new Schema<RfqVersionDoc>(
     edits: { type: Schema.Types.Mixed, required: true },
     fingerprint: { type: String, required: true },
     fileName: { type: String, required: true },
-    xlsx: { type: Buffer, required: true },
-    pdf: { type: Buffer, required: true },
+    xlsxKey: { type: String, default: null },
+    pdfKey: { type: String, default: null },
+    xlsx: { type: Buffer, default: undefined },
+    pdf: { type: Buffer, default: undefined },
     events: [
       new Schema(
         {

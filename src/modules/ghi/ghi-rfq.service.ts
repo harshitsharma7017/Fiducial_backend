@@ -22,6 +22,7 @@ import { openTemplate } from '../documents/excel-template.ts';
 import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import type { MailTransport } from '../mail/transport.ts';
 import { censusIssues, membersForDocuments } from './census.service.ts';
@@ -276,6 +277,11 @@ export async function generateRfq(
   const bands = caseBands(doc);
   const [xlsx, pdf] = await Promise.all([toXlsx(model), toPdf(model, await caseLetterhead())]);
   const actorId = new Types.ObjectId(actor.id);
+  // The version's files go to the file store (S3); their records keep the keys.
+  const [xlsxKey, pdfKey] = await Promise.all([
+    putFile('ghi', xlsx, XLSX_CONTENT_TYPE, `${model.fileBase}.xlsx`),
+    putFile('ghi', pdf, PDF_CONTENT_TYPE, `${model.fileBase}.pdf`),
+  ]);
   await withTransaction(async (session) => {
     // The Data Sheet and census must still be what the files were made from.
     const current = await GhiCaseModel.findById(doc._id).session(session).lean<GhiCaseDoc>();
@@ -287,8 +293,8 @@ export async function generateRfq(
     }
     const files = await GhiFileModel.create(
       [
-        { file: xlsx, name: `${model.fileBase}.xlsx`, type: XLSX_CONTENT_TYPE },
-        { file: pdf, name: `${model.fileBase}.pdf`, type: PDF_CONTENT_TYPE },
+        { file: xlsx, key: xlsxKey, name: `${model.fileBase}.xlsx`, type: XLSX_CONTENT_TYPE },
+        { file: pdf, key: pdfKey, name: `${model.fileBase}.pdf`, type: PDF_CONTENT_TYPE },
       ].map((item) => ({
         caseId: doc._id,
         purpose: 'RFQ',
@@ -296,7 +302,7 @@ export async function generateRfq(
         contentType: item.type,
         size: item.file.length,
         sha256: createHash('sha256').update(item.file).digest('hex'),
-        data: item.file,
+        storageKey: item.key,
         uploadedBy: actorId,
       })),
       { session, ordered: true },
@@ -355,6 +361,10 @@ export async function generateRfq(
       session,
       scope,
     );
+  }).catch(async (error: unknown) => {
+    // Not saved: its files are not kept either.
+    await Promise.all([removeFile(xlsxKey), removeFile(pdfKey)]);
+    throw error;
   });
   return rfqState(id, transport, scope);
 }
@@ -508,11 +518,10 @@ export async function rfqFile(
     undefined,
     scope,
   );
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }
 
@@ -581,11 +590,10 @@ export async function dispatchRfqOf(
     caseId: doc._id,
   }).lean();
   if (!file) throw notFound('RFQ file not found');
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   const attachmentFile = {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
   const attachment = await prepareAttachment(attachmentFile);
   const actorId = new Types.ObjectId(actor.id);

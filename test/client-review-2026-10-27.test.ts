@@ -9,6 +9,7 @@ import {
 import ExcelJS from 'exceljs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import mongoose from 'mongoose';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
@@ -28,8 +29,6 @@ import { approveRfq } from './helpers/rfq.ts';
 useTestDatabase();
 const store = new MemoryCloudStore();
 const app = createTestApp({}, undefined, undefined, undefined, store);
-/** The same server without cloud storage (the default, CLOUD_STORAGE=off). */
-const offline = createTestApp();
 
 const CLIENT_RFQ = readFileSync(
   fileURLToPath(new URL('../data/client-formats/Fiducial_RFQ format.xlsx', import.meta.url)),
@@ -457,18 +456,34 @@ describe('the QCR (client review, 27 Oct 2026)', () => {
   });
 });
 
-describe('cloud storage only for the documents users save (client review, 27 Oct 2026)', () => {
+describe('every file in the file store (S3), and saved copies of documents', () => {
   const base = () => `/api/v1/proposals/${caseId}/cloud-documents`;
 
-  it('keeps everything in the app until a user saves a document to the cloud', async () => {
-    // By now the RFQ was generated, approved, sent and downloaded, and the QCR downloaded: none
-    // of it went to the cloud.
-    expect(store.objects.size).toBe(0);
+  it('keeps uploads, templates and RFQ versions in the store, only their keys in the database', async () => {
+    // By now quotes were uploaded, both templates uploaded and the RFQ generated and sent.
+    const raw = (name: string) =>
+      mongoose.connection.collection(name).find({}).toArray() as Promise<Record<string, unknown>[]>;
+    for (const name of ['quote_attachments', 'document_templates']) {
+      const docs = await raw(name);
+      expect(docs.length).toBeGreaterThan(0);
+      for (const doc of docs) {
+        expect(doc.data).toBeUndefined();
+        expect(store.objects.has(String(doc.storageKey))).toBe(true);
+      }
+    }
+    const versions = await raw('rfq_versions');
+    expect(versions.length).toBeGreaterThan(0);
+    for (const version of versions) {
+      expect([version.xlsx, version.pdf]).toEqual([undefined, undefined]);
+      expect(store.objects.has(String(version.xlsxKey))).toBe(true);
+      expect(store.objects.get(String(version.pdfKey))?.contentType).toBe('application/pdf');
+    }
     const list = await request(app).get(base()).set(bearer(readOnly)).expect(200);
     expect(list.body).toEqual({ enabled: true, items: [] });
   });
 
   it('saves, lists, downloads and removes a document, audited', async () => {
+    const before = store.objects.size;
     const qcr = await request(app)
       .post(base())
       .set(bearer(manager))
@@ -487,10 +502,11 @@ describe('cloud storage only for the documents users save (client review, 27 Oct
       .send({ document: 'RFQ', format: 'xlsx' })
       .expect(201);
     expect(rfq.body).toMatchObject({ document: 'RFQ', detail: 'v1' });
-    expect(store.objects.size).toBe(2);
-    const [object] = [...store.objects.values()];
-    expect(object?.key).toContain(`/proposals/${caseId}/`);
-    expect(object?.metadata).toMatchObject({ document: 'QCR' });
+    expect(store.objects.size).toBe(before + 2);
+    const object = [...store.objects.values()].find(
+      (item) => item.key.includes(`/proposals/${caseId}/`) && item.metadata.document === 'QCR',
+    );
+    expect(object).toBeDefined();
 
     const list = await request(app).get(base()).set(bearer(manager)).expect(200);
     expect((list.body.items as { id: string }[]).map((item) => item.id)).toEqual([
@@ -510,7 +526,7 @@ describe('cloud storage only for the documents users save (client review, 27 Oct
       .delete(`${base()}/${qcr.body.id as string}`)
       .set(bearer(manager))
       .expect(204);
-    expect(store.objects.size).toBe(1);
+    expect(store.objects.size).toBe(before + 1);
     const after = await request(app).get(base()).set(bearer(manager)).expect(200);
     expect((after.body.items as { id: string }[]).map((item) => item.id)).toEqual([rfq.body.id]);
     await request(app)
@@ -554,16 +570,5 @@ describe('cloud storage only for the documents users save (client review, 27 Oct
       .send({ document: 'PLACEMENT_SLIP', format: 'pdf' })
       .expect(409);
     expect(store.objects.size).toBe(before);
-  });
-
-  it('refuses to save when the server has no cloud storage configured', async () => {
-    const list = await request(offline).get(base()).set(bearer(manager)).expect(200);
-    expect(list.body.enabled).toBe(false);
-    const refused = await request(offline)
-      .post(base())
-      .set(bearer(manager))
-      .send({ document: 'QCR', format: 'pdf' })
-      .expect(409);
-    expect(refused.body.code).toBe('CLOUD_STORAGE_OFF');
   });
 });

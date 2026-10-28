@@ -88,11 +88,6 @@ export async function approvedRfq(record: ProposalRecord): Promise<RfqVersionDoc
   return version;
 }
 
-/** A stored file, read back (a lean read gives a BSON Binary). */
-export function bufferOf(raw: unknown): Buffer {
-  return Buffer.isBuffer(raw) ? raw : Buffer.from((raw as { buffer: Uint8Array }).buffer);
-}
-
 /** A user's display name and current roles, by id, for attribution. */
 export type AttributionUsers = ReadonlyMap<string, { name: string; roles: readonly Role[] }>;
 

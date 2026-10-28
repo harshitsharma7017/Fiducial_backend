@@ -28,6 +28,7 @@ import { decimal128ToString } from '../../lib/decimal.ts';
 import { conflict, notFound, unprocessable, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { getClientApproval } from '../client-approval/client-approval.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
@@ -681,6 +682,8 @@ export async function uploadPlacementFile(
       },
     ]);
   }
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('placement', data, contentType, fileName);
   return withTransaction(async (session) => {
     const [saved] = await PlacementFileModel.create(
       [
@@ -690,7 +693,7 @@ export async function uploadPlacementFile(
           contentType,
           size: data.length,
           sha256: createHash('sha256').update(data).digest('hex'),
-          data,
+          storageKey,
           uploadedBy: new Types.ObjectId(actor.id),
         },
       ],
@@ -710,6 +713,9 @@ export async function uploadPlacementFile(
       session,
     );
     return toFile(saved, await userNames([saved.uploadedBy]));
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
 }
 
@@ -723,11 +729,10 @@ export async function placementFile(
     proposalId: new Types.ObjectId(id),
   }).lean();
   if (!file) throw notFound('File not found');
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }
 

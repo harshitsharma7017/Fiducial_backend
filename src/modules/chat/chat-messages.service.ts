@@ -10,6 +10,7 @@ import {
 } from '../../shared/index.ts';
 import { Types, mongo } from 'mongoose';
 import { AppError, forbidden, notFound, validationError } from '../../lib/errors.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import type { ChatHub } from './chat-hub.ts';
 import { ChatFileModel, ChatMessageModel, ConversationModel } from './chat.model.ts';
 import type { ChatActor } from './chat.service.ts';
@@ -151,7 +152,13 @@ export async function deleteMessage(
     { _id: doc._id },
     { $set: { deletedAt, text: '', attachment: null } },
   );
-  if (doc.attachment) await ChatFileModel.deleteOne({ _id: doc.attachment.fileId });
+  if (doc.attachment) {
+    const removed = await ChatFileModel.findOneAndDelete(
+      { _id: doc.attachment.fileId },
+      { projection: { storageKey: 1 } },
+    ).lean();
+    await removeFile(removed?.storageKey);
+  }
   if (
     conversation.lastMessage &&
     conversation.lastMessage.at.getTime() === doc.createdAt.getTime()
@@ -204,15 +211,20 @@ export async function uploadChatFile(
   if (data.length > MAX_CHAT_FILE_BYTES) {
     throw new AppError(413, ERROR_CODES.PAYLOAD_TOO_LARGE, 'The file is larger than 10 MB');
   }
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('chat', data, type, fileName);
   const file = await ChatFileModel.create({
     conversationId: conversation._id,
     uploadedBy: new Types.ObjectId(actor.id),
     fileName,
     contentType: type,
     size: data.length,
-    data,
+    storageKey,
     messageId: null,
     createdAt: new Date(),
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
   return { id: file._id.toHexString(), fileName, contentType: type, size: data.length };
 }
@@ -230,11 +242,9 @@ export async function chatFile(
     $or: [{ messageId: { $ne: null } }, { uploadedBy: new Types.ObjectId(actor.id) }],
   }).lean();
   if (!file) throw notFound('This file was not found');
-  // A lean read gives the driver's Binary, whose bytes are in .buffer.
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }

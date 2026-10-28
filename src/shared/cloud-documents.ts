@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { IsoDateTimeSchema, ObjectIdSchema } from './common.ts';
 import { MailAttachmentFormatSchema } from './mail.ts';
 
-// Cloud copies of a case's documents (client review, 27 Oct 2026). Every document and all data
-// stay in the app's own storage by default; a document goes to cloud storage (an S3 bucket) only
-// when a user saves it there, and the bucket holds nothing else.
+// Saved copies of a case's documents. Every file of the app is kept in the file store (S3); the
+// QCR and placement slip are otherwise generated on each download, so "Save to cloud" keeps a
+// copy of one, as it was, with who saved it.
 
 /** The documents a user can save to cloud storage, generated as they download. */
 export const CLOUD_DOCUMENT_KINDS = ['RFQ', 'QCR', 'PLACEMENT_SLIP'] as const;

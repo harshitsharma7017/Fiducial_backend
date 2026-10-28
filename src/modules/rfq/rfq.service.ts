@@ -15,6 +15,7 @@ import { Types } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { conflict, notFound } from '../../lib/errors.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { putFile, removeFile } from '../files/file-store.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
 import {
   activityEntry,
@@ -157,6 +158,11 @@ export async function generateRfq(
   ]);
   const proposalId = new Types.ObjectId(id);
   const actorId = new Types.ObjectId(actor.id);
+  // The version's files go to the file store (S3); the version keeps their keys.
+  const [xlsxKey, pdfKey] = await Promise.all([
+    putFile('rfq', xlsx.data, xlsx.contentType, xlsx.fileName),
+    putFile('rfq', pdf.data, pdf.contentType, pdf.fileName),
+  ]);
   try {
     await withTransaction(async (session) => {
       const last = await RfqVersionModel.findOne({ proposalId }, { version: 1 })
@@ -176,8 +182,8 @@ export async function generateRfq(
             edits,
             fingerprint: rfqFingerprint(record, edits),
             fileName: `RFQ-${record.reference}-v${version}`,
-            xlsx: xlsx.data,
-            pdf: pdf.data,
+            xlsxKey,
+            pdfKey,
             events: [
               { action: 'GENERATED', at, by: actorId, byRoles: actorRolesOf(actor), comment: null },
             ],
@@ -206,6 +212,8 @@ export async function generateRfq(
       );
     });
   } catch (error) {
+    // Not saved: its files are not kept either.
+    await Promise.all([removeFile(xlsxKey), removeFile(pdfKey)]);
     if ((error as { code?: number }).code === 11000) {
       throw conflict(
         ERROR_CODES.CONFLICT,

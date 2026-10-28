@@ -7,6 +7,14 @@ const VALID = {
   JWT_EXPIRES_IN_SECONDS: '28800',
   CORS_ORIGIN: 'http://localhost:3000',
 };
+/** Production needs its files in S3. */
+const PRODUCTION = {
+  ...VALID,
+  NODE_ENV: 'production',
+  CLOUD_STORAGE: 's3',
+  S3_BUCKET: 'fiducial-documents',
+  S3_REGION: 'ap-south-1',
+};
 
 describe('loadEnv', () => {
   it('applies defaults', () => {
@@ -72,10 +80,8 @@ describe('mail settings', () => {
   it('keeps mail in the outbox by default, and turns it off in production', () => {
     expect(loadEnv(VALID).MAIL_TRANSPORT).toBe('outbox');
     expect(loadEnv({ ...VALID, NODE_ENV: 'test' }).MAIL_TRANSPORT).toBe('outbox');
-    expect(loadEnv({ ...VALID, NODE_ENV: 'production' }).MAIL_TRANSPORT).toBe('off');
-    expect(
-      loadEnv({ ...VALID, NODE_ENV: 'production', MAIL_TRANSPORT: 'outbox' }).MAIL_TRANSPORT,
-    ).toBe('outbox');
+    expect(loadEnv({ ...PRODUCTION }).MAIL_TRANSPORT).toBe('off');
+    expect(loadEnv({ ...PRODUCTION, MAIL_TRANSPORT: 'outbox' }).MAIL_TRANSPORT).toBe('outbox');
   });
 
   it('reads the smtp settings', () => {
@@ -140,8 +146,15 @@ describe('quote reading (Q1) settings', () => {
     });
   });
 
-  it('keeps cloud storage off unless an S3 bucket and region are given', () => {
-    expect(loadEnv(VALID)).toMatchObject({ CLOUD_STORAGE: 'off', S3_PREFIX: 'fiducial' });
+  it('keeps files in S3: required in production, memory only for development', () => {
+    expect(loadEnv(VALID)).toMatchObject({ CLOUD_STORAGE: 'memory', S3_PREFIX: 'fiducial' });
+    expect(() => loadEnv({ ...VALID, NODE_ENV: 'production' })).toThrow(
+      /CLOUD_STORAGE: Files are stored in S3 in production/,
+    );
+    expect(() => loadEnv({ ...VALID, NODE_ENV: 'production', CLOUD_STORAGE: 'memory' })).toThrow(
+      /CLOUD_STORAGE/,
+    );
+    expect(loadEnv(PRODUCTION).CLOUD_STORAGE).toBe('s3');
     expect(() => loadEnv({ ...VALID, CLOUD_STORAGE: 's3' })).toThrow(
       /S3_BUCKET: Required when CLOUD_STORAGE=s3[\s\S]*S3_REGION: Required when CLOUD_STORAGE=s3/,
     );

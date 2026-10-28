@@ -22,6 +22,7 @@ import { Decimal, decimal128ToString, toDecimal128 } from '../../lib/decimal.ts'
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { writeAudit } from '../audit/audit.service.ts';
+import { putFile, readFile, removeFile } from '../files/file-store.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { notifyProposalEvent } from '../notifications/proposal-notifications.ts';
 import { ProposalModel } from '../proposals/proposal.model.ts';
@@ -205,6 +206,8 @@ export async function uploadClientApprovalFile(
       },
     ]);
   }
+  // The file goes to the file store (S3); the record keeps its key.
+  const storageKey = await putFile('client-approval', data, contentType, fileName);
   return withTransaction(async (session) => {
     const [saved] = await ClientApprovalFileModel.create(
       [
@@ -214,7 +217,7 @@ export async function uploadClientApprovalFile(
           contentType,
           size: data.length,
           sha256: createHash('sha256').update(data).digest('hex'),
-          data,
+          storageKey,
           uploadedBy: new Types.ObjectId(actor.id),
         },
       ],
@@ -234,6 +237,9 @@ export async function uploadClientApprovalFile(
       session,
     );
     return toFile(saved, await userNames([saved.uploadedBy]));
+  }).catch(async (error: unknown) => {
+    await removeFile(storageKey);
+    throw error;
   });
 }
 
@@ -247,11 +253,10 @@ export async function clientApprovalFile(
     proposalId: new Types.ObjectId(id),
   }).lean();
   if (!file) throw notFound('File not found');
-  const raw = file.data as unknown as Buffer | { buffer: Uint8Array };
   return {
     fileName: file.fileName,
     contentType: file.contentType,
-    data: Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer),
+    data: await readFile(file, file.data),
   };
 }
 

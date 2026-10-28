@@ -6,11 +6,12 @@ export const OCR_PROVIDERS = ['none', 'gemini'] as const;
 export type OcrProvider = (typeof OCR_PROVIDERS)[number];
 
 /**
- * Where documents a user saves to the cloud go (client review, 27 Oct 2026). off: no cloud
- * storage, everything stays in the app's own database. s3: an Amazon S3 bucket, for the documents
- * users explicitly save there and nothing else.
+ * Where every file goes: uploads (quotes, policies, templates, claims, chat…), RFQ versions, mail
+ * attachments and documents users save. s3: an Amazon S3 bucket, required in production; the
+ * database keeps only each file's key. memory: kept in the process for development and tests
+ * only (lost on restart). Nothing is ever stored on the server's disk or in the database.
  */
-export const CLOUD_STORAGES = ['off', 's3'] as const;
+export const CLOUD_STORAGES = ['memory', 's3'] as const;
 
 /** Express "trust proxy": false, true, a hop count, or a list such as "loopback, 10.0.0.0/8". */
 const TrustProxySchema = z
@@ -126,7 +127,7 @@ export const EnvSchema = z
       .transform((value) => value === 'true'),
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASSWORD: z.string().min(1).optional(),
-    CLOUD_STORAGE: z.enum(CLOUD_STORAGES).default('off'),
+    CLOUD_STORAGE: z.enum(CLOUD_STORAGES).default('memory'),
     /** The bucket and its region; required for s3. */
     S3_BUCKET: z
       .string()
@@ -179,6 +180,14 @@ export const EnvSchema = z
         code: 'custom',
         path: ['GEMINI_API_KEY'],
         message: 'Required when OCR_PROVIDER=gemini',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.CLOUD_STORAGE !== 's3') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CLOUD_STORAGE'],
+        message:
+          'Files are stored in S3 in production: set CLOUD_STORAGE=s3, S3_BUCKET and S3_REGION',
       });
     }
     if (env.CLOUD_STORAGE === 's3') {
