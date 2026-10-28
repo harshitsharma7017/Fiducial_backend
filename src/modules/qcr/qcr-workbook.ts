@@ -7,7 +7,7 @@ import {
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
-import { NOTE_FILL_ARGB } from '../documents/document-theme.ts';
+import { NOTE_FILL_ARGB, SECTION_HEADING_FILL_ARGB } from '../documents/document-theme.ts';
 import { documentNotes, fillContextOf } from '../proposals/rfq-template.ts';
 import {
   addonCovers,
@@ -84,7 +84,11 @@ function comparison(
       ),
     ]);
     quotes.forEach((quote, index) => {
-      if (quote?.lowest) head.getCell((renewal ? 4 : 2) + index + 1).fill = LOWEST_FILL;
+      if (!quote?.lowest) return;
+      // The lowest quote's heading is green; navy text reads on it where white would not.
+      const cell = head.getCell((renewal ? 4 : 2) + index + 1);
+      cell.fill = LOWEST_FILL;
+      cell.font = { bold: true, color: { argb: SECTION_HEADING_FILL_ARGB } };
     });
     const firstColumn = renewal ? 5 : 3;
     const moneyColumns = Array.from({ length: span - 1 }, (_, index) => index + 2);

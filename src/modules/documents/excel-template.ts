@@ -563,6 +563,39 @@ export function emboldenWorkbook(workbook: ExcelJS.Workbook): void {
   }
 }
 
+/** An amount (a number, or a formula that gives one) or a cover tick. */
+function isFigure(cell: ExcelJS.Cell): boolean {
+  const value = cell.value;
+  if (typeof value === 'number') return true;
+  if (typeof value === 'object' && value !== null && 'formula' in value) {
+    return typeof value.result !== 'string';
+  }
+  return cellText(cell).trim() === COVER_TICK;
+}
+
+/**
+ * Centres the figures of a document filled from a client's template (client review, 28 Oct 2026):
+ * every amount and tick, and the label at the start of a row that has one (a coverage section, Net
+ * Premium, an S No), so each table reads down its columns. Descriptions, remarks and headings
+ * keep the template's alignment.
+ */
+export function centreFigures(workbook: ExcelJS.Workbook): void {
+  const centre = (cell: ExcelJS.Cell) =>
+    restyle(cell, { alignment: { ...cell.alignment, horizontal: 'center' } });
+  for (const sheet of workbook.worksheets) {
+    sheet.eachRow((row) => {
+      let figures = false;
+      row.eachCell((cell) => {
+        if (isCovered(cell) || !isFigure(cell)) return;
+        figures = true;
+        centre(cell);
+      });
+      const first = row.getCell(1);
+      if (figures && !first.isMerged && cellText(first).trim() !== '') centre(first);
+    });
+  }
+}
+
 const THIN: Partial<ExcelJS.Borders> = {
   top: { style: 'thin' },
   left: { style: 'thin' },

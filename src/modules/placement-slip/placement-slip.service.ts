@@ -33,7 +33,12 @@ import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { getClientApproval } from '../client-approval/client-approval.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { DocumentTemplateModel } from '../documents/document-template.model.ts';
-import { emboldenWorkbook, openTemplate, saveWorkbook } from '../documents/excel-template.ts';
+import {
+  centreFigures,
+  emboldenWorkbook,
+  openTemplate,
+  saveWorkbook,
+} from '../documents/excel-template.ts';
 import { letterheadOf, workbookToPdf } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import { getEmailTemplate } from '../email-templates/email-templates.service.ts';
@@ -396,8 +401,9 @@ async function fileOf(
     { gstRatePercent, products, sections, notes, clauses },
     slip,
   );
-  // Bold throughout, as the RFQ and QCR (one design for the three documents).
+  // Bold throughout and figures centred, as the RFQ and QCR (one design for the three documents).
   emboldenWorkbook(workbook);
+  centreFigures(workbook);
   const name = `Placement-Slip-${record.reference}`;
   return format === 'pdf'
     ? {

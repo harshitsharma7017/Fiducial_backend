@@ -286,8 +286,8 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });
   if (insuredRow) setValue(sheet, insuredRow, 1, `Insured Name: ${record.client.name}`);
-  // A2: "Prepared by" / "Approved by" rows, inserted after the Insured Name row so the quote
-  // blocks below are not disturbed. Reflects the actual creator and approver of the version.
+  // A2: the "Approved by" (or approval status) row, inserted after the Insured Name row so the
+  // quote blocks below are not disturbed. Reflects the actual approver of the version.
   if (context.attribution && insuredRow) {
     const rows = rfqAttributionRows(context.attribution);
     insertRows(sheet, insuredRow + 1, rows.length, insuredRow);

@@ -34,7 +34,7 @@ import {
   SECTION_HEADING_FILL_ARGB,
   TABLE_HEADER_FILL_ARGB,
 } from '../documents/document-theme.ts';
-import { frameSheet } from '../documents/excel-template.ts';
+import { cellText, frameSheet, isCovered, restyle } from '../documents/excel-template.ts';
 
 // The RFQ in the client's layout (document 07): premium details for the insurer to fill in,
 // the schedule, Fire by location, risk details and claim details. Amounts are whole rupees.
@@ -74,44 +74,98 @@ const amount = (value: string | null) => (value === null ? null : Number(value))
 export const filled = (value: string | null | undefined): value is string =>
   value !== null && value !== undefined && value.trim() !== '' && Number(value) !== 0;
 
-// Headings as the client's formats print them: white on navy, across the table.
+// Headings are dark and sub-headings light (client review, 28 Oct 2026): the title and the column
+// headings are white on navy; a section heading within a table is navy on the light-blue tint.
 const HEADING_FILL: ExcelJS.Fill = {
   type: 'pattern',
   pattern: 'solid',
   fgColor: { argb: SECTION_HEADING_FILL_ARGB },
 };
+const WHITE = { argb: 'FFFFFFFF' };
+const NAVY = { argb: SECTION_HEADING_FILL_ARGB };
 
-/** A heading row across the table: white bold text on navy, centred. */
+/** A sub-heading row across the table: navy bold text on the light tint, centred. */
 export function sectionHeading(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sheet.addRow([text]);
   if (span > 1) sheet.mergeCells(row.number, 1, row.number, span);
   const cell = row.getCell(1);
-  cell.fill = HEADING_FILL;
-  cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  cell.fill = HEADER_FILL;
+  cell.font = { bold: true, color: NAVY };
   cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   row.height = 18;
   return row;
 }
 
-/** The sheet's title: a larger navy heading. */
+/** The sheet's title: a larger heading, white on navy. */
 export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sectionHeading(sheet, text, span);
-  row.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+  const cell = row.getCell(1);
+  cell.fill = HEADING_FILL;
+  cell.font = { bold: true, size: 12, color: WHITE };
   row.height = 22;
 }
 
+/** A table's column headings: white bold text on navy, centred. */
 export function header(sheet: ExcelJS.Worksheet, values: (string | null)[]) {
   const row = sheet.addRow(values);
-  row.font = { bold: true };
-  row.alignment = { wrapText: true, vertical: 'top' };
+  row.font = { bold: true, color: WHITE };
+  row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   row.eachCell({ includeEmpty: true }, (cell) => {
-    cell.fill = HEADER_FILL;
+    cell.fill = HEADING_FILL;
   });
-  // The S No column is centred, heading and numbers alike.
-  if (values[0] === 'S No') {
-    row.getCell(1).alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
-  }
   return row;
+}
+
+const isHeaderRow = (row: ExcelJS.Row) => {
+  const { fill, isMerged } = row.getCell(1);
+  return fill?.type === 'pattern' && fill.fgColor?.argb === SECTION_HEADING_FILL_ARGB && !isMerged;
+};
+
+const isFigure = (cell: ExcelJS.Cell) =>
+  typeof cell.value === 'number' ||
+  (typeof cell.value === 'object' && cell.value !== null && 'formula' in cell.value) ||
+  cellText(cell).trim() === COVER_TICK;
+
+/**
+ * Centres a sheet's tables (client review, 28 Oct 2026): the S No column, and every column holding
+ * figures or ticks, so amounts and ticks line up down each column. Text columns (a description, a
+ * section name) stay left, as long lines read better so. Each table runs from its column headings
+ * to the next; rows above the first (the insured's details) are left as they are.
+ */
+export function centreTables(sheet: ExcelJS.Worksheet, columns: number): void {
+  const tables: { from: number; to: number; numbered: boolean }[] = [];
+  sheet.eachRow((row) => {
+    if (isHeaderRow(row)) {
+      const last = tables.at(-1);
+      if (last) last.to = row.number - 1;
+      tables.push({
+        from: row.number + 1,
+        to: sheet.rowCount,
+        numbered: cellText(row.getCell(1)).trim() === 'S No',
+      });
+    }
+  });
+  for (const table of tables) {
+    const centred = new Set<number>(table.numbered ? [1] : []);
+    for (let number = table.from; number <= table.to; number += 1) {
+      for (let column = 1; column <= columns; column += 1) {
+        if (isFigure(sheet.getCell(number, column))) centred.add(column);
+      }
+    }
+    for (let number = table.from; number <= table.to; number += 1) {
+      for (const column of centred) {
+        const cell = sheet.getCell(number, column);
+        // A heading or line of text merged across columns (a recommendation, a remark) keeps its
+        // own alignment; a merged total is still a figure.
+        if (isCovered(cell) || cellText(cell) === '' || (cell.isMerged && !isFigure(cell))) {
+          continue;
+        }
+        restyle(cell, {
+          alignment: { ...cell.alignment, horizontal: 'center', vertical: 'middle' },
+        });
+      }
+    }
+  }
 }
 
 /** A label and its value; nothing is printed when the value is blank. */
@@ -154,11 +208,9 @@ function premiumDetails(
   );
   labelled(sheet, 'Insured Name:', record.client.name, 4);
   labelled(sheet, 'Reference:', record.reference, 4);
-  // A2: who prepared and approved the RFQ. Reflects the actual records, not whoever exports it.
+  // A2: who approved the RFQ. Reflects the actual records, not whoever exports it.
   if (attribution) {
     for (const [label, value] of rfqAttributionRows(attribution)) {
-      // A preparer that was never recorded is left out, not printed as "Not recorded".
-      if (!attribution.preparedBy && label.startsWith('Prepared by')) continue;
       labelled(sheet, `${label}:`, value, 4);
     }
   }
@@ -246,7 +298,6 @@ function terrorismTotals(
     for (const row of rows) {
       sheet.mergeCells(row.number, 3, row.number, 4);
       money(row, [3]);
-      row.getCell(3).alignment = { horizontal: 'right' };
     }
     rows[2]!.font = { bold: true };
   }
@@ -385,7 +436,7 @@ export function schedule(
     'Proposed Sum Insured - Option 1',
     'Proposed Sum Insured - Option 2',
     ...(withOption3 ? ['Proposed Sum Insured - Option 3'] : []),
-  ]).getCell(1).alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+  ]);
   sectionHeading(sheet, 'Fire & Allied Perils', span);
   // Lines with no figure are left out; the others are numbered in order.
   let fireNumber = 0;
@@ -796,7 +847,10 @@ export function buildRfqWorkbookDocument(
 
 /** Boxes every sheet of a built-in document across its own columns (as the client's formats). */
 export function frameWorkbook(workbook: ExcelJS.Workbook): void {
-  for (const sheet of workbook.worksheets) frameSheet(sheet, sheet.columns.length);
+  for (const sheet of workbook.worksheets) {
+    centreTables(sheet, sheet.columns.length);
+    frameSheet(sheet, sheet.columns.length);
+  }
 }
 
 export async function buildRfqWorkbook(

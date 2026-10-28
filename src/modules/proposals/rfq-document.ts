@@ -16,6 +16,7 @@ import { Types } from 'mongoose';
 import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import {
+  centreFigures,
   emboldenWorkbook,
   openTemplate,
   saveWorkbook,
@@ -102,6 +103,8 @@ export async function rfqDocument(
     workbook = await openTemplate(template.data);
     letterhead = letterheadOf(workbook);
     fillRfqTemplate(workbook, record, client, masters, { title, attribution });
+    // Figures centred, as the built-in layout (client review, 28 Oct 2026).
+    centreFigures(workbook);
   } else {
     workbook = buildRfqWorkbookDocument(record, client, masters, { title, attribution });
   }

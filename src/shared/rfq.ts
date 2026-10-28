@@ -154,31 +154,26 @@ export interface RfqAttribution {
 /**
  * The attribution rows to print, as [label, value] pairs. Pure, so the built-in workbook and the
  * client template stamp identical text. "Approval status" reflects the real state (Pending until
- * approved, Returned for a returned version) rather than suggesting a fabricated approver.
+ * approved, Returned for a returned version) rather than suggesting a fabricated approver. The RFQ
+ * does not print who prepared it (client review, 28 Oct 2026); the RFQ history still records it.
  */
 export function rfqAttributionRows(attribution: RfqAttribution): [string, string][] {
-  const prepared = attribution.preparedBy
-    ? attribution.preparedByRole
-      ? `${attribution.preparedBy}, ${attribution.preparedByRole}`
-      : attribution.preparedBy
-    : 'Not recorded';
-  const rows: [string, string][] = [[`Prepared by (RFQ v${attribution.version})`, prepared]];
   if (attribution.status === 'APPROVED' && attribution.approvedBy) {
     const approver = attribution.approvedByRole
       ? `${attribution.approvedBy}, ${attribution.approvedByRole}`
       : attribution.approvedBy;
-    rows.push(['Approved by', approver]);
-  } else {
-    rows.push([
+    return [['Approved by', approver]];
+  }
+  return [
+    [
       'Approval status',
       attribution.status === 'RETURNED'
         ? 'Returned for changes'
         : attribution.status === 'SUBMITTED'
           ? 'Submitted — pending approval'
           : 'Pending approval',
-    ]);
-  }
-  return rows;
+    ],
+  ];
 }
 
 export const RfqVersionParamsSchema = z.strictObject({

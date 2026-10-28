@@ -26,6 +26,7 @@ import { catalogItems, taxRatePercentOn } from '../catalog/catalog.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import {
   appendSignOff,
+  centreFigures,
   emboldenWorkbook,
   openTemplate,
   saveWorkbook,
@@ -365,6 +366,8 @@ async function qcrWorkbook(
     const workbook = await openTemplate(template.data);
     const letterhead = letterheadOf(workbook);
     fillQcrTemplate(workbook, record, client, masters, qcr, terms);
+    // Figures centred, as the built-in layout (client review, 28 Oct 2026).
+    centreFigures(workbook);
     return { workbook, letterhead: await withBrokerLetterhead(letterhead) };
   }
   return {

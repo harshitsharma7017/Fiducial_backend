@@ -318,15 +318,16 @@ describe('R-5: submit, approve or return; only an approved RFQ is sent', () => {
     expect(approvalEntry).toMatchObject({ actorRole: 'Approver' });
     expect(typeof approvalEntry?.actor).toBe('string');
 
-    // A2: the approved RFQ v3 export carries "Prepared by" (the generator) and "Approved by"
-    // (the approver), each with their role — from the records, not whoever downloads it.
+    // A2: the approved RFQ v3 export carries "Approved by" (the approver) with their role — from
+    // the records, not whoever downloads it. Who prepared it is not printed (client review,
+    // 28 Oct 2026).
     const v3 = await workbookOf(3);
     const premiumText: string[] = [];
     v3.getWorksheet('premium details')!.eachRow((row) =>
       row.eachCell((cell) => premiumText.push(cell.text)),
     );
     const joined = premiumText.join('\n');
-    expect(joined).toMatch(/Prepared by \(RFQ v3\):.*Relationship Manager/);
+    expect(joined).not.toMatch(/Prepared by/i);
     expect(joined).toMatch(/Approved by:.*Approver/);
 
     // A change after approval needs a new version before anything more is sent.

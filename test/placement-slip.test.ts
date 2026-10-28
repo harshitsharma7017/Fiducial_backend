@@ -455,11 +455,12 @@ describe('Placement slip', () => {
       'Remarks if any: Premium to be paid by cheque before inception.',
     );
     // Client review, 28 Oct 2026: each placed section by its own name, its premium across both
-    // premium columns, right-aligned and bold; the remarks a closed box.
+    // premium columns, centred and bold; the remarks a closed box.
     expect(text(premium, fire, 1)).toBe('Fire & Allied Perils');
     const merges = (premium.model as { merges: string[] }).merges;
     expect(merges).toEqual(expect.arrayContaining([`C${fire}:D${fire}`, `C${money}:D${money}`]));
-    expect(premium.getCell(fire, 3).alignment.horizontal).toBe('right');
+    expect(premium.getCell(fire, 1).alignment.horizontal).toBe('center');
+    expect(premium.getCell(fire, 3).alignment.horizontal).toBe('center');
     expect(premium.getCell(fire, 3).font.bold).toBe(true);
     const remarks = rowOf(premium, 'Remarks if any');
     expect(premium.getCell(remarks, 4).border.right?.style).toBe('thin');
@@ -468,6 +469,10 @@ describe('Placement slip', () => {
     // No policy number issued yet: the row is left out.
     expect(schedule.getRow(1).hidden).toBe(true);
     expect(text(schedule, rowOf(schedule, 'Total Sum Insured - Fire', 2), 3)).toBe(60000000);
+    // The schedule's figures are centred too (client review, 28 Oct 2026).
+    expect(
+      schedule.getCell(rowOf(schedule, 'Total Sum Insured - Fire', 2), 3).alignment.horizontal,
+    ).toBe('center');
     expect(text(schedule, rowOf(schedule, 'Agreed Bank Clause', 2), 2)).toBe(
       'Agreed Bank Clause: State Bank of India, Fort branch',
     );

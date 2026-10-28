@@ -296,8 +296,8 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     slip.premium.total,
   );
   // The template's second premium column repeats the first, merged in its header rows only: the
-  // figures span both columns too, right-aligned, so they sit under the insurer's name instead of
-  // beside an empty column (client review, 28 Oct 2026).
+  // figures span both columns too, centred, so they sit under the insurer's name instead of beside
+  // an empty column (client review, 28 Oct 2026).
   const printed = printColumns(sheet);
   if (premiumColumn + 1 <= printed.to) {
     for (let row = sectionsStart; row <= totalRow; row += 1) {
@@ -307,7 +307,7 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
       mergeCellsOf(sheet, row, premiumColumn, premiumColumn + 1);
     }
   }
-  // Every row ruled, labels on the left, figures on the right.
+  // Every row ruled, labels and figures centred (client review, 28 Oct 2026).
   for (let row = sectionsStart; row <= totalRow; row += 1) {
     for (let column = printed.from; column <= printed.to; column += 1) {
       const cell = sheet.getCell(row, column);
@@ -317,7 +317,7 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
           ...cell.alignment,
           vertical: 'middle',
           wrapText: true,
-          horizontal: column === printed.from ? 'left' : 'right',
+          horizontal: 'center',
         },
       });
     }
