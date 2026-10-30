@@ -541,7 +541,9 @@ describe('product and cover masters', () => {
     expect(after.gstRatePercent).toBe('28');
     const old = await request(app).get(`/api/v1/proposals/${before.id}`).set(bearer(manager));
     expect(old.body.gstRatePercent).toBe('18');
-    expect((await rfqSchedule(before.id)).some((line) => line.startsWith('GST 18%'))).toBe(true);
+    expect((await rfqSchedule(before.id)).some((line) => line.startsWith('Add: GST 18%'))).toBe(
+      true,
+    );
   });
 
   it('M-9: the RFQ prints no note section (client review, 27 Oct 2026), with the masters’ names and add-ons', async () => {
@@ -561,21 +563,27 @@ describe('product and cover masters', () => {
     // The covers asked for are printed with a tick; one not required is left out.
     expect(lines).toContain('Addon coverages | Theft | ✓');
     expect(lines).toContain('Riot Strike Malicious Damage | ✓');
-    // The totals: with terrorism, then without, each with its net value, GST and total.
-    // GST at the rate this proposal was created with (28% from M-8).
-    const labels = new Set(['With Terrorism', 'Without Terrorism', 'Net Value', 'GST', 'Total']);
+    // The totals: the premium without terrorism, then with, each with its net premium, GST and
+    // total premium (the client's layout). GST at the rate this proposal was created with.
+    const labels = new Set([
+      'Premium without terrorism',
+      'Premium with terrorism',
+      'Net Premium',
+      'GST',
+      'Total Premium',
+    ]);
     const totals = lines
-      .map((line) => (line.split(' | ')[0] ?? '').replace(/^GST \d+%$/, 'GST'))
+      .map((line) => (line.split(' | ')[0] ?? '').replace(/^Add: GST \d+%$/, 'GST'))
       .filter((label) => labels.has(label));
     expect(totals).toEqual([
-      'With Terrorism',
-      'Net Value',
+      'Premium without terrorism',
+      'Net Premium',
       'GST',
-      'Total',
-      'Without Terrorism',
-      'Net Value',
+      'Total Premium',
+      'Premium with terrorism',
+      'Net Premium',
       'GST',
-      'Total',
+      'Total Premium',
     ]);
     expect(lines.some((line) => line.includes('Not required'))).toBe(false);
     // B5: a section marked not required (Money here) is omitted from the schedule, not shown as

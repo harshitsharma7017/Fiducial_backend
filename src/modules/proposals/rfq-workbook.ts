@@ -96,6 +96,27 @@ export function sectionHeading(sheet: ExcelJS.Worksheet, text: string, span: num
   return row;
 }
 
+/** The mid-blue of the premium bands ("Premium without terrorism") in the client's format. */
+const PREMIUM_BAND: ExcelJS.Fill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FF5B7FBA' },
+};
+/** The red of a Total Premium row in the client's format. */
+export const TOTAL_RED = { argb: 'FFC00000' };
+
+/** A band across the table naming a premium block: white bold text on mid blue, centred. */
+export function premiumBand(sheet: ExcelJS.Worksheet, text: string, span: number) {
+  const row = sheet.addRow([text]);
+  if (span > 1) sheet.mergeCells(row.number, 1, row.number, span);
+  const cell = row.getCell(1);
+  cell.fill = PREMIUM_BAND;
+  cell.font = { bold: true, color: WHITE };
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  row.height = 18;
+  return row;
+}
+
 /** The sheet's title: a larger heading, white on navy. */
 export function title(sheet: ExcelJS.Worksheet, text: string, span: number) {
   const row = sectionHeading(sheet, text, span);
@@ -268,9 +289,10 @@ function premiumDetails(
 }
 
 /**
- * The totals of a quote block as the client reads them (27 Oct 2026): "With Terrorism" then
- * "Without Terrorism", each with its Net Value, GST and Total across the two premium columns,
- * as formulas over the premiums the insurer fills in.
+ * The totals of a quote block as the client reads them (27 and 28 Oct 2026): a "Premium without
+ * terrorism" band then a "Premium with terrorism" band, each with its Net Premium, Add: GST and
+ * Total Premium across the two premium columns, as formulas over the premiums the insurer fills
+ * in. The same layout as the QCR.
  */
 function terrorismTotals(
   sheet: ExcelJS.Worksheet,
@@ -278,28 +300,25 @@ function terrorismTotals(
   gstRate: number,
 ) {
   for (const [label, column] of [
-    ['With Terrorism', 'C'],
-    ['Without Terrorism', 'D'],
+    ['Premium without terrorism', 'D'],
+    ['Premium with terrorism', 'C'],
   ] as const) {
-    const heading = sheet.addRow([label]);
-    sheet.mergeCells(heading.number, 1, heading.number, 4);
-    heading.font = { bold: true };
-    heading.getCell(1).fill = HEADER_FILL;
+    premiumBand(sheet, label, 4);
     const at = sheet.rowCount + 1;
     const rows = [
       sheet.addRow([
-        'Net Value',
+        'Net Premium',
         null,
         { formula: `SUM(${column}${sections.first}:${column}${sections.last})` },
       ]),
-      sheet.addRow([`GST ${gstRate}%`, null, { formula: `ROUND(C${at}*${gstRate / 100},2)` }]),
-      sheet.addRow(['Total', null, { formula: `C${at}+C${at + 1}` }]),
+      sheet.addRow([`Add: GST ${gstRate}%`, null, { formula: `ROUND(C${at}*${gstRate / 100},2)` }]),
+      sheet.addRow(['Total Premium', null, { formula: `C${at}+C${at + 1}` }]),
     ];
     for (const row of rows) {
       sheet.mergeCells(row.number, 3, row.number, 4);
       money(row, [3]);
     }
-    rows[2]!.font = { bold: true };
+    rows[2]!.font = { bold: true, color: TOTAL_RED };
   }
 }
 

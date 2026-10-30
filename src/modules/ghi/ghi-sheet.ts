@@ -1,11 +1,23 @@
 import { formatIndianNumber, type GhiDocumentPreview } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
-import { RUPEES_FORMAT, saveWorkbook } from '../documents/excel-template.ts';
+import {
+  NOTE_FILL_ARGB,
+  SECTION_HEADING_FILL_ARGB,
+  TABLE_HEADER_FILL_ARGB,
+} from '../documents/document-theme.ts';
+import {
+  RUPEES_FORMAT,
+  emboldenWorkbook,
+  frameSheet,
+  saveWorkbook,
+} from '../documents/excel-template.ts';
 import { workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
 
 // The GHI documents (RFQ, QCR, placement slip) are described once as sheets of rows, then
 // written to Excel, drawn as an A4 PDF by the document engine, and shown on screen as a preview,
-// so all three always say the same thing.
+// so all three always say the same thing. They are drawn in the design of the Property and Fire
+// documents (client review, 30 Oct 2026): a navy title and column headings in white, light-blue
+// sub-headings, every line bold and boxed, and numbers and ticks centred.
 
 /** An amount kept exact until it is written: whole rupees, or rupees with paise. */
 export interface MoneyCell {
@@ -36,11 +48,21 @@ export const money = (value: string | null, paise = false): SheetCell =>
   value === null ? null : { money: value, paise };
 
 const PAISE_FORMAT = RUPEES_FORMAT.replace(/##0(?=;|$)/g, '##0.00');
+const WHITE = { argb: 'FFFFFFFF' };
+const NAVY = { argb: SECTION_HEADING_FILL_ARGB };
+/** The lowest quote, green as on the Property QCR. */
+const LOWEST_FILL_ARGB = 'FF92D050';
 const FILLS: Partial<Record<RowStyle, string>> = {
-  header: 'FFE8EEF6',
-  section: 'FFF3F4F6',
-  total: 'FFF3F4F6',
-  highlight: 'FFD9F2D0',
+  title: SECTION_HEADING_FILL_ARGB,
+  header: SECTION_HEADING_FILL_ARGB,
+  section: TABLE_HEADER_FILL_ARGB,
+  highlight: LOWEST_FILL_ARGB,
+  note: NOTE_FILL_ARGB,
+};
+const CENTRED: Partial<ExcelJS.Alignment> = {
+  horizontal: 'center',
+  vertical: 'middle',
+  wrapText: true,
 };
 
 function isMoney(cell: SheetCell): cell is MoneyCell {
@@ -74,22 +96,17 @@ export function toWorkbook(model: DocumentModel): ExcelJS.Workbook {
       const row = sheet.addRow(
         rowModel.cells.map((cell) => (isMoney(cell) ? Number(cell.money) : cell)),
       );
+      // A table row (three cells or more) is centred except its first, text column; a label and
+      // its value keep the value on the left, but amounts and numbers are always centred.
+      const table = rowModel.cells.length > 2;
       rowModel.cells.forEach((cell, index) => {
         const target = row.getCell(index + 1);
-        if (isMoney(cell)) {
-          target.numFmt = cell.paise ? PAISE_FORMAT : RUPEES_FORMAT;
-          target.alignment = { horizontal: 'right', vertical: 'top' };
-        } else {
-          target.alignment = { wrapText: true, vertical: 'top' };
-        }
-        if (rowModel.style !== 'title' && rowModel.style !== 'note' && rowModel.cells.length > 1) {
-          target.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' },
-          };
-        }
+        if (isMoney(cell)) target.numFmt = cell.paise ? PAISE_FORMAT : RUPEES_FORMAT;
+        const figure = isMoney(cell) || typeof cell === 'number';
+        const centred = figure || (table && (index > 0 || rowModel.style === 'header'));
+        target.alignment = centred
+          ? CENTRED
+          : { horizontal: 'left', vertical: 'middle', wrapText: true };
       });
       const fill = rowModel.style ? FILLS[rowModel.style] : undefined;
       if (fill) {
@@ -102,15 +119,27 @@ export function toWorkbook(model: DocumentModel): ExcelJS.Workbook {
         });
       }
       if (rowModel.style === 'title') {
-        row.font = { bold: true, size: 13 };
+        row.font = { bold: true, size: 12, color: WHITE };
+        row.getCell(1).alignment = CENTRED;
+        row.height = 22;
         if (span > 1) sheet.mergeCells(row.number, 1, row.number, span);
-      } else if (rowModel.style === 'section' || rowModel.style === 'note') {
-        row.font = { bold: rowModel.style === 'section', italic: rowModel.style === 'note' };
+      } else if (rowModel.style === 'section') {
+        row.font = { bold: true, color: NAVY };
+        row.getCell(1).alignment = CENTRED;
+        row.height = 18;
         if (rowModel.cells.length === 1 && span > 1)
           sheet.mergeCells(row.number, 1, row.number, span);
-        if (rowModel.style === 'note')
-          row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-      } else if (rowModel.style === 'header' || rowModel.style === 'total') {
+      } else if (rowModel.style === 'note') {
+        // Highlighted, as the notes of the Property QCR.
+        row.font = { bold: true };
+        if (rowModel.cells.length === 1 && span > 1)
+          sheet.mergeCells(row.number, 1, row.number, span);
+        row.getCell(1).alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+      } else if (rowModel.style === 'header') {
+        row.font = { bold: true, color: WHITE };
+      } else if (rowModel.style === 'highlight') {
+        row.font = { bold: true, color: NAVY };
+      } else if (rowModel.style === 'total') {
         row.font = { bold: true };
       } else if (rowModel.style === 'label') {
         row.getCell(1).font = { bold: true };
@@ -119,8 +148,11 @@ export function toWorkbook(model: DocumentModel): ExcelJS.Workbook {
           sheet.mergeCells(row.number, 2, row.number, span);
       }
     }
+    // Every line boxed, then every written cell bold, as the Property and Fire documents.
+    frameSheet(sheet, span);
     sheet.pageSetup.printArea = `A1:${sheet.getColumn(span).letter}${Math.max(1, sheet.rowCount)}`;
   }
+  emboldenWorkbook(workbook);
   return workbook;
 }
 

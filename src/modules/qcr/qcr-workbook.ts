@@ -16,10 +16,12 @@ import {
   header,
   labelled,
   money,
+  premiumBand,
   riskDetails,
   sectionHeading,
   schedule,
   title,
+  TOTAL_RED,
   type RfqMasters,
 } from '../proposals/rfq-workbook.ts';
 
@@ -145,11 +147,8 @@ function comparison(
       quote.fire.withoutTerrorism !== null || quote.fire.withTerrorism === null
         ? quote.totals
         : null;
-    const totalRows = (
-      suffix: string,
-      pick: (quote: Quote) => Totals | null,
-      existing: boolean,
-    ) => {
+    const totalRows = (band: string, pick: (quote: Quote) => Totals | null, existing: boolean) => {
+      premiumBand(sheet, band, span);
       const values = (key: keyof Totals) => [
         ...(renewal ? [null, existing ? amount(option.existing?.[key] ?? null) : null] : []),
         null,
@@ -160,25 +159,30 @@ function comparison(
         }),
       ];
       const rows = [
-        sheet.addRow([`Net Premium${suffix}`, ...values('net')]),
+        sheet.addRow(['Net Premium', ...values('net')]),
         sheet.addRow([`Add: GST ${qcr.gstRatePercent}%`, ...values('gst')]),
-        sheet.addRow([`Total Premium${suffix}`, ...values('total')]),
+        sheet.addRow(['Total Premium', ...values('total')]),
       ];
       for (const row of rows) {
         row.font = { bold: true };
         money(row, moneyColumns);
       }
+      // The total in red, as the client's format.
+      rows[2]!.font = { bold: true, color: TOTAL_RED };
       return rows[2]!;
     };
     // Each block when at least one insurer has its figures.
     const any = (pick: (quote: Quote) => Totals | null) =>
       quotes.some((quote) => quote && pick(quote) !== null);
-    const totalWith =
-      hasFire && any(withTerrorism) ? totalRows(' (with terrorism)', withTerrorism, false) : null;
+    // "Premium without terrorism" first, then "Premium with terrorism", as the client's format.
     const totalWithout = !hasFire
-      ? totalRows('', (quote) => quote.totals, true)
+      ? totalRows('Premium', (quote) => quote.totals, true)
       : any(withoutTerrorism)
-        ? totalRows(' (without terrorism)', withoutTerrorism, true)
+        ? totalRows('Premium without terrorism', withoutTerrorism, true)
+        : null;
+    const totalWith =
+      hasFire && any(withTerrorism)
+        ? totalRows('Premium with terrorism', withTerrorism, false)
         : null;
     quotes.forEach((quote, index) => {
       if (!quote?.lowest) return;
