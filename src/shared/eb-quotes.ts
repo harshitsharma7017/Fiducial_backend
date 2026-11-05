@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { EbProductSchema } from './eb-products.ts';
 import {
+  EB_MAX_QUOTE_OPTIONS,
   GPA_COVERS,
-  GPA_COVER_LABELS,
   PositiveRupeesSchema,
+  gpaCoverList,
   type GpaCover,
   type GpaRequirementsInput,
   type GtliRequirementsInput,
@@ -43,8 +44,25 @@ export const GpaQuoteTermsSchema = z.strictObject({
       typeof CoverTermSchema
     >,
   ),
+  /** Terms for the covers added to the case, by cover id. */
+  customCovers: z.record(z.string().regex(/^[a-z0-9]{1,16}$/), CoverTermSchema).default({}),
 });
 export type GpaQuoteTerms = z.infer<typeof GpaQuoteTermsSchema>;
+export type GpaCoverTerm = z.infer<typeof CoverTermSchema>;
+export const NOT_STATED_COVER_TERM: GpaCoverTerm = {
+  offer: 'NOT_STATED',
+  limitAmount: null,
+  limitText: null,
+};
+
+/** The terms quoted for one cover of the case (Not stated when the quote has none). */
+export function coverTermOf(
+  terms: Pick<GpaQuoteTerms, 'covers'> & { customCovers?: GpaQuoteTerms['customCovers'] },
+  cover: { standard: GpaCover | null; customId: string | null },
+): GpaCoverTerm {
+  if (cover.standard) return terms.covers[cover.standard];
+  return terms.customCovers?.[cover.customId ?? ''] ?? NOT_STATED_COVER_TERM;
+}
 
 export const GtliQuoteTermsSchema = z.strictObject({
   /** The free cover limit offered; null is "Not stated". */
@@ -64,6 +82,7 @@ export function emptyGpaQuoteTerms(): GpaQuoteTerms {
       permanentPartial: notStated(),
       temporaryTotal: notStated(),
     },
+    customCovers: {},
   };
 }
 
@@ -75,6 +94,14 @@ function quoteBody<T extends z.ZodType>(terms: T) {
   return z.strictObject({
     /** Before GST; blank only on a draft. */
     basePremium: blankAsNull(GhiAmountSchema),
+    /**
+     * Options 2–4 (client review 4/11/2026): the premiums before GST, in the Data Sheet's order;
+     * blank where the insurer did not quote an option.
+     */
+    optionPremiums: z
+      .array(blankAsNull(GhiAmountSchema))
+      .max(EB_MAX_QUOTE_OPTIONS - 1)
+      .default([]),
     /** The rate as the insurer states it; kept as text and used in no calculation (7.1). */
     statedRate: OptionalText(100),
     terms,
@@ -112,7 +139,7 @@ export type EbDeviation = z.infer<typeof EbDeviationSchema>;
 
 const rupees = (value: string) => `₹${formatIndianNumber(value, 0)}`;
 
-function coverOfferedText(term: GpaQuoteTerms['covers'][GpaCover]): string {
+function coverOfferedText(term: GpaCoverTerm): string {
   if (term.offer !== 'OFFERED') return COVER_OFFER_LABELS[term.offer];
   const limit = [term.limitAmount ? rupees(term.limitAmount) : null, term.limitText]
     .filter(Boolean)
@@ -133,9 +160,9 @@ export function compareGpaTerms(
   sheet: GpaRequirementsInput,
   terms: GpaQuoteTerms,
 ): EbComparedRow[] {
-  return GPA_COVERS.map((cover) => {
-    const asked = sheet.covers[cover];
-    const term = terms.covers[cover];
+  return gpaCoverList(sheet).map((cover) => {
+    const asked = cover.choice;
+    const term = coverTermOf(terms, cover);
     const kind: GhiComparison =
       asked !== 'REQUIRED'
         ? 'NOT_ASKED'
@@ -145,9 +172,14 @@ export function compareGpaTerms(
             ? 'MISSING'
             : 'MATCH';
     return {
-      key: `covers.${cover}`,
-      label: GPA_COVER_LABELS[cover],
-      requested: asked === null ? 'Not stated' : asked === 'REQUIRED' ? 'Required' : 'Not required',
+      key: cover.key,
+      label: cover.label,
+      requested:
+        asked === null
+          ? 'Not stated'
+          : asked === 'REQUIRED'
+            ? `Required${cover.limit ? ` (${cover.limit})` : ''}`
+            : 'Not required',
       offered: coverOfferedText(term),
       kind,
     };
@@ -218,6 +250,18 @@ export function gtliDeviations(sheet: GtliRequirementsInput, terms: GtliQuoteTer
   return deviationsOfRows(compareGtliTerms(sheet, terms));
 }
 
+/** One option of a quote with its premium (GST and total by the API); null: not quoted. */
+export const EbQuoteOptionPremiumSchema = z.object({
+  option: z.number().int(),
+  label: z.string(),
+  /** The option's sum insured basis, as one line. */
+  basis: z.string(),
+  basePremium: z.string().nullable(),
+  gst: z.string().nullable(),
+  totalPremium: z.string().nullable(),
+});
+export type EbQuoteOptionPremium = z.infer<typeof EbQuoteOptionPremiumSchema>;
+
 export const EbQuoteSchema = z.object({
   id: ObjectIdSchema,
   product: EbProductSchema,
@@ -232,6 +276,8 @@ export const EbQuoteSchema = z.object({
   gstRatePercent: z.string(),
   gst: z.string().nullable(),
   totalPremium: z.string().nullable(),
+  /** Every option of the case with this quote's premium for it; Option 1 is the premium above. */
+  options: z.array(EbQuoteOptionPremiumSchema),
   terms: z.union([GpaQuoteTermsSchema, GtliQuoteTermsSchema]),
   otherTerms: z.string().nullable(),
   validUntil: z.iso.date().nullable(),

@@ -11,13 +11,14 @@ import {
   type GpaQuoteTerms,
   type GtliQuoteTerms,
   type UpdateEbQuoteRequest,
+  type SumInsuredBasis,
 } from '../../shared/index.ts';
 import { Types, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
 import { Decimal, toDecimal128 } from '../../lib/decimal.ts';
 import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { gpaRequirementsOf, gtliRequirementsOf } from './eb-census-context.ts';
-import { ebPremium } from './eb-calc.ts';
+import { ebPremium, ebQuoteOptionPremiums } from './eb-calc.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import {
   advanceStage,
@@ -43,6 +44,17 @@ const str = (value: Types.Decimal128 | null) =>
   value === null ? null : new Decimal(value.toString()).toFixed(2);
 
 /** A quote's gaps against the case's Data Sheet (7.4). */
+/** The case's Data Sheet as the options read it (GPA and GTLI share these fields). */
+export function ebRequirementsOf(doc: GhiCaseDoc): {
+  sumInsuredBasis: SumInsuredBasis | null;
+  quoteOptions?: { basis: SumInsuredBasis }[];
+} {
+  return doc.requirements as unknown as {
+    sumInsuredBasis: SumInsuredBasis | null;
+    quoteOptions?: { basis: SumInsuredBasis }[];
+  };
+}
+
 export function ebDeviations(caseDoc: GhiCaseDoc, terms: EbQuoteTerms): EbDeviation[] {
   return caseDoc.product === 'GTLI'
     ? gtliDeviations(gtliRequirementsOf(caseDoc), terms as GtliQuoteTerms)
@@ -90,6 +102,7 @@ export async function ebQuoteViews(
     gstRatePercent: new Decimal(quote.gstRatePercent.toString()).toFixed(),
     gst: str(quote.gst),
     totalPremium: str(quote.totalPremium),
+    options: ebQuoteOptionPremiums(quote, ebRequirementsOf(caseDoc)),
     terms: quote.terms as unknown as EbQuoteTerms,
     otherTerms: quote.otherTerms,
     validUntil: quote.validUntil,
@@ -156,6 +169,27 @@ async function checkQuote(
   if (input.basePremium !== null && new Decimal(input.basePremium).lessThanOrEqualTo(0)) {
     issues.push({ location: 'body', path: 'basePremium', message: 'Enter a premium above 0' });
   }
+  // Options 2–4 (client review 4/11/2026): one premium per option the Data Sheet adds.
+  const extraOptions = ebRequirementsOf(doc).quoteOptions?.length ?? 0;
+  if (input.optionPremiums.length > extraOptions) {
+    issues.push({
+      location: 'body',
+      path: 'optionPremiums',
+      message:
+        extraOptions === 0
+          ? 'The Data Sheet asks for no other options'
+          : `The Data Sheet asks for ${extraOptions + 1} options`,
+    });
+  }
+  input.optionPremiums.forEach((premium, index) => {
+    if (premium !== null && new Decimal(premium).lessThanOrEqualTo(0)) {
+      issues.push({
+        location: 'body',
+        path: `optionPremiums.${index}`,
+        message: 'Enter a premium above 0',
+      });
+    }
+  });
   if (input.finalize && input.attachmentIds.length === 0) {
     issues.push({
       location: 'body',
@@ -191,6 +225,9 @@ function quoteFields(doc: GhiCaseDoc, input: UpdateEbQuoteRequest, actorId: Type
     gstRatePercent: toDecimal128(gstRatePercent),
     gst: premium ? toDecimal128(premium.gst) : null,
     totalPremium: premium ? toDecimal128(premium.totalPremium) : null,
+    optionPremiums: input.optionPremiums.map((value) =>
+      value === null ? null : ebPremium(value, gstRatePercent),
+    ),
     terms: input.terms,
     otherTerms: input.otherTerms,
     validUntil: input.validUntil,

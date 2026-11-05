@@ -81,18 +81,45 @@ const Count = (max: number) => z.number().int('Enter a whole number').min(0).max
 // Requirements (G2): the GHI Data Sheet
 
 /**
- * Who a family may include besides the employee (G2): the spouse, up to three children, and either
- * the employee's parents or parents-in-law. EITHER lets each employee choose one pair, never both.
+ * Who a family may include besides the employee (G2): the spouse, up to three children, and the
+ * employee's parents and/or parents-in-law. EITHER lets each employee choose one pair, never both;
+ * BOTH covers both pairs (alteration 3/11/2026: "Parents or In-laws", "Parents and In-laws").
  */
-export const GHI_PARENT_COVERS = ['NONE', 'PARENTS', 'PARENTS_IN_LAW', 'EITHER'] as const;
+export const GHI_PARENT_COVERS = ['NONE', 'PARENTS', 'PARENTS_IN_LAW', 'EITHER', 'BOTH'] as const;
 export type GhiParentCover = (typeof GHI_PARENT_COVERS)[number];
 export const GHI_PARENT_COVER_LABELS: Record<GhiParentCover, string> = {
   NONE: 'No parents',
   PARENTS: 'Parents only',
   PARENTS_IN_LAW: 'Parents-in-law only',
-  EITHER: 'Parents or parents-in-law (not both)',
+  EITHER: 'Parents or in-laws',
+  BOTH: 'Parents and in-laws',
 };
 export const GHI_MAX_CHILDREN = 3;
+
+/** Option 1 (the case's own sums insured) and up to three more (alteration 3/11/2026). */
+export const MAX_GHI_QUOTE_OPTIONS = 4;
+
+export interface GhiQuoteOptionInfo {
+  /** 1 to 4. */
+  option: number;
+  label: string;
+  /** Null for Option 1: the sums insured of the Data Sheet and census. */
+  sumInsured: string | null;
+}
+
+/** The options each insurer quotes: Option 1, then those the Data Sheet adds. */
+export function ghiQuoteOptions(requirements: {
+  quoteOptions?: readonly { sumInsured: string }[] | undefined;
+}): GhiQuoteOptionInfo[] {
+  return [
+    { option: 1, label: 'Option 1', sumInsured: null },
+    ...(requirements.quoteOptions ?? []).map((item, index) => ({
+      option: index + 2,
+      label: `Option ${index + 2}`,
+      sumInsured: item.sumInsured,
+    })),
+  ];
+}
 
 /** Family floater (one sum insured shared by the family) or individual sums insured. */
 export const GHI_COVERAGE_TYPES = ['FLOATER', 'INDIVIDUAL'] as const;
@@ -189,6 +216,26 @@ export const GhiRequirementsInputSchema = z
       .array(GhiRupeesSchema.refine((value) => BigInt(value) > 0n, 'Enter an amount above 0'))
       .max(10, 'Offer at most 10 sums insured')
       .refine((values) => new Set(values).size === values.length, 'Each sum insured once'),
+    /**
+     * Options 2–4 (alteration 3/11/2026, as in Fire): other sums insured each insurer quotes
+     * besides Option 1 (the case's own sums insured). Each is the sum insured of every family
+     * (floater) or person (individual).
+     */
+    quoteOptions: z
+      .array(
+        z.strictObject({
+          sumInsured: GhiRupeesSchema.refine(
+            (value) => BigInt(value) > 0n,
+            'Enter an amount above 0',
+          ),
+        }),
+      )
+      .max(MAX_GHI_QUOTE_OPTIONS - 1, `Offer at most ${MAX_GHI_QUOTE_OPTIONS} options`)
+      .refine(
+        (options) => new Set(options.map((option) => option.sumInsured)).size === options.length,
+        'Each option once',
+      )
+      .default([]),
     maternity: z.strictObject({
       covered: z.boolean().nullable(),
       normalLimit: OptionalRupees,
@@ -289,6 +336,7 @@ export function emptyGhiRequirements(): GhiRequirementsInput {
     familyDefinition: { spouse: false, maxChildren: 0, parents: 'NONE' },
     coverageType: null,
     sumInsuredOptions: [],
+    quoteOptions: [],
     maternity: {
       covered: null,
       normalLimit: null,
@@ -548,6 +596,8 @@ export const GHI_FILE_PURPOSES = [
   'CLIENT_DECISION',
   'PAYMENT',
   'POLICY',
+  /** The client's Excel with the company details (alteration 3/11/2026). */
+  'COMPANY_DETAILS',
   'OTHER',
 ] as const;
 export type GhiFilePurpose = (typeof GHI_FILE_PURPOSES)[number];
@@ -556,6 +606,7 @@ export const GHI_FILE_PURPOSE_LABELS: Record<GhiFilePurpose, string> = {
   CLIENT_DECISION: 'Client’s decision',
   PAYMENT: 'Payment proof',
   POLICY: 'Policy copy',
+  COMPANY_DETAILS: 'Company details (Excel)',
   OTHER: 'Other',
 };
 
@@ -582,3 +633,51 @@ export type GhiFile = z.infer<typeof GhiFileSchema>;
 export const GhiFileListResponseSchema = z.object({ items: z.array(GhiFileSchema) });
 
 export const GhiFileParamsSchema = z.strictObject({ id: ObjectIdSchema, fileId: ObjectIdSchema });
+
+// Company details from Excel (alteration 3/11/2026): the Data Sheet's company section and the
+// number of employees, read from a two-column workbook (Field, Value) the user downloads from the
+// case. The values are offered to the form, which the user reviews and saves; the workbook is
+// kept with the case's files.
+
+export const COMPANY_DETAIL_FIELDS = [
+  { key: 'natureOfBusiness', label: 'Nature of business' },
+  { key: 'locations', label: 'Locations of the employees' },
+  { key: 'contactName', label: 'HR name' },
+  { key: 'contactEmail', label: 'HR email' },
+  { key: 'contactPhone', label: 'HR phone' },
+  { key: 'employeeCount', label: 'Employees to be covered' },
+] as const;
+export type CompanyDetailField = (typeof COMPANY_DETAIL_FIELDS)[number]['key'];
+/** Other names the Field column may use for a field (older labels, common wording). */
+export const COMPANY_DETAIL_ALIASES: Record<CompanyDetailField, readonly string[]> = {
+  natureOfBusiness: ['business', 'nature of the business', 'industry'],
+  locations: ['locations', 'employee locations', 'location of employees', 'work locations'],
+  contactName: ['hr contact', 'hr contact name', 'hr', 'contact person', 'hr name'],
+  contactEmail: ['hr contact email', 'hr e-mail', 'email', 'hr mail'],
+  contactPhone: ['hr contact phone', 'hr mobile', 'phone', 'mobile', 'hr phone number'],
+  employeeCount: ['employees', 'number of employees', 'employee count', 'employees covered'],
+};
+export const COMPANY_DETAILS_SHEET = 'Company details';
+export const MAX_COMPANY_DETAILS_BYTES = 2 * 1024 * 1024;
+
+export const CompanyDetailsImportQuerySchema = z.strictObject({
+  fileName: GhiFileUploadQuerySchema.shape.fileName,
+});
+
+export const CompanyDetailsImportSchema = z.object({
+  company: z.object({
+    natureOfBusiness: z.string().nullable(),
+    locations: z.string().nullable(),
+    contactName: z.string().nullable(),
+    contactEmail: z.string().nullable(),
+    contactPhone: z.string().nullable(),
+  }),
+  employeeCount: z.number().int().nullable(),
+  /** The fields the workbook gave a valid value for; the form keeps its own value for the rest. */
+  provided: z.array(z.enum(COMPANY_DETAIL_FIELDS.map((field) => field.key))),
+  /** Values the workbook gave that do not pass the Data Sheet's checks (not applied). */
+  issues: z.array(z.object({ field: z.string(), label: z.string(), message: z.string() })),
+  /** The workbook, kept with the case's files. */
+  file: GhiFileSchema,
+});
+export type CompanyDetailsImport = z.infer<typeof CompanyDetailsImportSchema>;

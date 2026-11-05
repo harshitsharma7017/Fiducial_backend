@@ -239,6 +239,31 @@ describe('census rules', () => {
     });
   });
 
+  it('covers parents and parents-in-law together when the Data Sheet covers both pairs', () => {
+    const both = check(
+      [
+        row({}),
+        row({
+          name: 'Dad',
+          gender: 'M',
+          relationship: 'Father',
+          dateOfBirth: '01/01/1960',
+          sumInsured: '',
+        }),
+        row({
+          name: 'MIL',
+          gender: 'F',
+          relationship: 'Mother-in-law',
+          dateOfBirth: '01/01/1961',
+          sumInsured: '',
+        }),
+      ],
+      [],
+      settings({ familyDefinition: { spouse: true, maxChildren: 3, parents: 'BOTH' } }),
+    );
+    expect(both.every((issues) => issues.length === 0)).toBe(true);
+  });
+
   it('flags duplicates in the file and against the census', () => {
     const existing: CensusMember = {
       employeeId: 'E001',

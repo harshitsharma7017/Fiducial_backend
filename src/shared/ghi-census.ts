@@ -164,6 +164,29 @@ export const GHI_AGE_BANDS = [
 ] as const;
 export type GhiAgeBand = (typeof GHI_AGE_BANDS)[number]['key'];
 
+/**
+ * The relationship groups of the age-wise breakup (client review 4/11/2026): each relationship
+ * falls in one group.
+ */
+export const CENSUS_GROUPS = ['employee', 'spouse', 'children', 'parents', 'inLaws'] as const;
+export type CensusGroup = (typeof CENSUS_GROUPS)[number];
+export const CENSUS_GROUP_LABELS: Record<CensusGroup, string> = {
+  employee: 'Employee',
+  spouse: 'Spouse',
+  children: 'Children',
+  parents: 'Parents',
+  inLaws: 'Parents-in-law',
+};
+export const CENSUS_GROUP_OF: Record<GhiRelationship, CensusGroup> = {
+  SELF: 'employee',
+  SPOUSE: 'spouse',
+  CHILD: 'children',
+  FATHER: 'parents',
+  MOTHER: 'parents',
+  FATHER_IN_LAW: 'inLaws',
+  MOTHER_IN_LAW: 'inLaws',
+};
+
 export const GhiCensusSummarySchema = z.object({
   /** Employees (Self rows). */
   employees: z.number().int(),
@@ -171,6 +194,27 @@ export const GhiCensusSummarySchema = z.object({
   lives: z.number().int(),
   byRelationship: z.record(GhiRelationshipSchema, z.number().int()),
   byAgeBand: z.array(z.object({ band: z.string(), label: z.string(), lives: z.number().int() })),
+  /**
+   * Age-wise breakup (client review 4/11/2026): the lives of each age band by relationship group.
+   * Missing on summaries worked out before it.
+   */
+  byAgeBandAndGroup: z
+    .array(
+      z.object({
+        band: z.string(),
+        label: z.string(),
+        groups: z.record(z.enum(CENSUS_GROUPS), z.number().int()),
+        lives: z.number().int(),
+      }),
+    )
+    .optional(),
+  /**
+   * Family-wise breakup: families by who they cover (Employee only, Employee + Spouse, …), most
+   * common first, with their lives.
+   */
+  byFamily: z
+    .array(z.object({ label: z.string(), families: z.number().int(), lives: z.number().int() }))
+    .optional(),
   /** Lives per sum insured (each member at the sum insured that covers them). */
   bySumInsured: z.array(
     z.object({ sumInsured: z.string(), families: z.number().int(), lives: z.number().int() }),

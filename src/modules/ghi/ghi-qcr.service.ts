@@ -11,6 +11,7 @@ import {
   type RecordGhiClientDecisionRequest,
   type SaveGhiQcrRequest,
   type SendGhiQcrRequest,
+  ghiQuoteOptions,
 } from '../../shared/index.ts';
 import { Types, type mongo } from 'mongoose';
 import { withTransaction } from '../../lib/db.ts';
@@ -43,7 +44,13 @@ import {
   prepareAttachment,
   prepareMail,
 } from './ghi-mail.ts';
-import { compareTerms, lowestTotals } from './ghi-quote-calc.ts';
+import {
+  compareTerms,
+  lowestByOption,
+  lowestTotals,
+  quoteOptionPremiums,
+} from './ghi-quote-calc.ts';
+
 import { gmcFamilyCover } from './products/gmc.ts';
 import { latestFinalIds } from './ghi-quotes.service.ts';
 import { caseLetterhead } from './ghi-rfq.service.ts';
@@ -84,6 +91,12 @@ async function qcrView(
     dispatchesOf(caseDoc._id, { kind: 'QCR', documentId: qcr._id }),
   ]);
   const lowest = lowestTotals(ordered.map((quote) => money(quote.totalPremium)));
+  // Options 2–4 (alteration 3/11/2026): each insurer's premium per option, lowest per option.
+  const premiums = ordered.map((quote) => quoteOptionPremiums(quote, caseDoc.requirements));
+  const lowestOption = lowestByOption(premiums);
+  const optionLabel = (option: number) =>
+    ghiQuoteOptions(caseDoc.requirements).find((item) => item.option === option)?.label ??
+    `Option ${option}`;
   const { parentsCovered } = gmcFamilyCover(caseDoc);
   const compared = ordered.map((quote) =>
     compareTerms(caseDoc.requirements, quote.terms, parentsCovered),
@@ -110,7 +123,13 @@ async function qcrView(
       recommended: qcr.recommendedInsurerId?.equals(quote.insurerId) ?? false,
       deviations: compared[index]!.filter((row) => row.kind === 'DEVIATION').length,
       missing: compared[index]!.filter((row) => row.kind === 'MISSING').length,
+      options: premiums[index]!.map((item, option) => ({
+        ...item,
+        lowest: lowestOption[option]?.has(index) ?? false,
+      })),
     })),
+    options: ghiQuoteOptions(caseDoc.requirements),
+    recommendedOption: qcr.recommendedOption ?? 1,
     rows: template.map((row, rowIndex) => ({
       key: row.key,
       label: row.label,
@@ -142,6 +161,8 @@ async function qcrView(
             ? (insurers.get(qcr.clientDecision.insurerId.toHexString()) ?? 'Insurer')
             : null,
           quoteId: qcr.clientDecision.quoteId?.toHexString() ?? null,
+          option: qcr.clientDecision.option ?? 1,
+          optionLabel: optionLabel(qcr.clientDecision.option ?? 1),
           decidedOn: qcr.clientDecision.decidedOn,
           confirmedBy: qcr.clientDecision.confirmedBy,
           note: qcr.clientDecision.note,
@@ -216,6 +237,31 @@ async function checkQcrInput(doc: GhiCaseDoc, input: SaveGhiQcrRequest) {
       message: 'Recommend one of the insurers compared',
     });
   }
+  // The recommended option must be one of the case's, quoted by the recommended insurer.
+  const options = ghiQuoteOptions(doc.requirements);
+  if (input.recommendedOption > options.length) {
+    issues.push({
+      location: 'body',
+      path: 'recommendedOption',
+      message: 'Recommend one of the case’s options',
+    });
+  } else if (input.recommendedInsurerId && input.recommendedOption > 1) {
+    const quote = quotes.find(
+      (item) =>
+        item.insurerId.toHexString() === input.recommendedInsurerId &&
+        input.quoteIds.includes(item._id.toHexString()),
+    );
+    const priced = quote
+      ? quoteOptionPremiums(quote, doc.requirements)[input.recommendedOption - 1]?.totalPremium
+      : null;
+    if (!priced) {
+      issues.push({
+        location: 'body',
+        path: 'recommendedOption',
+        message: `The recommended insurer did not quote Option ${input.recommendedOption}`,
+      });
+    }
+  }
   if (issues.length > 0) throw validationError(issues);
 }
 
@@ -266,6 +312,7 @@ export async function createQcr(
           recommendedInsurerId: input.recommendedInsurerId
             ? new Types.ObjectId(input.recommendedInsurerId)
             : null,
+          recommendedOption: input.recommendedOption,
           remarks: input.remarks,
           submitted: null,
           decision: null,
@@ -339,6 +386,7 @@ export async function updateQcr(
           recommendedInsurerId: input.recommendedInsurerId
             ? new Types.ObjectId(input.recommendedInsurerId)
             : null,
+          recommendedOption: input.recommendedOption,
           remarks: input.remarks,
           updatedBy: actorId,
         },
@@ -649,10 +697,10 @@ export async function recordClientDecision(
   }
   let quoteId: Types.ObjectId | null = null;
   if (input.decision === 'ACCEPTED' && input.insurerId) {
-    const quotes = await GhiQuoteModel.find(
-      { _id: { $in: qcr.quoteIds }, caseId: doc._id },
-      { insurerId: 1 },
-    ).lean();
+    const quotes = await GhiQuoteModel.find({
+      _id: { $in: qcr.quoteIds },
+      caseId: doc._id,
+    }).lean();
     const chosen = quotes.find((quote) => quote.insurerId.toHexString() === input.insurerId);
     if (!chosen)
       issues.push({
@@ -660,7 +708,21 @@ export async function recordClientDecision(
         path: 'insurerId',
         message: 'Choose one of the insurers on the QCR',
       });
-    else quoteId = chosen._id;
+    else {
+      quoteId = chosen._id;
+      // The option the client chose must be one the insurer quoted (alteration 3/11/2026).
+      const premium = quoteOptionPremiums(chosen, doc.requirements)[input.option - 1];
+      if (!premium?.totalPremium) {
+        issues.push({
+          location: 'body',
+          path: 'option',
+          message:
+            input.option > ghiQuoteOptions(doc.requirements).length
+              ? 'Choose one of the case’s options'
+              : `The chosen insurer did not quote Option ${input.option}`,
+        });
+      }
+    }
   }
   if (issues.length > 0) throw validationError(issues);
   const fileIds = await assertCaseFiles(doc._id, input.fileIds, 'CLIENT_DECISION', 'fileIds');
@@ -680,6 +742,7 @@ export async function recordClientDecision(
                 ? new Types.ObjectId(input.insurerId)
                 : null,
             quoteId,
+            option: input.decision === 'ACCEPTED' ? input.option : undefined,
             decidedOn: input.decidedOn,
             confirmedBy: input.confirmedBy,
             note: input.note,
@@ -703,7 +766,7 @@ export async function recordClientDecision(
             actorId,
             message:
               input.decision === 'ACCEPTED'
-                ? `Client accepted QCR v${qcr.version}: ${insurerName ?? 'insurer'} (confirmed by ${input.confirmedBy})`
+                ? `Client accepted QCR v${qcr.version}: ${insurerName ?? 'insurer'}, Option ${input.option} (confirmed by ${input.confirmedBy})`
                 : `Client rejected QCR v${qcr.version}: ${input.note ?? ''}`,
           },
         },

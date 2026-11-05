@@ -5,7 +5,14 @@ import {
 } from '../../shared/index.ts';
 import { describe, expect, it } from 'vitest';
 import { ageBandOf, summarizeCensus, type SummaryMember } from './census-summary.ts';
-import { compareTerms, deviationsOf, lowestTotals, premiumOf } from './ghi-quote-calc.ts';
+import {
+  compareTerms,
+  deviationsOf,
+  lowestByOption,
+  lowestTotals,
+  premiumOf,
+  quoteOptionPremiums,
+} from './ghi-quote-calc.ts';
 
 // The census summary (G4) and the quote arithmetic and comparison (G6).
 
@@ -48,6 +55,29 @@ describe('census summary', () => {
       '56-65',
       '66+',
       '66+',
+    ]);
+  });
+
+  it('breaks the census up by age band and relationship, and by family (4/11/2026)', () => {
+    const summary = summarizeCensus(members, {
+      coverageType: 'FLOATER',
+      referenceDate: '2026-04-01',
+      declaredEmployees: 3,
+      revision: 4,
+    });
+    const band = (key: string) => summary.byAgeBandAndGroup?.find((item) => item.band === key);
+    // Two children are 0–18; the three employees (36) and the spouse (33) are 19–35 or 36–45.
+    expect(band('0-18')).toMatchObject({
+      groups: { employee: 0, spouse: 0, children: 2, parents: 0, inLaws: 0 },
+      lives: 2,
+    });
+    expect(band('36-45')?.groups.employee).toBe(3);
+    expect(band('19-35')?.groups.spouse).toBe(1);
+    expect(band('66+')?.groups.parents).toBe(1);
+    expect(summary.byFamily).toEqual([
+      { label: 'Employee only', families: 1, lives: 1 },
+      { label: 'Employee + Children', families: 1, lives: 2 },
+      { label: 'Employee + Spouse + Children + Parents', families: 1, lives: 4 },
     ]);
   });
 
@@ -151,6 +181,62 @@ describe('premium', () => {
   it('marks every lowest total on a tie', () => {
     expect([...lowestTotals(['118000.00', '117999.99', '117999.99'])]).toEqual([1, 2]);
     expect([...lowestTotals([])]).toEqual([]);
+  });
+  it('lists a quote’s premium per option: Option 1, then each other sum insured (3/11/2026)', () => {
+    const quote = {
+      basePremium: '100000',
+      gst: '18000',
+      totalPremium: '118000',
+      optionPremiums: [premiumOf('150000', '18'), null],
+    };
+    const requirements = { quoteOptions: [{ sumInsured: '700000' }, { sumInsured: '1000000' }] };
+    expect(quoteOptionPremiums(quote, requirements)).toEqual([
+      {
+        option: 1,
+        label: 'Option 1',
+        sumInsured: null,
+        basePremium: '100000.00',
+        gst: '18000.00',
+        totalPremium: '118000.00',
+      },
+      {
+        option: 2,
+        label: 'Option 2',
+        sumInsured: '700000',
+        basePremium: '150000.00',
+        gst: '27000.00',
+        totalPremium: '177000.00',
+      },
+      // Not quoted by this insurer.
+      {
+        option: 3,
+        label: 'Option 3',
+        sumInsured: '1000000',
+        basePremium: null,
+        gst: null,
+        totalPremium: null,
+      },
+    ]);
+    // A case without other options (or saved before them) has Option 1 only.
+    expect(quoteOptionPremiums(quote, {})).toHaveLength(1);
+  });
+
+  it('marks the lowest total of each option among the insurers that quoted it', () => {
+    const requirements = { quoteOptions: [{ sumInsured: '700000' }] };
+    const insurer = (base: string, option2: string | null) =>
+      quoteOptionPremiums(
+        {
+          ...premiumOf(base, '18'),
+          optionPremiums: [option2 === null ? null : premiumOf(option2, '18')],
+        },
+        requirements,
+      );
+    const lowest = lowestByOption([
+      insurer('100000', null),
+      insurer('110000', '150000'),
+      insurer('120000', '140000'),
+    ]);
+    expect(lowest.map((set) => [...set])).toEqual([[0], [2]]);
   });
 });
 

@@ -307,6 +307,8 @@ export async function toRecord(claim: ClaimDoc, actor: ClaimActor): Promise<Clai
     hospital: claim.hospital,
     admissionDate: claim.admissionDate,
     dischargeDate: claim.dischargeDate,
+    formSubmissionDate: claim.formSubmissionDate ?? null,
+    settlementDate: claim.settlementDate ?? null,
     claimType: claim.claimType,
     amountClaimed: amountText(claim.amountClaimed),
     contactEmail: claim.contactEmail,

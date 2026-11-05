@@ -3,8 +3,10 @@ import {
   ERROR_CODES,
   PDF_CONTENT_TYPE,
   XLSX_CONTENT_TYPE,
+  basisText,
   compareGpaTerms,
   compareGtliTerms,
+  ebQuoteOptions,
   lowestMarks,
   qcrCandidates,
   qcrContentKey,
@@ -27,7 +29,8 @@ import { toEbCaseRecord } from './eb-cases.service.ts';
 import { gpaRequirementsOf, gtliRequirementsOf } from './eb-census-context.ts';
 import { ebQcrDocument } from './eb-documents.ts';
 import { summaryOf } from './eb-members.service.ts';
-import { ebDeviations, ebQuoteViews } from './eb-quotes.service.ts';
+import { ebDeviations, ebQuoteViews, ebRequirementsOf } from './eb-quotes.service.ts';
+import { ebQuoteOptionPremiums, lowestByEbOption } from './eb-calc.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import {
   advanceStage,
@@ -103,6 +106,7 @@ function compareRows(doc: GhiCaseDoc, terms: unknown): EbComparedRow[] {
 interface Content {
   columns: EbQcr['columns'];
   rows: EbQcr['rows'];
+  options: EbQcr['options'];
   fingerprint: string;
 }
 
@@ -112,10 +116,20 @@ async function contentOf(
   quotes: readonly GhiQuoteDoc[],
   recommendedInsurerId: string | null,
   remarks: string | null,
+  recommendedOption = 1,
 ): Promise<Content> {
   const insurers = await insurerNames(quotes.map((quote) => quote.insurerId));
   const totals = quotes.map((quote) => money(quote.totalPremium));
   const lowest = lowestMarks(totals);
+  // Options 2–4 (client review 4/11/2026): each insurer's premium per option, lowest per option.
+  const requirements = ebRequirementsOf(doc);
+  const premiums = quotes.map((quote) => ebQuoteOptionPremiums(quote, requirements));
+  const lowestOption = lowestByEbOption(premiums);
+  const options = ebQuoteOptions(requirements).map((info) => ({
+    option: info.option,
+    label: info.label,
+    basis: basisText(info.basis),
+  }));
   const columns = quotes.map((quote, index) => ({
     quoteId: quote._id.toHexString(),
     insurerId: quote.insurerId.toHexString(),
@@ -127,6 +141,10 @@ async function contentOf(
     lowest: lowest.has(index),
     recommended: recommendedInsurerId === quote.insurerId.toHexString(),
     deviations: ebDeviations(doc, quote.terms as never),
+    options: premiums[index]!.map((item, option) => ({
+      ...item,
+      lowest: lowestOption[option]?.has(index) ?? false,
+    })),
   }));
   const compared = quotes.map((quote) => compareRows(doc, quote.terms));
   const template = compared[0] ?? [];
@@ -140,9 +158,18 @@ async function contentOf(
     })),
   }));
   const fingerprint = createHash('sha256')
-    .update(qcrContentKey({ columns, recommendedInsurerId, remarks }))
+    .update(
+      qcrContentKey({
+        columns,
+        recommendedInsurerId,
+        remarks,
+        options,
+        optionTotals: premiums.map((list) => list.map((item) => item.totalPremium)),
+        recommendedOption,
+      }),
+    )
     .digest('hex');
-  return { columns, rows, fingerprint };
+  return { columns, rows, options, fingerprint };
 }
 
 async function storedQuotes(doc: GhiCaseDoc, qcr: GhiQcrDoc): Promise<GhiQuoteDoc[]> {
@@ -164,7 +191,13 @@ async function isOutOfDate(doc: GhiCaseDoc, qcr: GhiQcrDoc): Promise<boolean> {
 async function qcrView(doc: GhiCaseDoc, qcr: GhiQcrDoc, latestId: string | null): Promise<EbQcr> {
   const quotes = await storedQuotes(doc, qcr);
   const recommended = qcr.recommendedInsurerId?.toHexString() ?? null;
-  const content = await contentOf(doc, quotes, recommended, qcr.remarks);
+  const content = await contentOf(
+    doc,
+    quotes,
+    recommended,
+    qcr.remarks,
+    qcr.recommendedOption ?? 1,
+  );
   const decision = qcr.clientDecision;
   const [users, files, sends, insurers, outOfDate] = await Promise.all([
     userNames([qcr.createdBy, qcr.submitted?.by, qcr.decision?.by, decision?.recordedBy]),
@@ -182,6 +215,8 @@ async function qcrView(doc: GhiCaseDoc, qcr: GhiQcrDoc, latestId: string | null)
     fingerprint: content.fingerprint,
     columns: content.columns,
     rows: content.rows,
+    options: content.options,
+    recommendedOption: qcr.recommendedOption ?? 1,
     recommendedInsurerId: recommended,
     remarks: qcr.remarks,
     submitted: qcr.submitted
@@ -205,6 +240,8 @@ async function qcrView(doc: GhiCaseDoc, qcr: GhiQcrDoc, latestId: string | null)
             : null,
           quoteId: decision.quoteId?.toHexString() ?? null,
           quoteVersion: decision.quoteVersion ?? null,
+          option: decision.option ?? 1,
+          optionLabel: `Option ${decision.option ?? 1}`,
           agreedPremium: decision.agreedPremium ? money(decision.agreedPremium) : null,
           decidedOn: decision.decidedOn,
           confirmedBy: decision.confirmedBy,
@@ -281,7 +318,33 @@ function assertBeforeDecision(doc: GhiCaseDoc): void {
   }
 }
 
-function checkRecommendation(candidates: readonly GhiQuoteDoc[], input: SaveEbQcrRequest): void {
+function checkRecommendation(
+  doc: GhiCaseDoc,
+  candidates: readonly GhiQuoteDoc[],
+  input: SaveEbQcrRequest,
+): void {
+  // The recommended option must be one of the case's, quoted by the recommended insurer.
+  const requirements = ebRequirementsOf(doc);
+  const options = ebQuoteOptions(requirements);
+  const recommended = candidates.find(
+    (quote) => quote.insurerId.toHexString() === input.recommendedInsurerId,
+  );
+  if (
+    input.recommendedOption > options.length ||
+    (recommended &&
+      !ebQuoteOptionPremiums(recommended, requirements)[input.recommendedOption - 1]?.totalPremium)
+  ) {
+    throw validationError([
+      {
+        location: 'body',
+        path: 'recommendedOption',
+        message:
+          input.recommendedOption > options.length
+            ? 'Recommend one of the case’s options'
+            : `The recommended insurer did not quote Option ${input.recommendedOption}`,
+      },
+    ]);
+  }
   if (
     input.recommendedInsurerId &&
     !candidates.some((quote) => quote.insurerId.toHexString() === input.recommendedInsurerId)
@@ -315,7 +378,7 @@ export async function createEbQcr(
       'No insurer has a recorded quote that has not declined.',
     );
   }
-  checkRecommendation(candidates, input);
+  checkRecommendation(doc, candidates, input);
   const actorId = new Types.ObjectId(actor.id);
   const saved = await withTransaction(async (session) => {
     const latest = await latestEbQcr(doc._id, session);
@@ -339,7 +402,13 @@ export async function createEbQcr(
       );
     }
     const version = (latest?.version ?? 0) + 1;
-    const content = await contentOf(doc, candidates, input.recommendedInsurerId, input.remarks);
+    const content = await contentOf(
+      doc,
+      candidates,
+      input.recommendedInsurerId,
+      input.remarks,
+      input.recommendedOption,
+    );
     const [qcr] = await GhiQcrModel.create(
       [
         {
@@ -350,6 +419,7 @@ export async function createEbQcr(
           recommendedInsurerId: input.recommendedInsurerId
             ? new Types.ObjectId(input.recommendedInsurerId)
             : null,
+          recommendedOption: input.recommendedOption,
           remarks: input.remarks,
           fingerprint: content.fingerprint,
           submitted: null,
@@ -417,8 +487,14 @@ export async function updateEbQcr(
       'No insurer has a recorded quote that has not declined.',
     );
   }
-  checkRecommendation(candidates, input);
-  const content = await contentOf(doc, candidates, input.recommendedInsurerId, input.remarks);
+  checkRecommendation(doc, candidates, input);
+  const content = await contentOf(
+    doc,
+    candidates,
+    input.recommendedInsurerId,
+    input.remarks,
+    input.recommendedOption,
+  );
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {
     const result = await GhiQcrModel.updateOne(
@@ -431,6 +507,7 @@ export async function updateEbQcr(
           recommendedInsurerId: input.recommendedInsurerId
             ? new Types.ObjectId(input.recommendedInsurerId)
             : null,
+          recommendedOption: input.recommendedOption,
           remarks: input.remarks,
           fingerprint: content.fingerprint,
           updatedBy: actorId,
@@ -485,6 +562,7 @@ export async function submitEbQcr(
     candidates,
     keepRecommendation ? recommended : null,
     qcr.remarks,
+    keepRecommendation ? (qcr.recommendedOption ?? 1) : 1,
   );
   const actorId = new Types.ObjectId(actor.id);
   await withTransaction(async (session) => {

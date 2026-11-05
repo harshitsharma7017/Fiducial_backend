@@ -2,6 +2,7 @@ import {
   AUDIT_ACTIONS,
   GHI_FILE_PURPOSE_LABELS,
   QUOTE_ATTACHMENT_TYPES,
+  XLSX_CONTENT_TYPE,
   type GhiFile,
   type GhiFilePurpose,
 } from '../../shared/index.ts';
@@ -21,6 +22,11 @@ import {
 } from './ghi-common.ts';
 import { GMC_SCOPE, type CaseScope } from './products/profile.ts';
 import { GhiFileModel, type GhiFileDoc } from './ghi-workflow.model.ts';
+
+/** An Excel workbook: a zip archive with the .xlsx extension. */
+function isXlsx(data: Buffer, fileName: string): boolean {
+  return data.length > 4 && data.readUInt32LE(0) === 0x04034b50 && /\.xlsx$/i.test(fileName);
+}
 
 // Files kept on a GHI case. Each is read back only through its own case, so a file id from one
 // case can never open another case's file.
@@ -51,8 +57,23 @@ export async function uploadFile(
   const doc = await loadCase(id, undefined, scope);
   assertWritable(doc);
   // The insurer's PDF or mail, a scan or photo: the same kinds as Property quotes and placements.
-  const contentType = sniff(data, fileName);
+  // The company details are the client's Excel workbook (alteration 3/11/2026).
+  const contentType =
+    purpose === 'COMPANY_DETAILS'
+      ? isXlsx(data, fileName)
+        ? XLSX_CONTENT_TYPE
+        : null
+      : sniff(data, fileName);
   if (!contentType) {
+    if (purpose === 'COMPANY_DETAILS') {
+      throw validationError([
+        {
+          location: 'body',
+          path: 'file',
+          message: 'Attach the company details as an Excel workbook (.xlsx)',
+        },
+      ]);
+    }
     throw validationError([
       {
         location: 'body',

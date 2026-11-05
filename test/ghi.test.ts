@@ -76,6 +76,7 @@ const requirements = (): GhiRequirementsInput => ({
   familyDefinition: { spouse: true, maxChildren: 3, parents: 'EITHER' },
   coverageType: 'FLOATER',
   sumInsuredOptions: ['300000', '500000'],
+  quoteOptions: [],
   maternity: {
     covered: true,
     normalLimit: '50000',
@@ -368,6 +369,67 @@ describe('group health case (G1, G2)', () => {
         (claim: { claimsRatioPercent: string | null }) => claim.claimsRatioPercent,
       ),
     ).toEqual(['75.00', '50.00', null]);
+  });
+
+  it('imports the company details from Excel into the form and keeps the workbook (3/11/2026)', async () => {
+    const template = await request(app)
+      .get(c('/company-details/template'))
+      .set(bearer(exec))
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(template.body as ArrayBuffer);
+    const sheet = workbook.getWorksheet('Company details')!;
+    const rows = new Map<string, ExcelJS.Row>();
+    sheet.eachRow((row) => rows.set(row.getCell(1).text, row));
+    // Filled with the case's values.
+    expect(rows.get('HR name')?.getCell(2).value).toBe('Neha Kapoor');
+    rows.get('HR name')!.getCell(2).value = 'Priya Nair';
+    rows.get('HR email')!.getCell(2).value = 'not an email';
+    rows.get('Employees to be covered')!.getCell(2).value = '1,200';
+    const filled = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const imported = await request(app)
+      .post(c('/company-details?fileName=Acme%20company%20details.xlsx'))
+      .set(bearer(exec))
+      .set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .send(filled)
+      .expect(200);
+    expect(imported.body).toMatchObject({
+      company: { contactName: 'Priya Nair', natureOfBusiness: 'Software services' },
+      employeeCount: 1200,
+      issues: [{ field: 'contactEmail', label: 'HR email' }],
+      file: { purpose: 'COMPANY_DETAILS', fileName: 'Acme company details.xlsx' },
+    });
+    expect(imported.body.provided).toEqual(
+      expect.arrayContaining(['natureOfBusiness', 'contactName', 'employeeCount']),
+    );
+    expect(imported.body.provided).not.toContain('contactEmail');
+
+    // Kept with the case's files; the Data Sheet itself is saved only from the form.
+    const files = await request(app).get(c('/files')).set(bearer(exec)).expect(200);
+    expect(
+      files.body.items.some((file: { purpose: string }) => file.purpose === 'COMPANY_DETAILS'),
+    ).toBe(true);
+    const record = await request(app).get(c()).set(bearer(exec)).expect(200);
+    expect(record.body.requirements.company.contactName).toBe('Neha Kapoor');
+
+    await request(app)
+      .post(c('/company-details?fileName=notes.xlsx'))
+      .set(bearer(exec))
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from('not a workbook'))
+      .expect(400);
+    await request(app)
+      .post(c('/company-details?fileName=x.xlsx'))
+      .set(bearer(readOnly))
+      .send(filled)
+      .expect(403);
   });
 });
 
@@ -713,9 +775,7 @@ describe('RFQ (G5)', () => {
     const texts: string[] = [];
     sheet.eachRow((row) => row.eachCell((cell) => texts.push(cell.text)));
     expect(texts).toContain('Acme Health Group Pvt Ltd');
-    expect(texts.join(' ')).toMatch(
-      /Employee, spouse, up to 3 children, parents or parents-in-law/,
-    );
+    expect(texts.join(' ')).toMatch(/Employee, spouse, up to 3 children, parents or in-laws/);
     const claims = workbook.getWorksheet('Claims History')!;
     expect(claims.getRow(3).getCell(8).value).toBe('75.00%');
     const pdf = await binary(
@@ -886,6 +946,25 @@ describe('quotes and QCR (G6)', () => {
       })
       .expect(400);
     expect(noPremium.body.details[0].path).toBe('basePremium');
+    // Options 2–4 are quoted only where the Data Sheet asks for them (alteration 3/11/2026).
+    const noOptions = await request(app)
+      .put(c(`/quotes/${draft.body.id as string}`))
+      .set(bearer(exec))
+      .send({
+        basePremium: '123456.78',
+        optionPremiums: ['150000'],
+        terms: terms(),
+        otherTerms: null,
+        validUntil: '',
+        reason: null,
+        attachmentIds: [],
+        finalize: false,
+      })
+      .expect(400);
+    expect(noOptions.body.details[0]).toMatchObject({
+      path: 'optionPremiums',
+      message: 'The Data Sheet asks for no other options',
+    });
     const final = await request(app)
       .put(c(`/quotes/${draft.body.id as string}`))
       .set(bearer(exec))

@@ -123,6 +123,11 @@ export interface GhiQuoteDoc {
   gstRatePercent: Types.Decimal128;
   gst: Types.Decimal128 | null;
   totalPremium: Types.Decimal128 | null;
+  /**
+   * GMC Options 2–4 (alteration 3/11/2026), in the Data Sheet's order: the premium as worked out
+   * (decimal strings), or null where the insurer did not quote that option. Missing before then.
+   */
+  optionPremiums?: Array<{ basePremium: string; gst: string; totalPremium: string } | null>;
   terms: GhiQuoteTermsInput;
   /** GPA/GTLI: the rate as the insurer stated it; used in no calculation (Requirement 7.1). */
   statedRate?: string | null;
@@ -148,6 +153,7 @@ const ghiQuoteSchema = new Schema<GhiQuoteDoc>(
     gstRatePercent: { type: Schema.Types.Decimal128, required: true },
     gst: { type: Schema.Types.Decimal128, default: null },
     totalPremium: { type: Schema.Types.Decimal128, default: null },
+    optionPremiums: { type: [Schema.Types.Mixed], default: undefined },
     // Validated by GhiQuoteTermsInputSchema before every write.
     terms: { type: Schema.Types.Mixed, required: true },
     statedRate: { type: String, default: undefined },
@@ -173,6 +179,8 @@ export interface GhiQcrDoc {
   status: GhiQcrStatus;
   quoteIds: Types.ObjectId[];
   recommendedInsurerId: Types.ObjectId | null;
+  /** GMC: the option recommended with the insurer (alteration 3/11/2026); missing: Option 1. */
+  recommendedOption?: number;
   remarks: string | null;
   /** GPA/GTLI: sha256 of the content approved (Requirement 8.3); missing on GMC QCRs. */
   fingerprint?: string | null;
@@ -187,6 +195,8 @@ export interface GhiQcrDoc {
     decision: 'ACCEPTED' | 'REJECTED';
     insurerId: Types.ObjectId | null;
     quoteId: Types.ObjectId | null;
+    /** GMC: the option the client chose; missing: Option 1. */
+    option?: number;
     decidedOn: string;
     confirmedBy: string;
     note: string | null;
@@ -210,6 +220,7 @@ const ghiQcrSchema = new Schema<GhiQcrDoc>(
     status: { type: String, enum: GHI_QCR_STATUSES, required: true },
     quoteIds: [{ type: Schema.Types.ObjectId, ref: 'GhiQuote', required: true }],
     recommendedInsurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', default: null },
+    recommendedOption: { type: Number, min: 1, max: 4, default: undefined },
     remarks: text,
     fingerprint: { type: String, default: undefined },
     submitted: { type: stampSchema(), default: null },
@@ -220,6 +231,7 @@ const ghiQcrSchema = new Schema<GhiQcrDoc>(
           decision: { type: String, enum: ['ACCEPTED', 'REJECTED'], required: true },
           insurerId: { type: Schema.Types.ObjectId, ref: 'Insurer', default: null },
           quoteId: { type: Schema.Types.ObjectId, ref: 'GhiQuote', default: null },
+          option: { type: Number, min: 1, max: 4, default: undefined },
           decidedOn: { type: String, required: true },
           confirmedBy: { type: String, required: true },
           note: text,

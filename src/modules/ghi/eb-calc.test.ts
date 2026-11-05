@@ -4,6 +4,8 @@ import { premiumOf } from './ghi-quote-calc.ts';
 import {
   annualFromMonthly,
   ebPremium,
+  ebQuoteOptionPremiums,
+  lowestByEbOption,
   percentOfSumInsured,
   salaryMultipleSumInsured,
 } from './eb-calc.ts';
@@ -98,5 +100,61 @@ describe('Decimal and BigInt money agree', () => {
       gst: '180.01',
       totalPremium: '1180.06',
     });
+  });
+});
+
+describe('GPA and GTLI options (client review 4/11/2026)', () => {
+  const requirements = {
+    sumInsuredBasis: { kind: 'FLAT', amount: '500000' } as const,
+    quoteOptions: [
+      { basis: { kind: 'SALARY_MULTIPLE', multiplier: '3', maximum: null } as const },
+      { basis: { kind: 'FLAT', amount: '1000000' } as const },
+    ],
+  };
+  const insurer = (base: string, option2: string | null) =>
+    ebQuoteOptionPremiums(
+      {
+        ...ebPremium(base, '18'),
+        optionPremiums: [option2 === null ? null : ebPremium(option2, '18'), null],
+      },
+      requirements,
+    );
+
+  it('lists a quote’s premium per option, with each option’s basis', () => {
+    expect(insurer('100000', '150000')).toEqual([
+      {
+        option: 1,
+        label: 'Option 1',
+        basis: 'Flat: ₹5,00,000',
+        basePremium: '100000.00',
+        gst: '18000.00',
+        totalPremium: '118000.00',
+      },
+      {
+        option: 2,
+        label: 'Option 2',
+        basis: '3 × annual salary',
+        basePremium: '150000.00',
+        gst: '27000.00',
+        totalPremium: '177000.00',
+      },
+      {
+        option: 3,
+        label: 'Option 3',
+        basis: 'Flat: ₹10,00,000',
+        basePremium: null,
+        gst: null,
+        totalPremium: null,
+      },
+    ]);
+  });
+
+  it('marks the lowest total of each option among the insurers that quoted it', () => {
+    const lowest = lowestByEbOption([
+      insurer('100000', null),
+      insurer('110000', '150000'),
+      insurer('120000', '140000'),
+    ]);
+    expect(lowest.map((set) => [...set])).toEqual([[0], [2], []]);
   });
 });

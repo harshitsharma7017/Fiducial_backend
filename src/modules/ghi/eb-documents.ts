@@ -8,8 +8,8 @@ import {
   GHI_QCR_STATUS_LABELS,
   GHI_RELATIONSHIPS,
   GHI_RELATIONSHIP_LABELS,
-  GPA_COVERS,
-  GPA_COVER_LABELS,
+  ebQuoteOptions,
+  gpaCoverList,
   NOMINEE_REQUIREMENT_LABELS,
   EB_PRODUCT_NAMES,
   awaitingText,
@@ -82,6 +82,73 @@ function ageLimitsText(record: EbCaseRecord): string {
   }).join('; ');
 }
 
+/** Options 2–4 (client review 4/11/2026): each quoted separately, like GMC's and Fire's. */
+function optionRows(sheet: Parameters<typeof ebQuoteOptions>[0]): SheetRow[] {
+  const options = ebQuoteOptions(sheet);
+  if (options.length <= 1) return [];
+  return [
+    label(
+      'Please quote for',
+      options
+        .map((option) =>
+          option.option === 1
+            ? `${option.label}: the basis above`
+            : `${option.label}: ${basisText(option.basis)}`,
+        )
+        .join('; '),
+    ),
+  ];
+}
+
+/**
+ * The QCR's premium rows: base, GST and total for each option the case asks for (one set when it
+ * has only Option 1), the lowest of each option marked on its own row; "Not quoted" where an
+ * insurer gave no premium for an option.
+ */
+function ebPremiumRows(qcr: EbQcr): SheetRow[] {
+  const single = qcr.options.length <= 1;
+  return qcr.options.flatMap((option, at) => {
+    const name = (item: string) => (single ? item : `${option.label} — ${item.toLowerCase()}`);
+    const value = (
+      column: EbQcr['columns'][number],
+      key: 'basePremium' | 'gst' | 'totalPremium',
+    ) => {
+      const amount = single ? column[key] : column.options[at]?.[key];
+      return amount ? money(amount, true) : 'Not quoted';
+    };
+    return [
+      ...(single ? [] : [label(option.label, option.basis)]),
+      {
+        cells: [
+          name('Base premium'),
+          '',
+          ...qcr.columns.map((column) => value(column, 'basePremium')),
+        ],
+      },
+      { cells: [name('GST'), '', ...qcr.columns.map((column) => value(column, 'gst'))] },
+      {
+        cells: [
+          name('Total premium'),
+          '',
+          ...qcr.columns.map((column) => value(column, 'totalPremium')),
+        ],
+        style: 'total' as const,
+      },
+      ...(single
+        ? []
+        : [
+            {
+              cells: [
+                `${option.label} — lowest total`,
+                '',
+                ...qcr.columns.map((column) => (column.options[at]?.lowest ? 'Lowest' : '')),
+              ],
+            },
+          ]),
+    ];
+  });
+}
+
 function gpaRows(record: GpaCaseRecord): SheetRow[] {
   const sheet = record.requirements;
   return [
@@ -93,13 +160,18 @@ function gpaRows(record: GpaCaseRecord): SheetRow[] {
     },
     label('Employees to be covered', sheet.employeeCount?.toString() ?? 'Not stated'),
     label('Sum insured basis', basisText(sheet.sumInsuredBasis)),
-    ...GPA_COVERS.map((cover) =>
+    ...optionRows(sheet),
+    // The case's covers: the standard ones not deleted, then those added (3/11/2026).
+    ...gpaCoverList(sheet).map((cover) =>
       label(
-        GPA_COVER_LABELS[cover],
-        sheet.covers[cover] === null ? 'Not stated' : COVER_CHOICE_LABELS[sheet.covers[cover]],
+        cover.label,
+        cover.choice === null
+          ? 'Not stated'
+          : `${COVER_CHOICE_LABELS[cover.choice]}${cover.choice === 'REQUIRED' && cover.limit ? `: ${cover.limit}` : ''}`,
       ),
     ),
-    ...(sheet.covers.temporaryTotal === 'REQUIRED'
+    ...(sheet.covers.temporaryTotal === 'REQUIRED' &&
+    !(sheet.removedCovers ?? []).includes('temporaryTotal')
       ? [
           label(
             'Temporary total disablement benefit',
@@ -137,6 +209,7 @@ function gtliRows(record: GtliCaseRecord): SheetRow[] {
     { cells: ['Cover requirements'], style: 'section' },
     label('Employees to be covered', sheet.employeeCount?.toString() ?? 'Not stated'),
     label('Sum assured basis', basisText(sheet.sumInsuredBasis)),
+    ...optionRows(sheet),
     label('Nominees', NOMINEE_REQUIREMENT_LABELS[nomineeRequirementOf(sheet)]),
     label(
       'Free cover limit asked for',
@@ -286,6 +359,18 @@ export function ebQcrDocument(
   const span = 2 + qcr.columns.length;
   const blank = () => Array.from({ length: span - 1 }, () => null);
   const decision = qcr.decision;
+  /** The insurers' column heads, over the terms and again over the premium. */
+  const header: SheetRow = {
+    cells: [
+      'Item',
+      'As asked in the RFQ',
+      ...qcr.columns.map(
+        (column) =>
+          `${column.insurerName} (quote v${column.quoteVersion})${column.lowest ? ' — lowest' : ''}${column.recommended ? ' — recommended' : ''}`,
+      ),
+    ],
+    style: 'header',
+  };
   return {
     title: `${record.product} QCR ${record.reference} v${qcr.version} — ${record.client.name}`,
     fileBase: `${record.product}-QCR-${record.reference}-v${qcr.version}`,
@@ -308,35 +393,8 @@ export function ebQcrDocument(
             'Census',
             `${summary.employees} employees, ${summary.lives} lives, total sum insured ${rupeesText(summary.totalSumInsured)}`,
           ),
-          { cells: ['Premium'], style: 'section' },
-          {
-            cells: [
-              'Item',
-              'As asked in the RFQ',
-              ...qcr.columns.map(
-                (column) =>
-                  `${column.insurerName} (quote v${column.quoteVersion})${column.lowest ? ' — lowest' : ''}${column.recommended ? ' — recommended' : ''}`,
-              ),
-            ],
-            style: 'header',
-          },
-          {
-            cells: [
-              'Base premium',
-              '',
-              ...qcr.columns.map((column) => money(column.basePremium, true)),
-            ],
-          },
-          { cells: ['GST', '', ...qcr.columns.map((column) => money(column.gst, true))] },
-          {
-            cells: [
-              'Total premium',
-              '',
-              ...qcr.columns.map((column) => money(column.totalPremium, true)),
-            ],
-            style: 'total',
-          },
           { cells: ['Terms offered'], style: 'section' },
+          header,
           ...qcr.rows.map((row) => ({
             cells: [
               row.label,
@@ -363,11 +421,18 @@ export function ebQcrDocument(
             ],
             style: 'total',
           },
+          // The premium comes last, just above the recommendation (alteration 3/11/2026).
+          { cells: ['Premium'], style: 'section' },
+          header,
+          ...ebPremiumRows(qcr),
           { cells: ['Recommendation'], style: 'section' },
           label(
             'Recommended insurer',
             qcr.columns.find((column) => column.recommended)?.insurerName ?? 'None',
           ),
+          ...(qcr.options.length > 1
+            ? [label('Recommended option', `Option ${qcr.recommendedOption}`)]
+            : []),
           label('Remarks', qcr.remarks ?? ''),
           label(
             'Approval',
@@ -384,6 +449,8 @@ export function ebQcrDocument(
 
 export interface PlacementSlipInput {
   insurerName: string;
+  /** The option the client chose, when the case has more than Option 1. */
+  option?: { label: string; basis: string } | null;
   quoteVersion: number;
   qcrVersion: number;
   basePremium: string;
@@ -434,6 +501,9 @@ export function ebPlacementSlipDocument(
             'Based on',
             `QCR v${input.qcrVersion}, quote v${input.quoteVersion} (the client’s decision)`,
           ),
+          ...(input.option
+            ? [label('Option chosen', `${input.option.label}: ${input.option.basis}`)]
+            : []),
           { cells: ['Agreed premium'], style: 'section' },
           { cells: ['Base premium', money(input.basePremium, true)], style: 'label' },
           { cells: [`GST (${input.gstRatePercent}%)`, money(input.gst, true)], style: 'label' },

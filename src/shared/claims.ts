@@ -123,6 +123,38 @@ const ClaimDetailsShape = {
   ).default(null),
 };
 
+/**
+ * Dates staff track on a claim (alteration 3/11/2026): when the claim form went to the insurer or
+ * TPA, and when the claim was settled. Both optional; staff only (not on the employee's link).
+ * The TPA's own settlement date, when an import reports one, stays in `settlement`.
+ */
+const ClaimTrackingShape = {
+  formSubmissionDate: blankAsNull(z.iso.date({ error: 'Enter the form submission date' })).default(
+    null,
+  ),
+  settlementDate: blankAsNull(z.iso.date({ error: 'Enter the claim settlement date' })).default(
+    null,
+  ),
+};
+export type ClaimTrackingDates = {
+  formSubmissionDate: string | null;
+  settlementDate: string | null;
+};
+
+function checkTrackingDates(body: ClaimTrackingDates, context: z.RefinementCtx) {
+  if (
+    body.formSubmissionDate &&
+    body.settlementDate &&
+    body.settlementDate < body.formSubmissionDate
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['settlementDate'],
+      message: 'The settlement date cannot be before the form submission date',
+    });
+  }
+}
+
 /** Staff create a claim (C2): company, policy, employee and patient from the census. */
 export const CreateClaimRequestSchema = z
   .strictObject({
@@ -136,13 +168,22 @@ export const CreateClaimRequestSchema = z
     /** Who processes it; the creator when left out. */
     assignedTo: ObjectIdSchema.optional(),
     ...ClaimDetailsShape,
+    ...ClaimTrackingShape,
   })
-  .superRefine(checkDates);
+  .superRefine((body, context) => {
+    checkDates(body, context);
+    checkTrackingDates(body, context);
+  });
 export type CreateClaimRequest = z.infer<typeof CreateClaimRequestSchema>;
 export type CreateClaimFormValues = z.input<typeof CreateClaimRequestSchema>;
 
 /** Corrects a claim's details; the patient and policy stay as created. */
-export const UpdateClaimRequestSchema = z.strictObject(ClaimDetailsShape).superRefine(checkDates);
+export const UpdateClaimRequestSchema = z
+  .strictObject({ ...ClaimDetailsShape, ...ClaimTrackingShape })
+  .superRefine((body, context) => {
+    checkDates(body, context);
+    checkTrackingDates(body, context);
+  });
 export type UpdateClaimRequest = z.infer<typeof UpdateClaimRequestSchema>;
 
 /** Moves a claim to another status with the staff member's remark (C1). */
@@ -401,6 +442,9 @@ export const ClaimRecordSchema = z.object({
   hospital: z.object({ name: z.string(), city: z.string().nullable() }),
   admissionDate: z.iso.date(),
   dischargeDate: z.iso.date(),
+  /** Staff-tracked dates; null until entered. */
+  formSubmissionDate: z.iso.date().nullable(),
+  settlementDate: z.iso.date().nullable(),
   claimType: ClaimTypeSchema,
   amountClaimed: z.string(),
   /** Null on a claim added by a TPA import (the TPA gives no email). */

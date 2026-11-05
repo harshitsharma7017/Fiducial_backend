@@ -1020,3 +1020,57 @@ describe('table, assignment and the rest of the app', () => {
       .expect(404);
   });
 });
+
+describe('form submission and settlement dates (alteration 3/11/2026)', () => {
+  it('are kept on a claim, corrected with the timeline, and checked against each other', async () => {
+    const created = ClaimDetailSchema.parse(
+      (
+        await request(app)
+          .post(c())
+          .set(bearer(manager))
+          .send(createBody({ formSubmissionDate: '2026-06-08' }))
+          .expect(201)
+      ).body,
+    );
+    expect(created).toMatchObject({ formSubmissionDate: '2026-06-08', settlementDate: null });
+
+    const refused = await request(app)
+      .put(c(`/${created.id}`))
+      .set(bearer(manager))
+      .send({ ...details, formSubmissionDate: '2026-06-08', settlementDate: '2026-06-07' })
+      .expect(400);
+    expect(JSON.stringify(refused.body)).toContain(
+      'The settlement date cannot be before the form submission date',
+    );
+
+    const edited = ClaimDetailSchema.parse(
+      (
+        await request(app)
+          .put(c(`/${created.id}`))
+          .set(bearer(manager))
+          .send({ ...details, formSubmissionDate: '2026-06-08', settlementDate: '2026-07-01' })
+          .expect(200)
+      ).body,
+    );
+    expect(edited).toMatchObject({
+      formSubmissionDate: '2026-06-08',
+      settlementDate: '2026-07-01',
+    });
+    const change = edited.timeline
+      .flatMap((event) => event.changes ?? [])
+      .find((item) => item.field === 'Claim settlement date');
+    expect(change).toMatchObject({ before: null, after: '2026-07-01' });
+
+    // Blank clears a date; a claim created without them reads as not set.
+    const cleared = ClaimDetailSchema.parse(
+      (
+        await request(app)
+          .put(c(`/${created.id}`))
+          .set(bearer(manager))
+          .send({ ...details, formSubmissionDate: '', settlementDate: '' })
+          .expect(200)
+      ).body,
+    );
+    expect(cleared).toMatchObject({ formSubmissionDate: null, settlementDate: null });
+  });
+});

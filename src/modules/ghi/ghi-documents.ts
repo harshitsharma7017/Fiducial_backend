@@ -5,7 +5,10 @@ import {
   GHI_COVERAGE_TYPE_LABELS,
   GHI_GENDER_LABELS,
   GHI_PARENT_COVER_LABELS,
+  CENSUS_GROUPS,
+  CENSUS_GROUP_LABELS,
   GHI_QCR_STATUS_LABELS,
+  ghiQuoteOptions,
   GHI_RELATIONSHIPS,
   GHI_RELATIONSHIP_LABELS,
   GHI_ROOM_RENT_KIND_LABELS,
@@ -15,6 +18,7 @@ import {
   formatIndianNumber,
   slotText,
   type GhiCaseRecord,
+  type CensusGroup,
   type GhiCensusSummary,
   type GhiMember,
   type GhiQcr,
@@ -115,6 +119,10 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
         ? requirements.sumInsuredOptions.map(rupeesText).join(', ')
         : 'Not stated',
     ),
+    // Options 2–4 (alteration 3/11/2026): each quoted separately, like Fire's options.
+    ...((requirements.quoteOptions ?? []).length > 0
+      ? [label('Please quote for', ghiQuoteOptions(requirements).map(optionText).join('; '))]
+      : []),
     label('Room rent', roomRentText(requirements)),
     label(
       'Maternity',
@@ -168,7 +176,7 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
 export function summarySheet(summary: GhiCensusSummary): SheetModel {
   return {
     name: 'Census Summary',
-    widths: [34, 16, 16, 22],
+    widths: [30, 14, 14, 14, 14, 16, 12],
     rows: [
       { cells: ['CENSUS SUMMARY', null, null, null], style: 'title' },
       label('Employees', String(summary.employees)),
@@ -199,8 +207,68 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
       ...summary.bySumInsured.map((item) => ({
         cells: [money(item.sumInsured), item.families, item.lives, null],
       })),
+      ...breakupRows(summary),
     ],
   };
+}
+
+/**
+ * The employee age-wise and family-wise breakup (client review 4/11/2026): each age band's lives
+ * by relationship group, and the families by who they cover.
+ */
+function breakupRows(summary: GhiCensusSummary): SheetRow[] {
+  const bands = summary.byAgeBandAndGroup ?? [];
+  const families = summary.byFamily ?? [];
+  const total = (group: CensusGroup) =>
+    bands.reduce((sum, band) => sum + (band.groups[group] ?? 0), 0);
+  return [
+    ...(bands.length > 0
+      ? [
+          { cells: ['Lives by age band and relationship'], style: 'section' as const },
+          {
+            cells: [
+              'Age band (years)',
+              ...CENSUS_GROUPS.map((group) => CENSUS_GROUP_LABELS[group]),
+              'Total',
+            ],
+            style: 'header' as const,
+          },
+          ...bands.map((band) => ({
+            cells: [
+              band.label,
+              ...CENSUS_GROUPS.map((group) => band.groups[group] ?? 0),
+              band.lives,
+            ],
+          })),
+          {
+            cells: [
+              'Total',
+              ...CENSUS_GROUPS.map(total),
+              bands.reduce((sum, band) => sum + band.lives, 0),
+            ],
+            style: 'total' as const,
+          },
+        ]
+      : []),
+    ...(families.length > 0
+      ? [
+          { cells: ['Family-wise breakup'], style: 'section' as const },
+          { cells: ['Family', 'Families', 'Lives', null], style: 'header' as const },
+          ...families.map((family) => ({
+            cells: [family.label, family.families, family.lives, null],
+          })),
+          {
+            cells: [
+              'Total',
+              families.reduce((sum, family) => sum + family.families, 0),
+              families.reduce((sum, family) => sum + family.lives, 0),
+              null,
+            ],
+            style: 'total' as const,
+          },
+        ]
+      : []),
+  ];
 }
 
 export function claimsSheet(record: {
@@ -342,6 +410,62 @@ export function rfqDocument(
   };
 }
 
+/** "Option 2: sum insured ₹5,00,000 per family" (Option 1: the sums insured above). */
+function optionText(option: { label: string; sumInsured: string | null }): string {
+  return option.sumInsured === null
+    ? `${option.label}: the sums insured above (as per the census)`
+    : `${option.label}: sum insured ${rupeesText(option.sumInsured)} for every family or person`;
+}
+
+/**
+ * The QCR's premium rows: base, GST and total for each option the case asks for (one set when it
+ * has only Option 1), the lowest total of each option marked; "Not quoted" where an insurer gave
+ * no premium for an option.
+ */
+function premiumRows(qcr: GhiQcr): SheetRow[] {
+  const single = qcr.options.length <= 1;
+  return qcr.options.flatMap((option, at) => {
+    const name = (item: string) => (single ? item : `${option.label} — ${item.toLowerCase()}`);
+    const value = (
+      column: GhiQcr['columns'][number],
+      key: 'basePremium' | 'gst' | 'totalPremium',
+    ) => {
+      const amount = single ? column[key] : column.options[at]?.[key];
+      return amount ? money(amount, true) : 'Not quoted';
+    };
+    return [
+      ...(single ? [] : [label(option.label, optionText(option))]),
+      {
+        cells: [
+          name('Base premium'),
+          '',
+          ...qcr.columns.map((column) => value(column, 'basePremium')),
+        ],
+      },
+      { cells: [name('GST'), '', ...qcr.columns.map((column) => value(column, 'gst'))] },
+      {
+        cells: [
+          name('Total premium'),
+          '',
+          ...qcr.columns.map((column) => value(column, 'totalPremium')),
+        ],
+        style: 'total' as const,
+      },
+      ...(single
+        ? []
+        : [
+            {
+              cells: [
+                `${option.label} — lowest total`,
+                '',
+                ...qcr.columns.map((column) => (column.options[at]?.lowest ? 'Lowest' : '')),
+              ],
+            },
+          ]),
+    ];
+  });
+}
+
 export function qcrDocument(
   record: GhiCaseRecord,
   qcr: GhiQcr,
@@ -350,6 +474,18 @@ export function qcrDocument(
   const span = 2 + qcr.columns.length;
   const blank = () => Array.from({ length: span - 1 }, () => null);
   const decision = qcr.decision;
+  /** The insurers' column heads, over the terms and again over the premium. */
+  const header: SheetRow = {
+    cells: [
+      'Item',
+      'As asked in the RFQ',
+      ...qcr.columns.map(
+        (column) =>
+          `${column.insurerName} (quote v${column.quoteVersion})${column.lowest ? ' — lowest' : ''}${column.recommended ? ' — recommended' : ''}`,
+      ),
+    ],
+    style: 'header',
+  };
   return {
     title: `GHI QCR ${record.reference} v${qcr.version} — ${record.client.name}`,
     fileBase: `GHI-QCR-${record.reference}-v${qcr.version}`,
@@ -372,35 +508,8 @@ export function qcrDocument(
             'Census',
             `${summary.employees} employees, ${summary.lives} lives, total sum insured ${rupeesText(summary.totalSumInsured)}`,
           ),
-          { cells: ['Premium'], style: 'section' },
-          {
-            cells: [
-              'Item',
-              'As asked in the RFQ',
-              ...qcr.columns.map(
-                (column) =>
-                  `${column.insurerName} (quote v${column.quoteVersion})${column.lowest ? ' — lowest' : ''}${column.recommended ? ' — recommended' : ''}`,
-              ),
-            ],
-            style: 'header',
-          },
-          {
-            cells: [
-              'Base premium',
-              '',
-              ...qcr.columns.map((column) => money(column.basePremium, true)),
-            ],
-          },
-          { cells: ['GST', '', ...qcr.columns.map((column) => money(column.gst, true))] },
-          {
-            cells: [
-              'Total premium',
-              '',
-              ...qcr.columns.map((column) => money(column.totalPremium, true)),
-            ],
-            style: 'total',
-          },
           { cells: ['Terms offered'], style: 'section' },
+          header,
           ...qcr.rows.map((row) => ({
             cells: [
               row.label,
@@ -424,11 +533,18 @@ export function qcrDocument(
             ],
             style: 'total',
           },
+          // The premium comes last, just above the recommendation (alteration 3/11/2026).
+          { cells: ['Premium'], style: 'section' },
+          header,
+          ...premiumRows(qcr),
           { cells: ['Recommendation'], style: 'section' },
           label(
             'Recommended insurer',
             qcr.columns.find((column) => column.recommended)?.insurerName ?? 'None',
           ),
+          ...(qcr.options.length > 1
+            ? [label('Recommended option', `Option ${qcr.recommendedOption}`)]
+            : []),
           label('Remarks', qcr.remarks ?? ''),
           label(
             'Approval',
@@ -450,6 +566,7 @@ export function placementSlipDocument(
   summary: GhiCensusSummary,
   members: readonly (GhiMember & { coveredBy: string | null })[],
   payments: { received: string; references: string[] },
+  option: { label: string; sumInsured: string | null } | null = null,
 ): DocumentModel {
   const terms = compareTerms(
     record.requirements,
@@ -469,6 +586,9 @@ export function placementSlipDocument(
           label('To', quote.insurerName),
           ...insuredRows(record),
           label('Based on', `QCR v${qcrVersion}, final agreed terms v${quote.version}`),
+          ...(option && option.sumInsured !== null
+            ? [label('Option chosen', optionText(option))]
+            : []),
           { cells: ['Final agreed premium'], style: 'section' },
           { cells: ['Base premium', money(quote.basePremium, true)], style: 'label' },
           { cells: [`GST (${quote.gstRatePercent}%)`, money(quote.gst, true)], style: 'label' },

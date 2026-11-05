@@ -19,6 +19,7 @@ import {
   type SetClaimHrContactRequest,
   type TransitionClaimRequest,
   type TransitionClaimResponse,
+  type ClaimTrackingDates,
   type UpdateClaimRequest,
 } from '../../shared/index.ts';
 import { createHash } from 'node:crypto';
@@ -100,7 +101,7 @@ async function assertAssignee(userId: string, path = 'assignedTo'): Promise<Type
 /** The claim document of an eligible claim, shared by staff and employee creation. */
 export function newClaimDoc(
   eligible: EligibleClaim,
-  details: Omit<UpdateClaimRequest, never>,
+  details: Omit<UpdateClaimRequest, keyof ClaimTrackingDates> & Partial<ClaimTrackingDates>,
   extra: Pick<ClaimDoc, 'claimNumber' | 'source' | 'linkId' | 'assignedTo' | 'createdBy'>,
   now: Date,
 ) {
@@ -128,6 +129,8 @@ export function newClaimDoc(
     hospital: details.hospital,
     admissionDate: details.admissionDate,
     dischargeDate: details.dischargeDate,
+    formSubmissionDate: details.formSubmissionDate ?? null,
+    settlementDate: details.settlementDate ?? null,
     claimType: details.claimType,
     amountClaimed: toDecimal128(details.amountClaimed),
     contactEmail: details.contactEmail.toLowerCase(),
@@ -409,6 +412,8 @@ const FIELD_LABELS: Record<string, string> = {
   hospital: 'Hospital',
   admissionDate: 'Admission date',
   dischargeDate: 'Discharge date',
+  formSubmissionDate: 'Form submission date',
+  settlementDate: 'Claim settlement date',
   claimType: 'Claim type',
   amountClaimed: 'Amount claimed',
   contactEmail: 'Contact email',
@@ -441,6 +446,8 @@ export async function updateClaim(
     hospital: hospitalText(claim.hospital),
     admissionDate: claim.admissionDate,
     dischargeDate: claim.dischargeDate,
+    formSubmissionDate: claim.formSubmissionDate ?? null,
+    settlementDate: claim.settlementDate ?? null,
     claimType: CLAIM_TYPE_LABELS[claim.claimType],
     amountClaimed: amountText(claim.amountClaimed),
     contactEmail: claim.contactEmail,
@@ -450,6 +457,8 @@ export async function updateClaim(
     hospital: hospitalText(input.hospital),
     admissionDate: input.admissionDate,
     dischargeDate: input.dischargeDate,
+    formSubmissionDate: input.formSubmissionDate,
+    settlementDate: input.settlementDate,
     claimType: CLAIM_TYPE_LABELS[input.claimType],
     amountClaimed: amountText(input.amountClaimed),
     contactEmail: input.contactEmail.toLowerCase(),
@@ -472,6 +481,8 @@ export async function updateClaim(
           hospital: input.hospital,
           admissionDate: input.admissionDate,
           dischargeDate: input.dischargeDate,
+          formSubmissionDate: input.formSubmissionDate,
+          settlementDate: input.settlementDate,
           claimType: input.claimType,
           amountClaimed: toDecimal128(input.amountClaimed),
           contactEmail: input.contactEmail.toLowerCase(),

@@ -11,6 +11,7 @@ import {
   GhiPercentSchema,
   GhiRupeesSchema,
   MAX_GHI_INSURERS,
+  MAX_GHI_QUOTE_OPTIONS,
   type GhiWaiver,
 } from './ghi.ts';
 import { GhiCensusSummarySchema } from './ghi-census.ts';
@@ -247,9 +248,24 @@ export function emptyGhiQuoteTerms(): GhiQuoteTermsInput {
 
 export const MAX_GHI_QUOTE_FILES = 10;
 
+/** 1 to 4: Option 1 is the case's own sums insured, 2–4 those the Data Sheet adds. */
+const OptionNumberSchema = z
+  .number()
+  .int()
+  .min(1, 'Choose an option')
+  .max(MAX_GHI_QUOTE_OPTIONS, 'Choose an option');
+
 const QuoteBodySchema = z.strictObject({
-  /** Before GST. Blank only on a draft. */
+  /** Option 1's premium, before GST. Blank only on a draft. */
   basePremium: blankAsNull(GhiAmountSchema),
+  /**
+   * The premiums before GST of Options 2–4, in the Data Sheet's order (alteration 3/11/2026).
+   * Blank: the insurer did not quote that option.
+   */
+  optionPremiums: z
+    .array(blankAsNull(GhiAmountSchema))
+    .max(MAX_GHI_QUOTE_OPTIONS - 1)
+    .default([]),
   terms: GhiQuoteTermsInputSchema,
   otherTerms: OptionalText(4000),
   validUntil: blankAsNull(z.iso.date({ error: 'Enter a date' })),
@@ -285,6 +301,18 @@ export const GhiDeviationSchema = z.object({
 });
 export type GhiDeviation = z.infer<typeof GhiDeviationSchema>;
 
+/** One option of a quote with its premium (GST and total by the API); null: not quoted. */
+export const GhiQuoteOptionPremiumSchema = z.object({
+  option: z.number().int(),
+  label: z.string(),
+  /** Null for Option 1 (the case's own sums insured). */
+  sumInsured: z.string().nullable(),
+  basePremium: z.string().nullable(),
+  gst: z.string().nullable(),
+  totalPremium: z.string().nullable(),
+});
+export type GhiQuoteOptionPremium = z.infer<typeof GhiQuoteOptionPremiumSchema>;
+
 export const GhiQuoteSchema = z.object({
   id: ObjectIdSchema,
   insurerId: ObjectIdSchema,
@@ -298,6 +326,8 @@ export const GhiQuoteSchema = z.object({
   gstRatePercent: z.string(),
   gst: z.string().nullable(),
   totalPremium: z.string().nullable(),
+  /** Every option of the case with this quote's premium for it; Option 1 is the premium above. */
+  options: z.array(GhiQuoteOptionPremiumSchema),
   terms: GhiQuoteTermsInputSchema,
   otherTerms: z.string().nullable(),
   validUntil: z.iso.date().nullable(),
@@ -334,6 +364,8 @@ export const SaveGhiQcrRequestSchema = z.strictObject({
     .max(MAX_GHI_INSURERS, `Compare at most ${MAX_GHI_INSURERS} insurers`)
     .refine(uniqueIds, 'Each quote once'),
   recommendedInsurerId: ObjectIdSchema.nullable(),
+  /** The option recommended with the insurer (Option 1 unless the case has more). */
+  recommendedOption: OptionNumberSchema.default(1),
   remarks: OptionalText(2000),
 });
 export type SaveGhiQcrRequest = z.infer<typeof SaveGhiQcrRequestSchema>;
@@ -366,6 +398,8 @@ export const RecordGhiClientDecisionRequestSchema = z
     decision: z.enum(['ACCEPTED', 'REJECTED']),
     /** The insurer the client chose; needed when accepted. */
     insurerId: ObjectIdSchema.nullable(),
+    /** The option the client chose with it (Option 1 unless the case has more). */
+    option: OptionNumberSchema.default(1),
     decidedOn: z.iso.date({ error: 'Enter the date of the client’s decision' }),
     confirmedBy: z
       .string()
@@ -409,8 +443,15 @@ export const GhiQcrSchema = z.object({
       recommended: z.boolean(),
       deviations: z.number().int(),
       missing: z.number().int(),
+      /** The insurer's premium for each option; `lowest` among the insurers that quoted it. */
+      options: z.array(GhiQuoteOptionPremiumSchema.extend({ lowest: z.boolean() })),
     }),
   ),
+  /** The options compared (Option 1, then those the Data Sheet adds). */
+  options: z.array(
+    z.object({ option: z.number().int(), label: z.string(), sumInsured: z.string().nullable() }),
+  ),
+  recommendedOption: z.number().int(),
   /** The side-by-side table: what the RFQ asked for and each insurer's offer, flagged. */
   rows: z.array(
     z.object({
@@ -431,6 +472,9 @@ export const GhiQcrSchema = z.object({
       insurerId: ObjectIdSchema.nullable(),
       insurerName: z.string().nullable(),
       quoteId: ObjectIdSchema.nullable(),
+      /** The option chosen with the insurer. */
+      option: z.number().int(),
+      optionLabel: z.string(),
       decidedOn: z.iso.date(),
       confirmedBy: z.string(),
       note: z.string().nullable(),
@@ -470,7 +514,13 @@ export type GhiFinalQcrFormValues = z.input<typeof RecordGhiFinalQcrRequestSchem
 export const GhiFinalQcrStateSchema = z.object({
   /** The QCR and quote the client accepted; null until the client accepts. */
   accepted: z
-    .object({ qcrId: ObjectIdSchema, qcrVersion: z.number().int(), quote: GhiQuoteSchema })
+    .object({
+      qcrId: ObjectIdSchema,
+      qcrVersion: z.number().int(),
+      quote: GhiQuoteSchema,
+      /** The option the client chose, with the accepted quote's premium for it. */
+      option: GhiQuoteOptionPremiumSchema,
+    })
     .nullable(),
   /** The final agreed terms in force; the earlier ones stay in history. */
   current: GhiQuoteSchema.nullable(),

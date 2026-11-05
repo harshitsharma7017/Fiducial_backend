@@ -54,6 +54,9 @@ export interface ClaimDoc {
   hospital: { name: string; city: string | null };
   admissionDate: string;
   dischargeDate: string;
+  /** Staff-tracked dates (alteration 3/11/2026); missing on claims created before them. */
+  formSubmissionDate?: string | null;
+  settlementDate?: string | null;
   claimType: ClaimType;
   amountClaimed: Types.Decimal128;
   /** Null on a claim added by a TPA import (N11): the TPA gives no email. */
@@ -134,6 +137,8 @@ const claimSchema = new Schema<ClaimDoc>(
     },
     admissionDate: { type: String, required: true },
     dischargeDate: { type: String, required: true },
+    formSubmissionDate: { type: String, default: null },
+    settlementDate: { type: String, default: null },
     claimType: { type: String, enum: CLAIM_TYPES, required: true },
     amountClaimed: { type: Schema.Types.Decimal128, required: true },
     contactEmail: text,

@@ -21,6 +21,7 @@ import { conflict, notFound, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { caseBands } from '../age-bands/case-bands.ts';
 import { notifyGhiCaseEvent } from '../notifications/proposal-notifications.ts';
+import { ebQuoteOptionPremiums } from './eb-calc.ts';
 import { toEbCaseRecord } from './eb-cases.service.ts';
 import { ebPlacementSlipDocument, type PlacementSlipInput } from './eb-documents.ts';
 import { membersForEbDocuments, summaryOf } from './eb-members.service.ts';
@@ -30,6 +31,7 @@ import {
   type EbPolicySnapshotDoc,
 } from './eb-placement.model.ts';
 import { planView } from './eb-plan-view.ts';
+import { ebRequirementsOf } from './eb-quotes.service.ts';
 import { ebQcrOutOfDate, getEbQcr, latestEbQcr, loadLatestEbQcr } from './eb-qcr.service.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { GhiMemberModel } from './ghi-census.model.ts';
@@ -54,6 +56,7 @@ import {
   GhiQuoteModel,
   type GhiPaymentDoc,
   type GhiQcrDoc,
+  type GhiQuoteDoc,
 } from './ghi-workflow.model.ts';
 import type { CaseScope } from './products/profile.ts';
 
@@ -63,6 +66,25 @@ import type { CaseScope } from './products/profile.ts';
 
 const money = (value: Types.Decimal128 | null | undefined) =>
   moneyString(new Decimal(value?.toString() ?? '0'));
+
+/**
+ * The base premium and GST of the option the client chose (client review 4/11/2026); Option 1's
+ * are the quote's own. The agreed premium is that option's total.
+ */
+function chosenPremium(
+  doc: GhiCaseDoc,
+  quote: GhiQuoteDoc,
+  option: number,
+): { basePremium: string; gst: string; label: string; basis: string } {
+  const premiums = ebQuoteOptionPremiums(quote, ebRequirementsOf(doc));
+  const chosen = premiums.find((item) => item.option === option) ?? premiums[0]!;
+  return {
+    basePremium: chosen.basePremium ?? money(quote.basePremium),
+    gst: chosen.gst ?? money(quote.gst),
+    label: chosen.label,
+    basis: chosen.basis,
+  };
+}
 
 /** The accepted decision in force: on the latest QCR, approved, accepted (9.2). */
 export async function acceptedDecision(caseId: Types.ObjectId, session?: mongo.ClientSession) {
@@ -163,6 +185,19 @@ export async function recordEbClientDecision(
       message: 'Choose one of the insurers on the approved QCR',
     });
   }
+  // The option the client chose (client review 4/11/2026): its total is the agreed premium.
+  const option = input.decision === 'ACCEPTED' ? input.option : 1;
+  const chosen = column?.options.find((item) => item.option === option);
+  if (column && !chosen?.totalPremium) {
+    issues.push({
+      location: 'body',
+      path: 'option',
+      message:
+        option > view.options.length
+          ? 'Choose one of the case’s options'
+          : `The chosen insurer did not quote Option ${option}`,
+    });
+  }
   if (issues.length > 0) throw validationError(issues);
   const fileIds = await assertCaseFiles(doc._id, input.fileIds, 'CLIENT_DECISION', 'fileIds');
   const actorId = new Types.ObjectId(actor.id);
@@ -175,7 +210,8 @@ export async function recordEbClientDecision(
     decision: input.decision,
     insurerId: column ? new Types.ObjectId(column.insurerId) : null,
     quoteId: column ? new Types.ObjectId(column.quoteId) : null,
-    agreedPremium: column ? toDecimal128(column.totalPremium) : null,
+    agreedPremium: chosen?.totalPremium ? toDecimal128(chosen.totalPremium) : null,
+    option: column ? option : undefined,
     quoteVersion: column ? column.quoteVersion : null,
     decidedOn: input.decidedOn,
     confirmedBy: input.confirmedBy,
@@ -208,7 +244,7 @@ export async function recordEbClientDecision(
             actorId,
             message:
               input.decision === 'ACCEPTED'
-                ? `Client accepted QCR v${qcr.version}: ${column?.insurerName ?? 'insurer'}, agreed premium ₹${column?.totalPremium} (confirmed by ${input.confirmedBy})`
+                ? `Client accepted QCR v${qcr.version}: ${column?.insurerName ?? 'insurer'}${option > 1 ? `, Option ${option}` : ''}, agreed premium ₹${chosen?.totalPremium} (confirmed by ${input.confirmedBy})`
                 : `Client rejected QCR v${qcr.version}: ${input.reason}`,
           },
         },
@@ -568,8 +604,10 @@ export async function ebPlacementState(scope: CaseScope, id: string): Promise<Eb
     missing: inputs.missing,
     insurerName: quote ? (insurers.get(quote.insurerId.toHexString()) ?? 'Insurer') : null,
     quoteVersion: quote?.version ?? null,
-    basePremium: quote ? money(quote.basePremium) : null,
-    gst: quote ? money(quote.gst) : null,
+    basePremium: quote
+      ? chosenPremium(doc, quote, inputs.accepted?.decision.option ?? 1).basePremium
+      : null,
+    gst: quote ? chosenPremium(doc, quote, inputs.accepted?.decision.option ?? 1).gst : null,
     agreedPremium: inputs.agreed,
     receivedPayments: inputs.received.map((payment) => ({
       amount: money(payment.amount),
@@ -628,7 +666,14 @@ export async function ebPlacementSlipFile(
       }))
     : await membersForEbDocuments(doc);
   const qcr = accepted?.qcr ?? (await latestEbQcr(doc._id));
+  // The option chosen (client review 4/11/2026), named on the slip when the case has more than one.
+  const chosenOption = qcr?.clientDecision?.option ?? 1;
+  const chosenQuote =
+    chosenOption > 1 && qcr?.clientDecision?.quoteId
+      ? await GhiQuoteModel.findOne({ _id: qcr.clientDecision.quoteId, caseId: doc._id }).lean()
+      : null;
   const input: PlacementSlipInput = {
+    option: chosenQuote ? chosenPremium(doc, chosenQuote, chosenOption) : null,
     insurerName: state.insurerName ?? 'Insurer',
     quoteVersion: state.quoteVersion ?? 0,
     qcrVersion: qcr?.version ?? 0,
@@ -723,8 +768,10 @@ export async function issueEbPlacement(
           qcrId: accepted.qcr._id,
           quoteId: quote._id,
           quoteVersion: quote.version,
-          basePremium: quote.basePremium ?? toDecimal128('0'),
-          gst: quote.gst ?? toDecimal128('0'),
+          basePremium: toDecimal128(
+            chosenPremium(doc, quote, accepted.decision.option ?? 1).basePremium,
+          ),
+          gst: toDecimal128(chosenPremium(doc, quote, accepted.decision.option ?? 1).gst),
           agreedTotal: accepted.decision.agreedPremium!,
           plan: {
             planId: plan.planId,

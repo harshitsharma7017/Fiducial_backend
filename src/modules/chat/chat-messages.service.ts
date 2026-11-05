@@ -1,6 +1,7 @@
 import {
   ERROR_CODES,
   MAX_CHAT_FILE_BYTES,
+  MAX_CHAT_FILE_MB,
   isChatFileType,
   type ChatAttachment,
   type ChatMessage,
@@ -209,7 +210,11 @@ export async function uploadChatFile(
     throw validationError([{ location: 'body', path: '', message: 'The file is empty' }]);
   }
   if (data.length > MAX_CHAT_FILE_BYTES) {
-    throw new AppError(413, ERROR_CODES.PAYLOAD_TOO_LARGE, 'The file is larger than 10 MB');
+    throw new AppError(
+      413,
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `The file is larger than ${MAX_CHAT_FILE_MB} MB`,
+    );
   }
   // The file goes to the file store (S3); the record keeps its key.
   const storageKey = await putFile('chat', data, type, fileName);

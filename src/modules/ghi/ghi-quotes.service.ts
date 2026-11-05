@@ -23,7 +23,7 @@ import {
 } from './ghi-common.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { assertCaseFiles, fileNames } from './ghi-files.service.ts';
-import { deviationsOf, premiumOf } from './ghi-quote-calc.ts';
+import { deviationsOf, premiumOf, quoteOptionPremiums } from './ghi-quote-calc.ts';
 import { gmcFamilyCover } from './products/gmc.ts';
 import { GhiQuoteModel, type GhiQuoteDoc } from './ghi-workflow.model.ts';
 
@@ -56,6 +56,8 @@ export function toQuote(
     gstRatePercent: new Decimal(doc.gstRatePercent.toString()).toFixed(),
     gst: str(doc.gst),
     totalPremium: str(doc.totalPremium),
+    // Final agreed terms hold one premium, for the option the client chose.
+    options: doc.kind === 'QUOTE' ? quoteOptionPremiums(doc, caseDoc.requirements) : [],
     terms: doc.terms,
     otherTerms: doc.otherTerms,
     validUntil: doc.validUntil,
@@ -162,6 +164,27 @@ async function checkQuote(
   if (input.basePremium !== null && new Decimal(input.basePremium).lessThanOrEqualTo(0)) {
     issues.push({ location: 'body', path: 'basePremium', message: 'Enter a premium above 0' });
   }
+  // Options 2–4: one premium per option the Data Sheet adds, blank where not quoted.
+  const extraOptions = doc.requirements.quoteOptions?.length ?? 0;
+  if (input.optionPremiums.length > extraOptions) {
+    issues.push({
+      location: 'body',
+      path: 'optionPremiums',
+      message:
+        extraOptions === 0
+          ? 'The Data Sheet asks for no other options'
+          : `The Data Sheet asks for ${extraOptions + 1} options`,
+    });
+  }
+  input.optionPremiums.forEach((premium, index) => {
+    if (premium !== null && new Decimal(premium).lessThanOrEqualTo(0)) {
+      issues.push({
+        location: 'body',
+        path: `optionPremiums.${index}`,
+        message: 'Enter a premium above 0',
+      });
+    }
+  });
   const earlierFinal = await GhiQuoteModel.exists({
     caseId: doc._id,
     insurerId,
@@ -191,6 +214,9 @@ function quoteFields(doc: GhiCaseDoc, input: UpdateGhiQuoteRequest, actorId: Typ
     gstRatePercent: toDecimal128(gstRatePercent),
     gst: premium ? toDecimal128(premium.gst) : null,
     totalPremium: premium ? toDecimal128(premium.totalPremium) : null,
+    optionPremiums: input.optionPremiums.map((value) =>
+      value === null ? null : premiumOf(value, gstRatePercent),
+    ),
     terms: input.terms,
     otherTerms: input.otherTerms,
     validUntil: input.validUntil,

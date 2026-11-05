@@ -97,6 +97,39 @@ export const SumInsuredBasisSchema = z
   .nullable();
 export type SumInsuredBasis = NonNullable<z.infer<typeof SumInsuredBasisSchema>>;
 
+/**
+ * Options 2–4 of a GPA or GTLI case (client review 4/11/2026, as in GMC and Fire): other sum
+ * insured bases each insurer quotes besides Option 1 (the Data Sheet's own basis).
+ */
+export const EB_MAX_QUOTE_OPTIONS = 4;
+const EbQuoteOptionsSchema = z
+  .array(z.strictObject({ basis: SumInsuredBasisSchema.unwrap() }))
+  .max(EB_MAX_QUOTE_OPTIONS - 1, `Offer at most ${EB_MAX_QUOTE_OPTIONS} options`)
+  .default([]);
+
+export interface EbQuoteOptionInfo {
+  /** 1 to 4. */
+  option: number;
+  label: string;
+  /** The option's sum insured basis (Option 1: the Data Sheet's). */
+  basis: SumInsuredBasis | null;
+}
+
+/** The options each insurer quotes: Option 1 (the Data Sheet's basis), then those added. */
+export function ebQuoteOptions(requirements: {
+  sumInsuredBasis: SumInsuredBasis | null;
+  quoteOptions?: readonly { basis: SumInsuredBasis }[] | undefined;
+}): EbQuoteOptionInfo[] {
+  return [
+    { option: 1, label: 'Option 1', basis: requirements.sumInsuredBasis },
+    ...(requirements.quoteOptions ?? []).map((item, index) => ({
+      option: index + 2,
+      label: `Option ${index + 2}`,
+      basis: item.basis,
+    })),
+  ];
+}
+
 /** The GPA covers asked for (open question 10). */
 export const GPA_COVERS = [
   'accidentalDeath',
@@ -118,6 +151,63 @@ export const COVER_CHOICE_LABELS: Record<CoverChoice, string> = {
   NOT_REQUIRED: 'Not required',
 };
 export const CoverChoiceSchema = z.enum(COVER_CHOICES).nullable();
+
+/**
+ * Covers added to a GPA case besides the four standard ones (alteration 3/11/2026: add and delete
+ * in each cover). `id` keeps the insurer's quote terms attached to the right cover.
+ */
+export const MAX_CUSTOM_GPA_COVERS = 20;
+export const GpaCustomCoverSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9]{1,16}$/, 'A cover id is letters and digits'),
+  name: z.string().trim().min(1, 'Name the cover').max(120, 'This is too long'),
+  choice: CoverChoiceSchema,
+  /** The limit asked for, as the client states it (amount or text). */
+  limit: OptionalText(200),
+});
+export type GpaCustomCover = z.infer<typeof GpaCustomCoverSchema>;
+
+/** One cover of a case as the RFQ, the quotes and the QCR show it. */
+export interface GpaCoverEntry {
+  /** `covers.<standard key>` or `customCovers.<id>`: the field it is kept in. */
+  key: string;
+  label: string;
+  choice: CoverChoice | null;
+  limit: string | null;
+  /** The standard cover it is, or null for an added one. */
+  standard: GpaCover | null;
+  /** The added cover's id. */
+  customId: string | null;
+}
+
+/**
+ * The covers of a case, in order: the standard ones not deleted, then the added ones. Cases saved
+ * before covers could be added or deleted have all four standard covers.
+ */
+export function gpaCoverList(sheet: {
+  covers: Record<GpaCover, CoverChoice | null>;
+  removedCovers?: readonly GpaCover[] | undefined;
+  customCovers?: readonly GpaCustomCover[] | undefined;
+}): GpaCoverEntry[] {
+  const removed = new Set(sheet.removedCovers ?? []);
+  return [
+    ...GPA_COVERS.filter((cover) => !removed.has(cover)).map((cover) => ({
+      key: `covers.${cover}`,
+      label: GPA_COVER_LABELS[cover],
+      choice: sheet.covers[cover],
+      limit: null,
+      standard: cover,
+      customId: null,
+    })),
+    ...(sheet.customCovers ?? []).map((cover) => ({
+      key: `customCovers.${cover.id}`,
+      label: cover.name,
+      choice: cover.choice,
+      limit: cover.limit,
+      standard: null,
+      customId: cover.id,
+    })),
+  ];
+}
 
 /** How a GPA dependant's sum insured is set (open question 11). */
 export const DEPENDANT_BASES = [
@@ -282,6 +372,7 @@ export const GpaRequirementsInputSchema = z
     company: shared.company,
     employeeCount: EmployeeCountSchema,
     sumInsuredBasis: SumInsuredBasisSchema,
+    quoteOptions: EbQuoteOptionsSchema,
     covers: z.strictObject(
       Object.fromEntries(GPA_COVERS.map((cover) => [cover, CoverChoiceSchema])) as Record<
         GpaCover,
@@ -293,6 +384,20 @@ export const GpaRequirementsInputSchema = z
       /** 1 to 520: a technical bound, not a client rule. */
       weeks: z.number().int('Enter a whole number').min(1).max(520).nullable(),
     }),
+    /** Standard covers deleted from this case: not asked, not quoted, not compared. */
+    removedCovers: z
+      .array(z.enum(GPA_COVERS))
+      .max(GPA_COVERS.length)
+      .refine((values) => new Set(values).size === values.length, 'Each cover once')
+      .default([]),
+    customCovers: z
+      .array(GpaCustomCoverSchema)
+      .max(MAX_CUSTOM_GPA_COVERS, `Add at most ${MAX_CUSTOM_GPA_COVERS} covers`)
+      .refine(
+        (covers) => new Set(covers.map((cover) => cover.id)).size === covers.length,
+        'Each cover once',
+      )
+      .default([]),
     otherCovers: OptionalText(1000),
     dependantBasis: DependantBasisSchema,
     /** Who needs a nominee (N5); missing: each employee's own row. */
@@ -304,7 +409,23 @@ export const GpaRequirementsInputSchema = z
   })
   .superRefine((input, context) => {
     uniqueClaimYears(input.claims, context);
-    if (input.covers.temporaryTotal !== 'REQUIRED') {
+    const names = new Set<string>();
+    input.customCovers.forEach((cover, index) => {
+      const key = cover.name.toLowerCase();
+      const standard = GPA_COVERS.some((item) => GPA_COVER_LABELS[item].toLowerCase() === key);
+      if (names.has(key) || standard) {
+        context.addIssue({
+          code: 'custom',
+          path: ['customCovers', index, 'name'],
+          message: 'There is already a cover with this name',
+        });
+      }
+      names.add(key);
+    });
+    if (
+      input.covers.temporaryTotal !== 'REQUIRED' ||
+      input.removedCovers.includes('temporaryTotal')
+    ) {
       for (const key of ['weeklyBenefit', 'weeks'] as const) {
         if (input.temporaryTotal[key] !== null) {
           context.addIssue({
@@ -324,6 +445,7 @@ export const GtliRequirementsInputSchema = z
     company: shared.company,
     employeeCount: EmployeeCountSchema,
     sumInsuredBasis: SumInsuredBasisSchema,
+    quoteOptions: EbQuoteOptionsSchema,
     /** The free cover limit asked for: recorded and flagged, not enforced (open question 12). */
     freeCoverLimit: PositiveRupeesSchema.nullable(),
     /** Who needs a nominee (N6); missing: each employee's own row. */
@@ -358,6 +480,7 @@ export function emptyGpaRequirements(): GpaRequirementsInput {
     company: noCompany(),
     employeeCount: null,
     sumInsuredBasis: null,
+    quoteOptions: [],
     covers: {
       accidentalDeath: null,
       permanentTotal: null,
@@ -365,6 +488,8 @@ export function emptyGpaRequirements(): GpaRequirementsInput {
       temporaryTotal: null,
     },
     temporaryTotal: { weeklyBenefit: null, weeks: null },
+    removedCovers: [],
+    customCovers: [],
     otherCovers: null,
     dependantBasis: null,
     ageLimits: noAgeLimits(),
@@ -379,6 +504,7 @@ export function emptyGtliRequirements(): GtliRequirementsInput {
     company: noCompany(),
     employeeCount: null,
     sumInsuredBasis: null,
+    quoteOptions: [],
     freeCoverLimit: null,
     ageLimits: noAgeLimits(),
     ageReferenceDate: null,
@@ -429,12 +555,9 @@ export function gpaMissing(
   },
 ): MissingItem[] {
   const missing = basisMissing(input.sumInsuredBasis);
-  for (const cover of GPA_COVERS) {
-    if (input.covers[cover] === null) {
-      missing.push({
-        field: `covers.${cover}`,
-        label: `${GPA_COVER_LABELS[cover]}: Required or Not required`,
-      });
+  for (const cover of gpaCoverList(input)) {
+    if (cover.choice === null) {
+      missing.push({ field: cover.key, label: `${cover.label}: Required or Not required` });
     }
   }
   if (context.planHasDependants && input.dependantBasis === null) {

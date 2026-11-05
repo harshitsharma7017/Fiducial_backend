@@ -4,9 +4,11 @@ import {
   GtliRequirementsInputSchema,
   emptyGpaRequirements,
   emptyGtliRequirements,
+  gpaCoverList,
   gpaMissing,
   gtliMissing,
 } from './eb-requirements.ts';
+import { compareGpaTerms, emptyGpaQuoteTerms } from './eb-quotes.ts';
 
 const paths = (result: { success: boolean; error?: { issues: Array<{ path: PropertyKey[] }> } }) =>
   result.success ? [] : (result.error?.issues ?? []).map((issue) => issue.path.join('.'));
@@ -124,6 +126,82 @@ describe('GPA Data Sheet (Requirement 4)', () => {
       'covers.temporaryTotal',
     ]);
     expect(gpaMissing(empty, { planHasDependants: true }).at(-1)?.field).toBe('dependantBasis');
+  });
+
+  describe('adding and deleting covers (alteration 3/11/2026)', () => {
+    const withCovers = () => ({
+      ...sheet(),
+      removedCovers: ['permanentPartial', 'temporaryTotal'],
+      temporaryTotal: { weeklyBenefit: null, weeks: null },
+      customCovers: [
+        { id: 'c1', name: 'Medical expenses', choice: 'REQUIRED', limit: '10% of the claim' },
+        { id: 'c2', name: 'Education benefit', choice: null, limit: null },
+      ],
+    });
+
+    it('lists the standard covers not deleted, then the added ones', () => {
+      const parsed = GpaRequirementsInputSchema.parse(withCovers());
+      expect(gpaCoverList(parsed).map((cover) => [cover.key, cover.label, cover.choice])).toEqual([
+        ['covers.accidentalDeath', 'Accidental death', 'REQUIRED'],
+        ['covers.permanentTotal', 'Permanent total disablement', 'REQUIRED'],
+        ['customCovers.c1', 'Medical expenses', 'REQUIRED'],
+        ['customCovers.c2', 'Education benefit', null],
+      ]);
+      // A deleted cover is never missing; an added one without a choice is.
+      expect(gpaMissing(parsed, { planHasDependants: false }).map((item) => item.field)).toEqual([
+        'customCovers.c2',
+      ]);
+    });
+
+    it('reads a sheet saved before covers could be added or deleted as the four standard ones', () => {
+      const { removedCovers: _removed, customCovers: _custom, ...old } = emptyGpaRequirements();
+      const parsed = GpaRequirementsInputSchema.parse(old);
+      expect(parsed).toMatchObject({ removedCovers: [], customCovers: [] });
+      expect(gpaCoverList(parsed)).toHaveLength(4);
+    });
+
+    it('refuses a nameless or repeated cover, and benefit details for a deleted TTD cover', () => {
+      expect(
+        paths(
+          GpaRequirementsInputSchema.safeParse({
+            ...withCovers(),
+            customCovers: [
+              { id: 'c1', name: '', choice: 'REQUIRED', limit: null },
+              { id: 'c2', name: 'Accidental death', choice: 'REQUIRED', limit: null },
+              { id: 'c3', name: 'Funeral', choice: 'REQUIRED', limit: null },
+              { id: 'c4', name: 'funeral', choice: 'REQUIRED', limit: null },
+            ],
+          }),
+        ),
+      ).toEqual(['customCovers.0.name', 'customCovers.1.name', 'customCovers.3.name']);
+      expect(
+        paths(
+          GpaRequirementsInputSchema.safeParse({
+            ...withCovers(),
+            temporaryTotal: { weeklyBenefit: '5000', weeks: null },
+          }),
+        ),
+      ).toEqual(['temporaryTotal.weeklyBenefit']);
+    });
+
+    it('compares the quote cover by cover, the added ones included', () => {
+      const parsed = GpaRequirementsInputSchema.parse(withCovers());
+      const terms = {
+        ...emptyGpaQuoteTerms(),
+        customCovers: {
+          c1: { offer: 'OFFERED' as const, limitAmount: null, limitText: '10% of the claim' },
+        },
+      };
+      terms.covers.accidentalDeath = { offer: 'OFFERED', limitAmount: '2500000', limitText: null };
+      expect(
+        compareGpaTerms(parsed, terms).map((row) => [row.label, row.requested, row.kind]),
+      ).toEqual([
+        ['Accidental death', 'Required', 'MATCH'],
+        ['Permanent total disablement', 'Required', 'MISSING'],
+        ['Medical expenses', 'Required (10% of the claim)', 'MATCH'],
+        ['Education benefit', 'Not stated', 'NOT_ASKED'],
+      ]);
+    });
   });
 });
 

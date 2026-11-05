@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import { ChatHub } from '../src/modules/chat/chat-hub.ts';
+import { MAX_CHAT_FILE_BYTES } from '../src/shared/index.ts';
 import { bearer, createTestApp, createTestUser, loginAs, useTestDatabase } from './helpers/app.ts';
 
 // The internal chat (client review, 27 Oct 2026): direct messages, groups, file sharing and live
@@ -238,6 +239,23 @@ describe('groups', () => {
       .set(bearer(asha.token))
       .set('Content-Type', 'application/x-msdownload')
       .send(Buffer.from('MZ'))
+      .expect(415);
+  });
+
+  it('takes files larger than the old 10 MB, and no audio files', async () => {
+    const large = Buffer.alloc(12 * 1024 * 1024, 0x20);
+    await request(app)
+      .post(`/api/v1/chat/conversations/${groupId}/files?fileName=big.txt`)
+      .set(bearer(asha.token))
+      .set('Content-Type', 'text/plain')
+      .send(large)
+      .expect(201);
+    expect(MAX_CHAT_FILE_BYTES).toBe(100 * 1024 * 1024);
+    await request(app)
+      .post(`/api/v1/chat/conversations/${groupId}/files?fileName=note.webm`)
+      .set(bearer(asha.token))
+      .set('Content-Type', 'audio/webm')
+      .send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
       .expect(415);
   });
 

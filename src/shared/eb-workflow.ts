@@ -5,7 +5,8 @@ import { DOCUMENT_FORMATS } from './documents.ts';
 import { compareDecimal, subtractMoneyFloor, sumMoney } from './eb-money.ts';
 import { EbCaseRecordSchema } from './eb.ts';
 import { EbPlanAssignmentSchema } from './eb-plan.ts';
-import { EbDeviationSchema, EbQuoteSchema } from './eb-quotes.ts';
+import { EB_MAX_QUOTE_OPTIONS } from './eb-requirements.ts';
+import { EbDeviationSchema, EbQuoteOptionPremiumSchema, EbQuoteSchema } from './eb-quotes.ts';
 import { GhiCensusSummarySchema } from './ghi-census.ts';
 import {
   GHI_COMPARISONS,
@@ -27,9 +28,18 @@ const FingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/, 'Reload the QCR and
 
 // QCR
 
+/** 1 to 4: Option 1 is the Data Sheet's basis, 2–4 those added (client review 4/11/2026). */
+const OptionNumberSchema = z
+  .number()
+  .int()
+  .min(1, 'Choose an option')
+  .max(EB_MAX_QUOTE_OPTIONS, 'Choose an option');
+
 export const SaveEbQcrRequestSchema = z.strictObject({
   /** One of the insurers compared, or none. */
   recommendedInsurerId: ObjectIdSchema.nullable(),
+  /** The option recommended with the insurer (Option 1 unless the case has more). */
+  recommendedOption: OptionNumberSchema.default(1),
   remarks: OptionalText(2000),
 });
 export type SaveEbQcrRequest = z.infer<typeof SaveEbQcrRequestSchema>;
@@ -62,6 +72,8 @@ export const RecordEbClientDecisionRequestSchema = z.discriminatedUnion('decisio
   z.strictObject({
     decision: z.literal('ACCEPTED'),
     insurerId: ObjectIdSchema,
+    /** The option the client chose with the insurer; its total is the agreed premium. */
+    option: OptionNumberSchema.default(1),
     decidedOn: z.iso.date({ error: 'Enter the date of the client’s decision' }),
     confirmedBy: z
       .string()
@@ -108,7 +120,10 @@ export const EbClientDecisionSchema = z.object({
   insurerName: z.string().nullable(),
   quoteId: ObjectIdSchema.nullable(),
   quoteVersion: z.number().int().nullable(),
-  /** The total (base + GST) of the chosen quote version, with 2 decimals (9.2). */
+  /** The option chosen (Option 1 unless the case has more). */
+  option: z.number().int(),
+  optionLabel: z.string(),
+  /** The total (base + GST) of the chosen quote version's option, with 2 decimals (9.2). */
   agreedPremium: z.string().nullable(),
   decidedOn: z.iso.date(),
   confirmedBy: z.string(),
@@ -140,8 +155,13 @@ export const EbQcrSchema = z.object({
       lowest: z.boolean(),
       recommended: z.boolean(),
       deviations: z.array(EbDeviationSchema),
+      /** The insurer's premium for each option; `lowest` among the insurers that quoted it. */
+      options: z.array(EbQuoteOptionPremiumSchema.extend({ lowest: z.boolean() })),
     }),
   ),
+  /** The options compared (Option 1, then those the Data Sheet adds). */
+  options: z.array(z.object({ option: z.number().int(), label: z.string(), basis: z.string() })),
+  recommendedOption: z.number().int(),
   rows: z.array(
     z.object({
       key: z.string(),
@@ -305,8 +325,21 @@ export function qcrContentKey(content: {
   }>;
   recommendedInsurerId: string | null;
   remarks: string | null;
+  /** Options 2–4: part of the content only when the case has them, so other keys stay as they were. */
+  options?: ReadonlyArray<{ option: number; basis: string }>;
+  optionTotals?: ReadonlyArray<ReadonlyArray<string | null>>;
+  recommendedOption?: number;
 }): string {
+  const options =
+    content.options && content.options.length > 1
+      ? {
+          options: content.options.map((item) => [item.option, item.basis]),
+          optionTotals: content.optionTotals ?? [],
+          recommendedOption: content.recommendedOption ?? 1,
+        }
+      : {};
   return JSON.stringify({
+    ...options,
     columns: content.columns.map((column) => [
       column.quoteId,
       column.quoteVersion,

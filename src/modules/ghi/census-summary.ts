@@ -1,9 +1,13 @@
 import {
+  CENSUS_GROUPS,
+  CENSUS_GROUP_LABELS,
+  CENSUS_GROUP_OF,
   GHI_RELATIONSHIPS,
   STANDARD_AGE_BANDS,
   bandIndexOf,
   completedAge,
   type AgeBand,
+  type CensusGroup,
   type GhiCensusSummary,
   type GhiCoverageType,
   type GhiRelationship,
@@ -55,6 +59,38 @@ export function effectiveSumInsured(
   return member.sumInsured;
 }
 
+/**
+ * Family-wise breakup: each family (an employee and their dependants) by the groups it covers,
+ * "Employee + Spouse + Children"; most families first, then in the groups' order.
+ */
+export function familyBreakup(
+  members: readonly Pick<SummaryMember, 'employeeKey' | 'relationship'>[],
+): { label: string; families: number; lives: number }[] {
+  const families = new Map<string, { groups: Set<CensusGroup>; lives: number }>();
+  for (const member of members) {
+    const family = families.get(member.employeeKey) ?? { groups: new Set(), lives: 0 };
+    family.groups.add(CENSUS_GROUP_OF[member.relationship]);
+    family.lives += 1;
+    families.set(member.employeeKey, family);
+  }
+  const byLabel = new Map<string, { order: number; families: number; lives: number }>();
+  for (const family of families.values()) {
+    const groups = CENSUS_GROUPS.filter((group) => family.groups.has(group));
+    const label =
+      groups.join() === 'employee'
+        ? 'Employee only'
+        : groups.map((group) => CENSUS_GROUP_LABELS[group]).join(' + ');
+    const order = groups.reduce((total, group) => total + 2 ** CENSUS_GROUPS.indexOf(group), 0);
+    const entry = byLabel.get(label) ?? { order, families: 0, lives: 0 };
+    entry.families += 1;
+    entry.lives += family.lives;
+    byLabel.set(label, entry);
+  }
+  return [...byLabel.entries()]
+    .sort(([, a], [, b]) => b.families - a.families || a.order - b.order)
+    .map(([label, { families: count, lives }]) => ({ label, families: count, lives }));
+}
+
 export function summarizeCensus(
   members: readonly SummaryMember[],
   options: SummaryOptions,
@@ -102,10 +138,28 @@ export function summarizeCensus(
     if (options.coverageType === 'INDIVIDUAL' && sumInsured) total = total.plus(sumInsured);
   }
 
+  // Age-wise breakup: each band's lives by relationship group.
+  const bandGroups = bandList.map(
+    () =>
+      Object.fromEntries(CENSUS_GROUPS.map((group) => [group, 0])) as Record<CensusGroup, number>,
+  );
+  for (const member of members) {
+    const age = completedAge(member.dateOfBirth, options.referenceDate);
+    const band = age === null ? null : bandIndexOf(age, bandList);
+    if (band !== null) bandGroups[band]![CENSUS_GROUP_OF[member.relationship]] += 1;
+  }
+
   return {
     employees: byRelationship.SELF,
     lives: members.length,
     byRelationship,
+    byAgeBandAndGroup: bandList.map((band, index) => ({
+      band: bandKeyOf(band),
+      label: band.label,
+      groups: bandGroups[index]!,
+      lives: bands[index]!,
+    })),
+    byFamily: familyBreakup(members),
     byAgeBand: bandList.map((band, index) => ({
       band: bandKeyOf(band),
       label: band.label,

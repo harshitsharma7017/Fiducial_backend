@@ -35,6 +35,9 @@ import {
   SetGhiInsurersRequestSchema,
   UpdateGhiCaseRequestSchema,
   XLSX_CONTENT_TYPE,
+  CompanyDetailsImportQuerySchema,
+  CompanyDetailsImportSchema,
+  MAX_COMPANY_DETAILS_BYTES,
 } from '../../shared/index.ts';
 import express, { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
@@ -70,6 +73,7 @@ import {
   updateCase,
 } from './ghi-cases.service.ts';
 import { loadCase, type Actor } from './ghi-common.ts';
+import { companyDetailsTemplate, importCompanyDetails } from './company-details.ts';
 import { caseFile, listFiles, uploadFile } from './ghi-files.service.ts';
 import { assignPlan } from './eb-plan-assignment.service.ts';
 import { GMC_SCOPE } from './products/profile.ts';
@@ -345,6 +349,33 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
     }),
   );
 
+  // Company details from Excel (alteration 3/11/2026): the template, filled with the case's
+  // values, and its import (the values go to the form; the workbook is kept with the files).
+  router.get(
+    '/cases/:id/company-details/template',
+    view,
+    route({ params: GhiCaseParamsSchema }, async ({ params }, _req, res) => {
+      const file = await companyDetailsTemplate(params.id);
+      res.setHeader('Cache-Control', 'no-store');
+      sendFile(res, { ...file, contentType: XLSX_CONTENT_TYPE });
+    }),
+  );
+  router.post(
+    '/cases/:id/company-details',
+    edit,
+    express.raw({ type: () => true, limit: MAX_COMPANY_DETAILS_BYTES }),
+    route(
+      {
+        params: GhiCaseParamsSchema,
+        query: CompanyDetailsImportQuerySchema,
+        body: z.instanceof(Buffer, { error: 'Upload the workbook as the request body' }),
+      },
+      async ({ params, query, body }, req, res) => {
+        res.json(await importCompanyDetails(params.id, query.fileName, body, actorOf(req)));
+      },
+    ),
+  );
+
   // Files kept on the case
   router.get(
     '/cases/:id/files',
@@ -357,7 +388,7 @@ export function createGhiRouter(options: { jwtSecret: string; gstRatePercent: st
     '/cases/:id/files',
     edit,
     express.raw({
-      type: [...Object.keys(QUOTE_ATTACHMENT_TYPES), 'application/octet-stream'],
+      type: [...Object.keys(QUOTE_ATTACHMENT_TYPES), XLSX_CONTENT_TYPE, 'application/octet-stream'],
       limit: MAX_QUOTE_ATTACHMENT_BYTES,
     }),
     route(
@@ -595,6 +626,23 @@ for (const item of [
     summary: 'Download a file of the case',
     permission: 'gmc.view',
     file: true,
+  },
+  {
+    method: 'get',
+    path: `${base}/company-details/template`,
+    summary: 'Download the company details workbook, filled with the case’s values',
+    permission: 'gmc.view',
+    file: true,
+  },
+  {
+    method: 'post',
+    path: `${base}/company-details`,
+    summary:
+      'Read the company details from the workbook (for the Data Sheet form) and keep the workbook',
+    permission: 'gmc.edit',
+    query: CompanyDetailsImportQuerySchema,
+    response: CompanyDetailsImportSchema,
+    upload: XLSX_CONTENT_TYPE,
   },
 ] as const) {
   documentGhiRoute(item);

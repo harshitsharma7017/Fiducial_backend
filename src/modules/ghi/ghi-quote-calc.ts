@@ -3,7 +3,9 @@ import {
   GHI_WAIVERS,
   GHI_WAIVER_LABELS,
   formatIndianNumber,
+  ghiQuoteOptions,
   type GhiComparison,
+  type GhiQuoteOptionPremium,
   type GhiDeviation,
   type GhiQuoteTermsInput,
   type GhiRequirementsInput,
@@ -266,4 +268,52 @@ export function lowestTotals(totals: readonly string[]): Set<number> {
   return new Set(
     totals.flatMap((total, index) => (new Decimal(total).equals(lowest) ? [index] : [])),
   );
+}
+
+/**
+ * A quote's premium for each option of the case (alteration 3/11/2026): Option 1 is the quote's
+ * own premium, Options 2–4 those quoted for the Data Sheet's other sums insured (null where the
+ * insurer did not quote one). Final agreed terms carry one premium, for the option chosen.
+ */
+export function quoteOptionPremiums(
+  quote: {
+    basePremium: { toString(): string } | null;
+    gst: { toString(): string } | null;
+    totalPremium: { toString(): string } | null;
+    optionPremiums?: ReadonlyArray<Premium | null> | undefined;
+  },
+  requirements: { quoteOptions?: readonly { sumInsured: string }[] | undefined },
+): GhiQuoteOptionPremium[] {
+  const money = (value: { toString(): string } | null) =>
+    value === null ? null : new Decimal(value.toString()).toFixed(2);
+  return ghiQuoteOptions(requirements).map((info) => {
+    if (info.option === 1) {
+      return {
+        ...info,
+        basePremium: money(quote.basePremium),
+        gst: money(quote.gst),
+        totalPremium: money(quote.totalPremium),
+      };
+    }
+    const premium = quote.optionPremiums?.[info.option - 2] ?? null;
+    return {
+      ...info,
+      basePremium: premium?.basePremium ?? null,
+      gst: premium?.gst ?? null,
+      totalPremium: premium?.totalPremium ?? null,
+    };
+  });
+}
+
+/** For each option, the indexes of the quotes with its lowest total (among those that quoted it). */
+export function lowestByOption(premiums: ReturnType<typeof quoteOptionPremiums>[]): Set<number>[] {
+  const count = premiums[0]?.length ?? 0;
+  return Array.from({ length: count }, (_, option) => {
+    const priced = premiums.flatMap((list, index) => {
+      const total = list[option]?.totalPremium ?? null;
+      return total === null ? [] : [{ index, total }];
+    });
+    const lowest = lowestTotals(priced.map((item) => item.total));
+    return new Set([...lowest].map((at) => priced[at]!.index));
+  });
 }

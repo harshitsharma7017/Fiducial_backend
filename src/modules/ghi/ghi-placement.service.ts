@@ -7,6 +7,9 @@ import {
   formatDate,
   type GhiCaseRecord,
   type GhiFinalQcrState,
+  ghiQuoteOptions,
+  type GhiQuote,
+  type GhiQuoteOptionPremium,
   type GhiPayment,
   type GhiPaymentsResponse,
   type GhiPlacementState,
@@ -54,6 +57,21 @@ import {
 // After the client accepts (G7): the final agreed terms as a new quote version (earlier quotes
 // stay as they were), the premium payments, the placement slip and the policy the insurer issued.
 
+/** The option the client chose, with the accepted quote's premium for it (Option 1 if unknown). */
+function chosenOption(quote: GhiQuote, option: number): GhiQuoteOptionPremium {
+  return (
+    quote.options.find((item) => item.option === option) ??
+    quote.options[0] ?? {
+      option: 1,
+      label: 'Option 1',
+      sumInsured: null,
+      basePremium: quote.basePremium,
+      gst: quote.gst,
+      totalPremium: quote.totalPremium,
+    }
+  );
+}
+
 export async function finalQcrState(id: string): Promise<GhiFinalQcrState> {
   const doc = await loadCase(id);
   const accepted = await acceptedQcr(doc._id);
@@ -79,6 +97,7 @@ export async function finalQcrState(id: string): Promise<GhiFinalQcrState> {
             qcrId: accepted.qcr._id.toHexString(),
             qcrVersion: accepted.qcr.version,
             quote: acceptedView,
+            option: chosenOption(acceptedView, accepted.qcr.clientDecision?.option ?? 1),
           }
         : null,
     current,
@@ -179,7 +198,7 @@ export async function recordFinalQcr(
           activity: {
             at: now,
             actorId,
-            message: `Final QCR ${doc.finalQcr ? 'revised' : 'recorded'} with ${insurerName}: total ₹${premium.totalPremium} (accepted quote ₹${new Decimal(accepted.quote.totalPremium?.toString() ?? '0').toFixed(2)})`,
+            message: `Final QCR ${doc.finalQcr ? 'revised' : 'recorded'} with ${insurerName}${(accepted.qcr.clientDecision?.option ?? 1) > 1 ? `, Option ${accepted.qcr.clientDecision?.option}` : ''}: total ₹${premium.totalPremium} (accepted quote ₹${new Decimal(accepted.quote.totalPremium?.toString() ?? '0').toFixed(2)})`,
           },
         },
       },
@@ -488,14 +507,26 @@ export async function placementSlipFile(id: string, format: 'xlsx' | 'pdf', acto
   ]);
   const qcr = await GhiQcrModel.findOne(
     { _id: doc.finalQcr.qcrId, caseId: doc._id },
-    { version: 1 },
+    { version: 1, clientDecision: 1 },
   ).lean();
-  const model = placementSlipDocument(record, view!, qcr?.version ?? 0, summary, members, {
-    received: moneyString(
-      payments.reduce((total, payment) => total.plus(payment.amount.toString()), new Decimal(0)),
-    ),
-    references: payments.map((payment) => payment.reference),
-  });
+  const option =
+    ghiQuoteOptions(doc.requirements).find(
+      (item) => item.option === (qcr?.clientDecision?.option ?? 1),
+    ) ?? null;
+  const model = placementSlipDocument(
+    record,
+    view!,
+    qcr?.version ?? 0,
+    summary,
+    members,
+    {
+      received: moneyString(
+        payments.reduce((total, payment) => total.plus(payment.amount.toString()), new Decimal(0)),
+      ),
+      references: payments.map((payment) => payment.reference),
+    },
+    option,
+  );
   const file =
     format === 'pdf'
       ? {

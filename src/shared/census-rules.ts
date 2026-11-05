@@ -324,14 +324,17 @@ function ownIssues(member: CensusMember, settings: CensusSettings): GhiCensusIss
       issue('relationship', 'The policy does not cover children (Data Sheet: family definition)'),
     );
   }
-  if (PARENTS.includes(member.relationship) && !['PARENTS', 'EITHER'].includes(family.parents)) {
+  if (
+    PARENTS.includes(member.relationship) &&
+    !['PARENTS', 'EITHER', 'BOTH'].includes(family.parents)
+  ) {
     issues.push(
       issue('relationship', 'The policy does not cover parents (Data Sheet: family definition)'),
     );
   }
   if (
     IN_LAWS.includes(member.relationship) &&
-    !['PARENTS_IN_LAW', 'EITHER'].includes(family.parents)
+    !['PARENTS_IN_LAW', 'EITHER', 'BOTH'].includes(family.parents)
   ) {
     issues.push(
       issue(
@@ -466,9 +469,10 @@ function familyIssues(
           ),
         ];
       }
+      // Both pairs together only where the Data Sheet covers parents and in-laws (BOTH).
       const otherSide = PARENTS.includes(member.relationship) ? IN_LAWS : PARENTS;
       const mixed = otherSide.find((relationship) => family.roles.has(relationship));
-      if (mixed) {
+      if (mixed && settings.familyDefinition.parents !== 'BOTH') {
         return [
           issue(
             'relationship',

@@ -12,7 +12,12 @@ export type ChatKind = z.infer<typeof ChatKindSchema>;
 export const MAX_CHAT_TEXT = 4000;
 export const MAX_GROUP_NAME = 80;
 export const MAX_GROUP_MEMBERS = 200;
-export const MAX_CHAT_FILE_BYTES = 10 * 1024 * 1024;
+/**
+ * The largest file a chat message can carry. Raised from 10 MB on 3/11/2026 so large documents can
+ * be shared; the reverse proxy (Nginx client_max_body_size) must allow it too.
+ */
+export const MAX_CHAT_FILE_MB = 100;
+export const MAX_CHAT_FILE_BYTES = MAX_CHAT_FILE_MB * 1024 * 1024;
 export const CHAT_PAGE_SIZE = 50;
 
 /** Files that can be shared in a chat, by content type, with the extension they are saved with. */
