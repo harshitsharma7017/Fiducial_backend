@@ -20,10 +20,12 @@ import {
   binary,
   createEbCase,
   ebPath,
+  fillTemplate,
   gpaSheet,
   gtliSheet,
   readWorkbook,
   setUpWorld,
+  uploadCensus,
   type EbWorld,
 } from './helpers/eb.ts';
 
@@ -524,6 +526,73 @@ describe('GTLI sum assured from the monthly salary (N6)', () => {
       label: 'Sum assured',
       value: '3 × annual CTC (monthly salary × 12)',
     });
+  });
+});
+
+describe('nominees and monthly salaries in a census file (N5, N6)', () => {
+  it('keeps both on the member, so an accepted row raises no issue afterwards', async () => {
+    const created = await createEbCase(app, world.manager, 'GTLI', world.clientId);
+    const path = (rest = '') => ebPath('GTLI', created.id, rest);
+    await request(app)
+      .put(path('/requirements'))
+      .set(bearer(world.manager))
+      .send(
+        gtliSheet({
+          sumInsuredBasis: {
+            kind: 'SALARY_MULTIPLE',
+            multiplier: '4',
+            maximum: null,
+            salaryInput: 'MONTHLY',
+          },
+          nominees: 'EMPLOYEE_ROWS',
+        }),
+      )
+      .expect(200);
+    const template = (
+      await binary(
+        request(app)
+          .get(`/api/v1/eb/census-templates?product=GTLI&caseId=${created.id}`)
+          .set(bearer(world.manager)),
+      ).expect(200)
+    ).body as Buffer;
+    const workbook = await readWorkbook(template);
+    const headers = (workbook.getWorksheet('Census')!.getRow(1).values as unknown[])
+      .slice(1)
+      .map((text) => String(text).replace(/\s*\*$/, ''));
+    const values: Record<string, string | number> = {
+      'Employee ID': 'NF1',
+      Name: 'Asha Patil',
+      Gender: 'Female',
+      'Date of Birth': '01/07/1984',
+      'Monthly Salary': 50000,
+      'Nominee Name': 'Meera Patil',
+      'Nominee Relationship': 'Spouse',
+      'Nominee Date of Birth': '01/06/1988',
+    };
+    const file = await fillTemplate(template, [headers.map((name) => values[name] ?? null)]);
+    const preview = (await uploadCensus(app, world.manager, path(), file).expect(201)).body;
+    await request(app)
+      .post(path(`/census/imports/${preview.id as string}/commit`))
+      .set(bearer(world.manager))
+      .send({ policy: 'ALL_VALID' })
+      .expect(200);
+
+    const members = await request(app)
+      .get(path('/members?limit=10&page=1'))
+      .set(bearer(world.admin))
+      .expect(200);
+    expect(members.body.items).toMatchObject([
+      {
+        employeeId: 'NF1',
+        monthlySalary: '50000',
+        nominee: { name: 'Meera Patil', relationship: 'SPOUSE', dateOfBirth: '1988-06-01' },
+      },
+    ]);
+    const issues = await request(app)
+      .get(path('/census/issues'))
+      .set(bearer(world.admin))
+      .expect(200);
+    expect(issues.body.items).toEqual([]);
   });
 });
 

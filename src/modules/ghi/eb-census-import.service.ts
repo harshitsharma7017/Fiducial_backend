@@ -44,6 +44,7 @@ import {
   gpaRequirementsOf,
   gtliRequirementsOf,
   planRequired,
+  storedExtras,
   toEbCensusMember,
 } from './eb-census-context.ts';
 import {
@@ -665,7 +666,7 @@ export async function commitEbImport(
               relationship: member.relationship,
               dateOfJoining: member.dateOfJoining,
               sumInsured: member.sumInsured === null ? null : toDecimal128(member.sumInsured),
-              annualSalary: member.annualSalary === null ? null : toDecimal128(member.annualSalary),
+              ...storedExtras(member),
               ...(member.relationship === 'SELF'
                 ? { employeeIdentityId: identities.byKey.get(member.employeeKey) ?? null }
                 : {}),

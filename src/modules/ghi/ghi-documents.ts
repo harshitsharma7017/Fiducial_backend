@@ -176,7 +176,7 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
 export function summarySheet(summary: GhiCensusSummary): SheetModel {
   return {
     name: 'Census Summary',
-    widths: [30, 14, 14, 14, 14, 16, 12],
+    widths: SUMMARY_WIDTHS,
     rows: [
       { cells: ['CENSUS SUMMARY', null, null, null], style: 'title' },
       label('Employees', String(summary.employees)),
@@ -189,7 +189,7 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
       label('Average age', summary.averageAge ?? '—'),
       label('Ages worked out on', formatDate(summary.ageReferenceDate)),
       { cells: ['Lives by relationship'], style: 'section' },
-      { cells: ['Relationship', 'Lives', null, null], style: 'header' },
+      { cells: fullWidth('Relationship', 'Lives'), style: 'header' },
       ...GHI_RELATIONSHIPS.map((relationship) => ({
         cells: [
           GHI_RELATIONSHIP_LABELS[relationship],
@@ -199,11 +199,11 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
         ],
       })),
       { cells: ['Lives by age band'], style: 'section' },
-      { cells: ['Age band (years)', 'Lives', null, null], style: 'header' },
+      { cells: fullWidth('Age band (years)', 'Lives'), style: 'header' },
       ...summary.byAgeBand.map((band) => ({ cells: [band.label, band.lives, null, null] })),
-      { cells: ['Total', summary.lives, null, null], style: 'total' },
+      { cells: fullWidth('Total', summary.lives), style: 'total' },
       { cells: ['Sum insured distribution'], style: 'section' },
-      { cells: ['Sum insured', 'Families', 'Lives', null], style: 'header' },
+      { cells: fullWidth('Sum insured', 'Families', 'Lives'), style: 'header' },
       ...summary.bySumInsured.map((item) => ({
         cells: [money(item.sumInsured), item.families, item.lives, null],
       })),
@@ -211,6 +211,13 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
     ],
   };
 }
+
+/** The summary sheet is as wide as its breakup table; a narrower table's bands still fill it. */
+const SUMMARY_WIDTHS = [30, 14, 14, 14, 14, 16, 12];
+const fullWidth = (...cells: SheetRow['cells']): SheetRow['cells'] => [
+  ...cells,
+  ...new Array<null>(SUMMARY_WIDTHS.length - cells.length).fill(null),
+];
 
 /**
  * The employee age-wise and family-wise breakup (client review 4/11/2026): each age band's lives
@@ -253,17 +260,16 @@ function breakupRows(summary: GhiCensusSummary): SheetRow[] {
     ...(families.length > 0
       ? [
           { cells: ['Family-wise breakup'], style: 'section' as const },
-          { cells: ['Family', 'Families', 'Lives', null], style: 'header' as const },
+          { cells: fullWidth('Family', 'Families', 'Lives'), style: 'header' as const },
           ...families.map((family) => ({
             cells: [family.label, family.families, family.lives, null],
           })),
           {
-            cells: [
+            cells: fullWidth(
               'Total',
               families.reduce((sum, family) => sum + family.families, 0),
               families.reduce((sum, family) => sum + family.lives, 0),
-              null,
-            ],
+            ),
             style: 'total' as const,
           },
         ]
@@ -425,7 +431,7 @@ function optionText(option: { label: string; sumInsured: string | null }): strin
 function premiumRows(qcr: GhiQcr): SheetRow[] {
   const single = qcr.options.length <= 1;
   return qcr.options.flatMap((option, at) => {
-    const name = (item: string) => (single ? item : `${option.label} — ${item.toLowerCase()}`);
+    const name = (item: string) => (single ? item : `${option.label} — ${item}`);
     const value = (
       column: GhiQcr['columns'][number],
       key: 'basePremium' | 'gst' | 'totalPremium',
@@ -456,7 +462,7 @@ function premiumRows(qcr: GhiQcr): SheetRow[] {
         : [
             {
               cells: [
-                `${option.label} — lowest total`,
+                `${option.label} — Lowest total`,
                 '',
                 ...qcr.columns.map((column) => (column.options[at]?.lowest ? 'Lowest' : '')),
               ],

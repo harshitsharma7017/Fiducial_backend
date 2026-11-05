@@ -108,7 +108,7 @@ function optionRows(sheet: Parameters<typeof ebQuoteOptions>[0]): SheetRow[] {
 function ebPremiumRows(qcr: EbQcr): SheetRow[] {
   const single = qcr.options.length <= 1;
   return qcr.options.flatMap((option, at) => {
-    const name = (item: string) => (single ? item : `${option.label} — ${item.toLowerCase()}`);
+    const name = (item: string) => (single ? item : `${option.label} — ${item}`);
     const value = (
       column: EbQcr['columns'][number],
       key: 'basePremium' | 'gst' | 'totalPremium',
@@ -139,7 +139,7 @@ function ebPremiumRows(qcr: EbQcr): SheetRow[] {
         : [
             {
               cells: [
-                `${option.label} — lowest total`,
+                `${option.label} — Lowest total`,
                 '',
                 ...qcr.columns.map((column) => (column.options[at]?.lowest ? 'Lowest' : '')),
               ],
