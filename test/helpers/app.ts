@@ -49,7 +49,7 @@ export function createTestApp(
   mailTransport?: MailTransport,
   quoteReader?: QuoteReader,
   cloudStore?: CloudStore,
-  chat: Pick<AppDependencies, 'chatHub' | 'chatPingMs'> = {},
+  chat: Pick<AppDependencies, 'chatHub' | 'chatPingMs' | 'existingOcrReader'> = {},
 ): Express {
   return createApp({
     config: { ...TEST_ENV, ...overrides },

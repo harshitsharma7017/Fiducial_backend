@@ -97,7 +97,7 @@ export function selectionSummarySheet(response: RfqSelectionSummaryResponse): Sh
 
   // B. The age band matrix.
   rows.push(
-    section(`B. Lives by age band and ${measure.toLowerCase()}`),
+    section(`B. Lives by age and ${measure.toLowerCase()}`),
     {
       cells: [
         'Age band',

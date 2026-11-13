@@ -174,11 +174,16 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
 
 /** The census summary (G4) as a sheet. */
 export function summarySheet(summary: GhiCensusSummary): SheetModel {
+  // The sheet is only as wide as its widest table: the age-by-relationship breakup when there is
+  // one, otherwise the three-column sum insured and family tables.
+  const columns = (summary.byAgeBandAndGroup ?? []).length > 0 ? SUMMARY_WIDTHS.length : 3;
+  // Narrower tables are not padded: the sheet writer runs their last column across the rest.
+  const fullWidth = (...cells: SheetRow['cells']): SheetRow['cells'] => cells;
   return {
     name: 'Census Summary',
-    widths: SUMMARY_WIDTHS,
+    widths: SUMMARY_WIDTHS.slice(0, columns),
     rows: [
-      { cells: ['CENSUS SUMMARY', null, null, null], style: 'title' },
+      { cells: fullWidth('CENSUS SUMMARY'), style: 'title' },
       label('Employees', String(summary.employees)),
       label('Total insured lives', String(summary.lives)),
       label(
@@ -191,39 +196,36 @@ export function summarySheet(summary: GhiCensusSummary): SheetModel {
       { cells: ['Lives by relationship'], style: 'section' },
       { cells: fullWidth('Relationship', 'Lives'), style: 'header' },
       ...GHI_RELATIONSHIPS.map((relationship) => ({
-        cells: [
+        cells: fullWidth(
           GHI_RELATIONSHIP_LABELS[relationship],
           summary.byRelationship[relationship] ?? 0,
-          null,
-          null,
-        ],
+        ),
       })),
-      { cells: ['Lives by age band'], style: 'section' },
+      { cells: ['Lives by age'], style: 'section' },
       { cells: fullWidth('Age band (years)', 'Lives'), style: 'header' },
-      ...summary.byAgeBand.map((band) => ({ cells: [band.label, band.lives, null, null] })),
+      ...summary.byAgeBand.map((band) => ({ cells: fullWidth(band.label, band.lives) })),
       { cells: fullWidth('Total', summary.lives), style: 'total' },
       { cells: ['Sum insured distribution'], style: 'section' },
       { cells: fullWidth('Sum insured', 'Families', 'Lives'), style: 'header' },
       ...summary.bySumInsured.map((item) => ({
-        cells: [money(item.sumInsured), item.families, item.lives, null],
+        cells: fullWidth(money(item.sumInsured), item.families, item.lives),
       })),
-      ...breakupRows(summary),
+      ...breakupRows(summary, fullWidth),
     ],
   };
 }
 
 /** The summary sheet is as wide as its breakup table; a narrower table's bands still fill it. */
 const SUMMARY_WIDTHS = [30, 14, 14, 14, 14, 16, 12];
-const fullWidth = (...cells: SheetRow['cells']): SheetRow['cells'] => [
-  ...cells,
-  ...new Array<null>(SUMMARY_WIDTHS.length - cells.length).fill(null),
-];
 
 /**
  * The employee age-wise and family-wise breakup (client review 4/11/2026): each age band's lives
  * by relationship group, and the families by who they cover.
  */
-function breakupRows(summary: GhiCensusSummary): SheetRow[] {
+function breakupRows(
+  summary: GhiCensusSummary,
+  fullWidth: (...cells: SheetRow['cells']) => SheetRow['cells'],
+): SheetRow[] {
   const bands = summary.byAgeBandAndGroup ?? [];
   const families = summary.byFamily ?? [];
   const total = (group: CensusGroup) =>
@@ -231,7 +233,7 @@ function breakupRows(summary: GhiCensusSummary): SheetRow[] {
   return [
     ...(bands.length > 0
       ? [
-          { cells: ['Lives by age band and relationship'], style: 'section' as const },
+          { cells: ['Lives by age and relationship'], style: 'section' as const },
           {
             cells: [
               'Age band (years)',
@@ -262,7 +264,7 @@ function breakupRows(summary: GhiCensusSummary): SheetRow[] {
           { cells: ['Family-wise breakup'], style: 'section' as const },
           { cells: fullWidth('Family', 'Families', 'Lives'), style: 'header' as const },
           ...families.map((family) => ({
-            cells: [family.label, family.families, family.lives, null],
+            cells: fullWidth(family.label, family.families, family.lives),
           })),
           {
             cells: fullWidth(

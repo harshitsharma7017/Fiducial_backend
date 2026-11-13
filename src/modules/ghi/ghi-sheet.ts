@@ -108,15 +108,19 @@ export function toWorkbook(model: DocumentModel): ExcelJS.Workbook {
           ? CENTRED
           : { horizontal: 'left', vertical: 'middle', wrapText: true };
       });
+      // A table narrower than the sheet has its last column run across the rest, not blank cells.
+      const fit = !rowModel.style || ['header', 'total', 'highlight'].includes(rowModel.style);
+      const last = rowModel.cells.length;
+      if (fit && last >= 2 && last < span) sheet.mergeCells(row.number, last, row.number, span);
       const fill = rowModel.style ? FILLS[rowModel.style] : undefined;
       if (fill) {
-        rowModel.cells.forEach((_cell, index) => {
+        for (let index = 0; index < (fit && last >= 2 ? span : last); index += 1) {
           row.getCell(index + 1).fill = {
             type: 'pattern',
             pattern: 'solid',
             fgColor: { argb: fill },
           };
-        });
+        }
       }
       if (rowModel.style === 'title') {
         row.font = { bold: true, size: 12, color: WHITE };

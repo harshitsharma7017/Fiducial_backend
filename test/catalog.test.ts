@@ -546,20 +546,20 @@ describe('product and cover masters', () => {
     );
   });
 
-  it('M-9: the RFQ prints no note section (client review, 27 Oct 2026), with the masters’ names and add-ons', async () => {
+  it('M-9: the RFQ prints the notes marked for it (change request NOTE-1), with the masters’ names and add-ons', async () => {
     const note = (await list('notes'))[0]!;
     const { id, updatedAt: _u, ...row } = note;
     await request(app)
       .put(`/api/v1/catalog/notes/${id}`)
       .set(bearer(admin))
-      .send({ ...row, text: 'Insure all assets at current replacement value.' })
+      .send({ ...row, onRfq: true, text: 'Insure all assets at current replacement value.' })
       .expect(200);
     const proposal = await newProposal();
     const lines = await rfqSchedule(proposal.id);
-    expect(lines).not.toContain('NOTE:');
+    expect(lines.some((line) => line.startsWith('NOTE:'))).toBe(true);
     expect(
       lines.some((line) => line.startsWith('Insure all assets at current replacement value.')),
-    ).toBe(false);
+    ).toBe(true);
     // The covers asked for are printed with a tick; one not required is left out.
     expect(lines).toContain('Addon coverages | Theft | ✓');
     expect(lines).toContain('Riot Strike Malicious Damage | ✓');

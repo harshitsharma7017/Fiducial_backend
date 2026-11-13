@@ -276,6 +276,16 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     // The section's own name, not the format's short label (client review, 28 Oct 2026).
     setValue(sheet, row, 1, section.code === 'FIRE' ? 'Fire & Allied Perils' : section.name);
   }
+  // Nothing empty is shown: a section row of the template with no sum insured and no premium
+  // (a cover that was not placed, whatever its label) is left out.
+  for (let row = sectionsStart; row < end; row += 1) {
+    if (sheet.getRow(row).hidden) continue;
+    const empty = [sumColumn, premiumColumn].every((column) => {
+      const value = sheet.getCell(row, column).value;
+      return value === null || value === undefined || (typeof value === 'string' && !value.trim());
+    });
+    if (empty && cellText(sheet.getCell(row, 1)).trim()) sheet.getRow(row).hidden = true;
+  }
   const placedRows = [...rows.entries()]
     .filter(([code]) => slip.sections.some((section) => section.code === code))
     .map(([, row]) => row);

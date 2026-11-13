@@ -965,6 +965,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     { from: fireTotalRow + 1, to: (productRowOf() ?? fireTotalRow + 4) - 1 },
     record.fire.covers,
     {
+      existing: withExisting ? existingColumn : null,
       option1: option1Column,
       option2: record.fire.proposed2 !== null ? option2Column : null,
       option3: option3Column,
@@ -1005,7 +1006,13 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       rows = 1;
     }
     setValue(sheet, productRow, 1, decided ? 'Policy' : 'Policy to be chosen');
-    if (products.length > rows) {
+    if (context.document === 'QCR') {
+      // The policy rows are the RFQ's: the QCR leaves them out (change request QCR-5).
+      sheet.unMergeCells(productRow, 1, productRow + rows - 1, 1);
+      for (let row = productRow; row < productRow + rows; row += 1) hideRow(sheet, row);
+      rows = 0;
+    }
+    if (products.length > rows && context.document !== 'QCR') {
       insertRows(sheet, productRow + rows - 1, products.length - rows, productRow + rows - 1);
       rows = products.length;
     }
@@ -1026,7 +1033,8 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
 
   // "Additional Addon cover — as per attached list" only when add-on covers were chosen.
   const additional = findRow(sheet, 'Additional Addon cover', { prefix: true });
-  if (additional && record.addons.length === 0) hideRow(sheet, additional);
+  if (additional && (record.addons.length === 0 || context.document === 'QCR'))
+    hideRow(sheet, additional);
 
   // Each section: its lines, or "Not required". Blocks are found again for each section, as a
   // basis row added to one moves those below it.
@@ -1080,6 +1088,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     const blockEnd = scheduleBlocks(sheet).get(section.code)?.end ?? block.end;
     // The Option 3 column is Fire's: the sections are quoted at Option 1 in it.
     writeCovers(sheet, { from: first + 1, to: blockEnd }, section.covers, {
+      existing: withExisting ? existingColumn : null,
       option1: option1Column,
       option2: section.proposed2 ? option2Column : null,
     });
@@ -1205,13 +1214,18 @@ function writeCovers(
   sheet: ExcelJS.Worksheet,
   rows: { from: number; to: number },
   covers: readonly Cover[],
-  columns: { option1: number; option2: number | null; option3?: number | null },
+  columns: {
+    existing?: number | null;
+    option1: number;
+    option2: number | null;
+    option3?: number | null;
+  },
 ) {
   const asked = new Set(
     covers.flatMap((cover) => (cover.required === true ? [labelKey(cover.name)] : [])),
   );
   const tick = (row: number) => {
-    for (const column of [columns.option1, columns.option2, columns.option3]) {
+    for (const column of [columns.existing, columns.option1, columns.option2, columns.option3]) {
       if (column && !isCovered(sheet.getCell(row, column))) markTick(sheet.getCell(row, column));
     }
   };

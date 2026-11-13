@@ -25,6 +25,7 @@ import {
   type OtherSection,
   type ProposalOwnersResponse,
   type DataSheetImport,
+  type ExistingOcr,
   type DataSheetInput,
   type MarkRfqSentRequest,
   type Paginated,
@@ -53,6 +54,7 @@ import { UserModel } from '../users/user.model.ts';
 import type { ExistingPolicyResult, ExistingPolicySource } from './existing-policy-source.ts';
 import { approvedRfq } from '../rfq/rfq-approval.ts';
 import { readDataSheetWorkbook } from './data-sheet-import.ts';
+import type { ExistingOcrReader } from './existing-ocr-reader.ts';
 import { loadContext, toProposalAuditView, toProposalRecord } from './proposals.mapper.ts';
 import {
   CounterModel,
@@ -693,6 +695,17 @@ async function checkProductAndAddons(input: DataSheetInput, preview: ProposalRec
  * Reads the client's Data Sheet workbook for a case (DS-08): the values to fill its Data Sheet
  * form, with warnings. Nothing is saved; a locked or closed case refuses it.
  */
+export async function readExistingFromFile(
+  id: string,
+  file: { contentType: string; data: Buffer },
+  reader: ExistingOcrReader,
+): Promise<ExistingOcr> {
+  const doc = await loadDoc(id);
+  if (doc.stage === 'CLOSED') throw closed();
+  if (doc.insurers.some((insurer) => hasRfq(insurer.status))) throw locked();
+  return reader.read(file);
+}
+
 export async function readDataSheetImport(id: string, data: Buffer): Promise<DataSheetImport> {
   const doc = await loadDoc(id);
   if (doc.stage === 'CLOSED') throw closed();

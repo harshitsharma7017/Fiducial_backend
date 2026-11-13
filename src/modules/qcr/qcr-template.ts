@@ -1,7 +1,6 @@
 import {
   QUOTE_OPTION_LABELS,
   formatDate,
-  formatIndianNumber,
   type CatalogItem,
   type Qcr,
   type QcrOption,
@@ -25,6 +24,7 @@ import {
   setValue,
   sheetNamed,
 } from '../documents/excel-template.ts';
+import { fillTerrorismNote } from './qcr-notes.ts';
 import { NOTE_FILL_ARGB } from '../documents/document-theme.ts';
 import { letterheadOf } from '../documents/sheet-pdf.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
@@ -111,8 +111,6 @@ const insurerName = (qcr: Qcr, insurerId: string) => {
   const insurer = qcr.insurers.find((item) => item.insurerId === insurerId);
   return insurer ? `${insurer.company}, ${insurer.branch}` : 'Unknown insurer';
 };
-
-const rupees = (value: string) => `Rs ${formatIndianNumber(value, 2)}/-`;
 
 /** A formula cell with its value, so the file and the PDF show the figure before Excel recalculates. */
 function formula(
@@ -400,24 +398,8 @@ function fillNotes(
   const headingRow = findRow(sheet, 'NOTE:');
   const notes: string[] = [];
   if (terrorismRow) {
-    const extras = qcr.options.flatMap((option) => {
-      const quote =
-        option.quotes.find((item) => item.insurerId === qcr.recommendedInsurerId) ??
-        option.quotes.find((item) => item.lowest);
-      return quote?.terrorismExtra
-        ? [`${rupees(quote.terrorismExtra)} for ${QUOTE_OPTION_LABELS[option.option]}`]
-        : [];
-    });
-    const text = cellText(sheet.getCell(terrorismRow, 1));
     // No terrorism figure to give: the sentence with blanks for it is left out.
-    notes.push(
-      extras.length > 0
-        ? text.replace(
-            /If you opt for the same,[\s\S]*$/,
-            `If you opt for terrorism cover, additional premium of ${extras.join(' & ')} (before GST) will be charged.`,
-          )
-        : text.replace(/\s*If you opt for the same,[\s\S]*$/, ''),
-    );
+    notes.push(fillTerrorismNote(cellText(sheet.getCell(terrorismRow, 1)), qcr));
   }
   // The template's own notes, under its "NOTE:" heading, until a blank row.
   const templateNotes: string[] = [];
@@ -431,7 +413,10 @@ function fillNotes(
     }
   }
   const standard = context.masters.notes.some((note) => note.active && note.onQcr);
-  notes.push(...(standard ? [] : templateNotes), ...documentNotes(context));
+  notes.push(
+    ...(standard ? [] : templateNotes),
+    ...documentNotes(context).map((note) => fillTerrorismNote(note, qcr)),
+  );
   if (notes.length === 0) return;
 
   const firstNoteRow = Math.min(

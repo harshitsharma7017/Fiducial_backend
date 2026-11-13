@@ -1,8 +1,12 @@
+import type { ExistingOcrReader } from './existing-ocr-reader.ts';
 import {
   CreateProposalRequestSchema,
   DataSheetImportQuerySchema,
   DataSheetImportSchema,
   DataSheetInputSchema,
+  ExistingOcrQuerySchema,
+  ExistingOcrSchema,
+  MAX_EXISTING_OCR_BYTES,
   MAX_DATA_SHEET_BYTES,
   DocumentFormatQuerySchema,
   PDF_CONTENT_TYPE,
@@ -61,6 +65,7 @@ import {
   restoreProposal,
   setInsurers,
   readDataSheetImport,
+  readExistingFromFile,
   updateDataSheet,
   type Actor,
 } from './proposals.service.ts';
@@ -79,6 +84,14 @@ function actorOf(req: Request): Actor {
   return { id: user.id, roles: user.roles, requestId: req.requestId };
 }
 
+/** The file's type from its first bytes (the request's own header is not trusted). */
+function sniffContentType(data: Buffer): string {
+  if (data.subarray(0, 4).toString('latin1') === '%PDF') return 'application/pdf';
+  if (data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) return 'image/png';
+  if (data.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg';
+  return 'application/octet-stream';
+}
+
 /**
  * New-business proposals up to the RFQ. Viewing needs property.view; creating
  * property.create; the Data Sheet and insurers property.edit; the RFQ download
@@ -91,6 +104,8 @@ export function createProposalsRouter(options: {
   policySource: ExistingPolicySource;
   /** How RFQ mails leave (smtp, outbox or off). */
   mailTransport: MailTransport;
+  /** Reads the existing policy's sum insured from a file (OCR). */
+  existingReader: ExistingOcrReader;
 }): Router {
   const router = Router();
   router.use(authenticate(options));
@@ -173,6 +188,31 @@ export function createProposalsRouter(options: {
       },
       async ({ params, body }, _req, res) => {
         res.json(await readDataSheetImport(params.id, body));
+      },
+    ),
+  );
+
+  router.post(
+    '/:id/data-sheet/existing-ocr',
+    requirePermission('property.edit'),
+    express.raw({
+      type: ['application/pdf', 'image/png', 'image/jpeg', 'application/octet-stream'],
+      limit: MAX_EXISTING_OCR_BYTES,
+    }),
+    route(
+      {
+        params: ProposalIdParamsSchema,
+        query: ExistingOcrQuerySchema,
+        body: z.instanceof(Buffer, { error: 'Upload the policy file as the request body' }),
+      },
+      async ({ params, body }, _req, res) => {
+        res.json(
+          await readExistingFromFile(
+            params.id,
+            { contentType: sniffContentType(body), data: body },
+            options.existingReader,
+          ),
+        );
       },
     ),
   );
@@ -430,6 +470,25 @@ documentRoute({
   responses: {
     200: { description: 'What the workbook holds', ...json(DataSheetImportSchema) },
     ...errorResponses(400, 401, 403, 404, 409, 413),
+  },
+});
+
+documentRoute({
+  method: 'post',
+  path: '/api/v1/proposals/{id}/data-sheet/existing-ocr',
+  tags: ['Proposals'],
+  summary: 'Read the existing sum insured from a policy file (OCR)',
+  description: `Needs property.edit. The existing policy’s schedule (PDF, PNG or JPEG, up to ${MAX_EXISTING_OCR_BYTES / 1024 / 1024} MB) is the request body. Answers candidate values for the Data Sheet’s Existing column (insurer, policy number, Fire lines and total, other sections’ sum insured and lines) with warnings; nothing is saved. Without OCR_PROVIDER=gemini, or for a file that cannot be read, manualEntryRequired is true. 503 when the reading service fails; 409 PROPOSAL_LOCKED once the RFQ has been sent.`,
+  request: {
+    params: ProposalIdParamsSchema,
+    query: ExistingOcrQuerySchema,
+    body: {
+      content: { 'application/octet-stream': { schema: z.string().meta({ format: 'binary' }) } },
+    },
+  },
+  responses: {
+    200: { description: 'What was read', ...json(ExistingOcrSchema) },
+    ...errorResponses(401, 403, 404, 409, 413, 503),
   },
 });
 

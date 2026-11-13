@@ -217,7 +217,7 @@ function premiumDetails(
   attribution?: RfqAttribution,
 ) {
   const sheet = workbook.addWorksheet('premium details');
-  sheet.columns = [{ width: 34 }, { width: 20 }, { width: 22 }, { width: 22 }];
+  sheet.columns = [{ width: 50 }, { width: 30 }];
   const renewal = record.type === 'EXISTING';
   title(
     sheet,
@@ -227,12 +227,12 @@ function premiumDetails(
         : 'RFQ FOR NEW BUSINESS — PROPERTY INSURANCE'),
     4,
   );
-  labelled(sheet, 'Insured Name:', record.client.name, 4);
-  labelled(sheet, 'Reference:', record.reference, 4);
+  labelled(sheet, 'Insured Name:', record.client.name, 2);
+  labelled(sheet, 'Reference:', record.reference, 2);
   // A2: who approved the RFQ. Reflects the actual records, not whoever exports it.
   if (attribution) {
     for (const [label, value] of rfqAttributionRows(attribution)) {
-      labelled(sheet, `${label}:`, value, 4);
+      labelled(sheet, `${label}:`, value, 2);
     }
   }
   if (renewal && record.existing) {
@@ -241,7 +241,7 @@ function premiumDetails(
       sheet,
       'Existing policy:',
       `${existing.policyNumber ? `${existing.policyNumber} with ` : ''}${existing.insurer}`,
-      4,
+      2,
     );
     const premium = record.existingPolicy?.totalPremium ?? null;
     if (premium) {
@@ -250,7 +250,7 @@ function premiumDetails(
       money(row, [2]);
     }
   }
-  labelled(sheet, 'Quotes needed by:', formatDate(record.dueDate), 4);
+  labelled(sheet, 'Quotes needed by:', formatDate(record.dueDate), 2);
   const asked = quoteOptionsOf(record);
 
   for (const [option, number] of [
@@ -260,21 +260,15 @@ function premiumDetails(
   ] as const) {
     if (!asked.includes(option)) continue;
     sheet.addRow([]);
-    sectionHeading(sheet, `Quote Option ${number}: For Proposed Sum Insured Option ${number}`, 4);
-    header(sheet, [
-      'Coverage Section',
-      'Sum Insured',
-      'Premium with terrorism',
-      'Premium without terrorism',
-    ]);
-    const first = sheet.rowCount + 1;
+    sectionHeading(sheet, `Quote Option ${number}: For Proposed Sum Insured Option ${number}`, 2);
+    header(sheet, ['Coverage Section', 'Sum Insured']);
     const fire =
       option === 'P1'
         ? record.fire.proposed1
         : option === 'P2'
           ? record.fire.proposed2
           : record.fire.proposed3;
-    if (filled(fire)) money(sheet.addRow(['Fire', amount(fire)]), [2, 3, 4]);
+    if (filled(fire)) money(sheet.addRow(['Fire', amount(fire)]), [2]);
     // B5: only sections marked required appear; Not-required ones are omitted entirely, and so
     // is a section with no sum insured for this option. Option 3 is Fire's: the other sections
     // are quoted at their Option 1 figures in it.
@@ -282,42 +276,28 @@ function premiumDetails(
       const value = option === 'P2' ? section.proposed2 : section.proposed1;
       if (!filled(value)) continue;
       const row = sheet.addRow([section.name, amount(value)]);
-      money(row, [2, 3, 4]);
+      money(row, [2]);
     }
-    terrorismTotals(sheet, { first, last: sheet.rowCount }, gstRate);
+    terrorismTotals(sheet, gstRate);
   }
 }
 
 /**
  * The totals of a quote block as the client reads them (27 and 28 Oct 2026): a "Premium without
- * terrorism" band then a "Premium with terrorism" band, each with its Net Premium, Add: GST and
- * Total Premium across the two premium columns, as formulas over the premiums the insurer fills
- * in. The same layout as the QCR.
+ * terrorism" band then a "Premium with terrorism" band, each with its Net Premium (filled in by
+ * the insurer), Add: GST and Total Premium as formulas. The premiums are not repeated against the
+ * sections above; the same layout as the QCR.
  */
-function terrorismTotals(
-  sheet: ExcelJS.Worksheet,
-  sections: { first: number; last: number },
-  gstRate: number,
-) {
-  for (const [label, column] of [
-    ['Premium without terrorism', 'D'],
-    ['Premium with terrorism', 'C'],
-  ] as const) {
-    premiumBand(sheet, label, 4);
+function terrorismTotals(sheet: ExcelJS.Worksheet, gstRate: number) {
+  for (const label of ['Premium without terrorism', 'Premium with terrorism']) {
+    premiumBand(sheet, label, 2);
     const at = sheet.rowCount + 1;
     const rows = [
-      sheet.addRow([
-        'Net Premium',
-        null,
-        { formula: `SUM(${column}${sections.first}:${column}${sections.last})` },
-      ]),
-      sheet.addRow([`Add: GST ${gstRate}%`, null, { formula: `ROUND(C${at}*${gstRate / 100},2)` }]),
-      sheet.addRow(['Total Premium', null, { formula: `C${at}+C${at + 1}` }]),
+      sheet.addRow(['Net Premium', null]),
+      sheet.addRow([`Add: GST ${gstRate}%`, { formula: `ROUND(B${at}*${gstRate / 100},2)` }]),
+      sheet.addRow(['Total Premium', { formula: `B${at}+B${at + 1}` }]),
     ];
-    for (const row of rows) {
-      sheet.mergeCells(row.number, 3, row.number, 4);
-      money(row, [3]);
-    }
+    for (const row of rows) money(row, [2]);
     rows[2]!.font = { bold: true, color: TOTAL_RED };
   }
 }
@@ -364,7 +344,7 @@ export function schedule(
         const row = sheet.addRow([
           index === 0 ? 'Addon coverages' : null,
           cover.name,
-          ...(withExisting ? [null] : []),
+          ...(withExisting ? [COVER_TICK] : []),
           COVER_TICK,
           option2 ? COVER_TICK : null,
           ...(withOption3 ? [option3 ? COVER_TICK : null] : []),
@@ -507,10 +487,13 @@ export function schedule(
     : products.length > 0
       ? products.map((product) => `${productRangeText(product)} sum insured: ${product.name}`)
       : DEFAULT_PRODUCT_LINES;
-  productLines.forEach((line, index) => {
-    sheet.addRow([index === 0 ? (decided ? 'Policy' : 'Policy to be chosen') : null, line]);
-  });
-  if (record.addons.length > 0) {
+  // The policy and the additional add-on cover rows are the RFQ's: the QCR leaves them out (QCR-5).
+  if (document === 'RFQ') {
+    productLines.forEach((line, index) => {
+      sheet.addRow([index === 0 ? (decided ? 'Policy' : 'Policy to be chosen') : null, line]);
+    });
+  }
+  if (document === 'RFQ' && record.addons.length > 0) {
     sheet.addRow(['Additional Addon cover', 'Details as per attached list of addons']);
   }
   for (const location of record.locations) {
@@ -596,17 +579,17 @@ export function schedule(
 
 /**
  * Fire & Burglary per location in the client's Data Sheet layout: the 7 numbered items with their
- * sub-items (headings 1, 2 and 5 show the sum of theirs), sq ft and rate for buildings, the total,
+ * sub-items (headings 1, 2 and 5 show the sum of theirs), the total,
  * then hypothecation and stock in open space.
  */
 function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   const sheet = workbook.addWorksheet('fire by location');
-  sheet.columns = [{ width: 6 }, { width: 70 }, { width: 14 }, { width: 18 }, { width: 22 }];
-  title(sheet, 'FIRE & BURGLARY — SUM INSURED BY LOCATION (OPTION 1)', 5);
+  sheet.columns = [{ width: 6 }, { width: 70 }, { width: 22 }];
+  title(sheet, 'FIRE & BURGLARY — SUM INSURED BY LOCATION (OPTION 1)', 3);
   for (const location of record.locations) {
     sheet.addRow([]);
     const place = location.location;
-    sectionHeading(sheet, place?.name ?? location.locationId, 5);
+    sectionHeading(sheet, place?.name ?? location.locationId, 3);
     if (place) {
       sheet.addRow([addressLine(place)]);
       sheet.addRow([
@@ -619,13 +602,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
           .join(' · '),
       ]);
     }
-    header(sheet, [
-      'S No',
-      'Description',
-      'Sq. Feet (total builtup area)',
-      'Rate / sq ft (construction cost per sq ft)',
-      'Sum Insured',
-    ]);
+    header(sheet, ['S No', 'Description', 'Sum Insured']);
     const saved = new Map(location.fire.map((item) => [item.key, item]));
     // Items with no area, rate or sum insured are left out, and so is a heading with nothing under it.
     const itemFilled = (key: string) => {
@@ -651,23 +628,21 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
           .reduce((total, value) => total + Number(value), 0);
         const buildingsSubtotal = item.group === 'BUILDING' ? Number(location.buildingsTotal) : 0;
         const subtotal = itemsSubtotal + buildingsSubtotal;
-        const row = sheet.addRow([heading.number, heading.label, null, null, subtotal || null]);
+        const row = sheet.addRow([heading.number, heading.label, subtotal || null]);
         row.font = { bold: true };
         row.getCell(1).alignment = { horizontal: 'center' };
         row.getCell(2).alignment = { wrapText: true };
-        money(row, [5]);
+        money(row, [3]);
         // D1: list each building under the Building heading, with its area, rate and sum insured.
         if (item.group === 'BUILDING') {
           buildings.forEach((building, index) => {
             const buildingRow = sheet.addRow([
               null,
               building.name ?? `Building ${index + 1}`,
-              building.sqFt == null ? null : Number(building.sqFt),
-              amount(building.ratePerSqFt),
               amount(building.sumInsured) || null,
             ]);
             buildingRow.getCell(2).alignment = { wrapText: true, indent: 2 };
-            money(buildingRow, [4, 5]);
+            money(buildingRow, [3]);
           });
         }
       }
@@ -679,18 +654,16 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       const row = sheet.addRow([
         sub ? item.number.slice(-1) : item.number,
         item.label,
-        values?.sqFt == null ? null : Number(values.sqFt),
-        amount(values?.ratePerSqFt ?? null),
         values ? amount(values.sumInsured) || null : null,
       ]);
       // The S No is centred; a sub-item's description is indented under its heading.
       row.getCell(1).alignment = { horizontal: 'center' };
       row.getCell(2).alignment = { wrapText: true, indent: sub ? 2 : 0 };
-      money(row, [4, 5]);
+      money(row, [3]);
     }
-    const total = sheet.addRow([null, 'Total sum insured', null, null, amount(location.fireTotal)]);
+    const total = sheet.addRow([null, 'Total sum insured', amount(location.fireTotal)]);
     total.font = { bold: true };
-    money(total, [5]);
+    money(total, [3]);
     const extras = [
       [HYPOTHECATION_LABEL, location.hypothecation],
       [OPEN_STOCK_LABEL, location.openStock],
@@ -698,7 +671,6 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     for (const [index, [label, value]] of extras.filter(([, text]) => text?.trim()).entries()) {
       const row = sheet.addRow([String(index + 1), label, value]);
       row.getCell(1).alignment = { horizontal: 'center' };
-      sheet.mergeCells(row.number, 3, row.number, 5);
       row.getCell(3).alignment = { wrapText: true, vertical: 'top' };
     }
   }

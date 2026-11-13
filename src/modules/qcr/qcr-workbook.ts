@@ -8,6 +8,7 @@ import {
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
 import { NOTE_FILL_ARGB, SECTION_HEADING_FILL_ARGB } from '../documents/document-theme.ts';
+import { fillTerrorismNote } from './qcr-notes.ts';
 import { documentNotes, fillContextOf } from '../proposals/rfq-template.ts';
 import {
   addonCovers,
@@ -44,11 +45,14 @@ function comparison(
   notes: readonly string[],
 ) {
   const renewal = record.type === 'EXISTING';
+  // The policy in force beside the proposed values, so old and new compare (change request QCR-1):
+  // on a renewal, and on new business that has the client's current policy.
+  const withExisting = renewal || record.existing !== null;
   const sheet = workbook.addWorksheet('premium details');
-  const span = 2 + (renewal ? 2 : 0) + qcr.insurers.length;
+  const span = 2 + (withExisting ? 2 : 0) + qcr.insurers.length;
   sheet.columns = [
     { width: 26 },
-    ...(renewal ? [{ width: 18 }, { width: 18 }] : []),
+    ...(withExisting ? [{ width: 18 }, { width: 18 }] : []),
     { width: 18 },
     ...qcr.insurers.map(() => ({ width: 22 })),
   ];
@@ -68,17 +72,13 @@ function comparison(
 
   for (const option of qcr.options.filter((item) => item.quotes.length > 0)) {
     sheet.addRow([]);
-    sectionHeading(
-      sheet,
-      `${QUOTE_OPTION_LABELS[option.option]} — premium with and without terrorism`,
-      span,
-    );
+    sectionHeading(sheet, QUOTE_OPTION_LABELS[option.option], span);
     const quotes = qcr.insurers.map((insurer) =>
       option.quotes.find((quote) => quote.insurerId === insurer.insurerId),
     );
     const head = header(sheet, [
       'Coverage Section',
-      ...(renewal ? ['Existing sum insured', 'Existing premium'] : []),
+      ...(withExisting ? ['Existing sum insured', 'Existing premium'] : []),
       'Sum insured',
       ...qcr.insurers.map(
         (insurer, index) =>
@@ -88,35 +88,33 @@ function comparison(
     quotes.forEach((quote, index) => {
       if (!quote?.lowest) return;
       // The lowest quote's heading is green; navy text reads on it where white would not.
-      const cell = head.getCell((renewal ? 4 : 2) + index + 1);
+      const cell = head.getCell((withExisting ? 4 : 2) + index + 1);
       cell.fill = LOWEST_FILL;
       cell.font = { bold: true, color: { argb: SECTION_HEADING_FILL_ARGB } };
     });
-    const firstColumn = renewal ? 5 : 3;
+    const firstColumn = withExisting ? 5 : 3;
     const moneyColumns = Array.from({ length: span - 1 }, (_, index) => index + 2);
     const quoted = (premium: string | null | undefined) =>
       premium ? Number(premium) : 'Not quoted';
     for (const section of option.sections) {
-      const existing = renewal
+      const existing = withExisting
         ? [amount(section.existingSumInsured), amount(section.existingPremium)]
         : [];
       if (section.code === 'FIRE') {
-        // Fire is quoted with and without terrorism, as the RFQ asks: both premiums are shown,
-        // each when at least one insurer gave it.
-        const kinds = (['withTerrorism', 'withoutTerrorism'] as const).filter((kind) =>
-          quotes.some((quote) => quote && quote.fire[kind] !== null),
+        // One plain "Fire" row (change request QCR-3, QCR-4): Fire with terrorism where the
+        // insurer quoted it so, else the one figure it gave. The premium bands below show the
+        // totals with and without terrorism.
+        money(
+          sheet.addRow([
+            section.name,
+            ...existing,
+            amount(section.sumInsured),
+            ...quotes.map((quote) =>
+              quote ? quoted(quote.fire.withTerrorism ?? quote.fire.withoutTerrorism) : null,
+            ),
+          ]),
+          moneyColumns,
         );
-        kinds.forEach((kind, index) => {
-          money(
-            sheet.addRow([
-              `${section.name} (premium ${kind === 'withTerrorism' ? 'with' : 'without'} terrorism)`,
-              ...(index === 0 ? existing : renewal ? [null, null] : []),
-              index === 0 ? amount(section.sumInsured) : null,
-              ...quotes.map((quote) => (quote ? quoted(quote.fire[kind]) : null)),
-            ]),
-            moneyColumns,
-          );
-        });
         continue;
       }
       const row = sheet.addRow([
@@ -150,7 +148,7 @@ function comparison(
     const totalRows = (band: string, pick: (quote: Quote) => Totals | null, existing: boolean) => {
       premiumBand(sheet, band, span);
       const values = (key: keyof Totals) => [
-        ...(renewal ? [null, existing ? amount(option.existing?.[key] ?? null) : null] : []),
+        ...(withExisting ? [null, existing ? amount(option.existing?.[key] ?? null) : null] : []),
         null,
         ...quotes.map((quote) => {
           if (!quote) return null;
@@ -195,7 +193,7 @@ function comparison(
     ) {
       const terrorismRow = sheet.addRow([
         'Terrorism, extra net premium',
-        ...(renewal ? [null, null] : []),
+        ...(withExisting ? [null, null] : []),
         null,
         ...quotes.map((quote) => amount(quote?.terrorismExtra ?? null)),
       ]);
@@ -257,7 +255,14 @@ export function buildQcrWorkbookDocument(
 ): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiducial';
-  comparison(workbook, record, qcr, documentNotes(fillContextOf(record, client, masters, 'QCR')));
+  comparison(
+    workbook,
+    record,
+    qcr,
+    documentNotes(fillContextOf(record, client, masters, 'QCR')).map((note) =>
+      fillTerrorismNote(note, qcr),
+    ),
+  );
   schedule(workbook, record, client, masters, 'QCR');
   annexure(workbook, record);
   riskDetails(workbook, record);

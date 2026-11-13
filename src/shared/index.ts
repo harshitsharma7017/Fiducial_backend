@@ -62,3 +62,4 @@ export * from './risk-types.ts';
 export * from './roles.ts';
 export * from './tpa-claims.ts';
 export * from './users.ts';
+export * from './existing-ocr.ts';

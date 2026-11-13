@@ -10,6 +10,8 @@ import {
   CONTENT_WIDTH,
   COVER_TICK,
   COVER_TICK_ARGB,
+  COVER_CROSS,
+  COVER_CROSS_ARGB,
   DOCUMENT_COLORS,
   DOCUMENT_FONT,
   DOCUMENT_FONT_FAMILY,
@@ -142,6 +144,8 @@ function fitWidths(natural: readonly number[]): number[] {
 
 /** The add-on tick, drawn (the bundled font has no ✓ glyph). */
 const TICK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2.5 8.5l3.5 3.5 7.5-8" fill="none" stroke="#${COVER_TICK_ARGB.slice(-6)}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+const CROSS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" fill="none" stroke="#${COVER_CROSS_ARGB.slice(-6)}" stroke-width="2.6" stroke-linecap="round"/></svg>`;
 
 function argbColour(argb: string | undefined, skip = 'FFFFFF'): string | undefined {
   if (!argb || argb.length < 6) return undefined;
@@ -339,6 +343,10 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         // The tick is drawn, centred, in place of the character.
         const { text: _tick, ...rest } = result;
         return { ...rest, svg: TICK_SVG, width: 8, height: 8, alignment: 'center' };
+      }
+      if (text.trim() === COVER_CROSS) {
+        const { text: _cross, ...rest } = result;
+        return { ...rest, svg: CROSS_SVG, width: 8, height: 8, alignment: 'center' };
       }
       return result;
     }),

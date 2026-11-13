@@ -73,6 +73,9 @@ export const SECTION_HEADING_FILL_ARGB = 'FF12285E';
  */
 export const COVER_TICK = '✓';
 export const COVER_TICK_ARGB = 'FF00A04A';
+/** The cross for "no" (a year without a claim), drawn red in the PDF as the tick is drawn green. */
+export const COVER_CROSS = '✗';
+export const COVER_CROSS_ARGB = 'FFC00000';
 
 /** The highlight of a document's note section: a soft yellow the PDF keeps (not the table tint). */
 export const NOTE_FILL_ARGB = 'FFFFF2CC';

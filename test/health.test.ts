@@ -127,6 +127,7 @@ describe('API documentation', () => {
         'GET /api/v1/proposals/{id}',
         'PUT /api/v1/proposals/{id}/data-sheet',
         'POST /api/v1/proposals/{id}/data-sheet/import',
+        'POST /api/v1/proposals/{id}/data-sheet/existing-ocr',
         'PUT /api/v1/proposals/{id}/insurers',
         'GET /api/v1/proposals/{id}/rfq',
         'POST /api/v1/proposals/{id}/rfq/sent',

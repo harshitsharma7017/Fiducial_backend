@@ -333,6 +333,7 @@ describe('new-business proposals', () => {
       'fire by location',
       'risk details',
       'claim details',
+      'claim experience',
     ]);
     const premium = workbook.getWorksheet('premium details')!;
     const rows = premium.getSheetValues().map((row) => (Array.isArray(row) ? row.slice(1, 3) : []));
@@ -487,20 +488,20 @@ describe('new-business proposals', () => {
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
     const find = (label: string) => rows.find((row) => row[1] === label);
     // D1: each building is a row under the Building heading (no S No), priced area × rate.
-    expect(find('Building 1')).toEqual([undefined, 'Building 1', 10.5, 3, 31.5]);
-    expect(find('Building 2')).toEqual([undefined, 'Building 2', 10.5, 3, 31.5]);
+    expect(find('Building 1')).toEqual([undefined, 'Building 1', 31.5]);
+    expect(find('Building 2')).toEqual([undefined, 'Building 2', 31.5]);
     // The Building heading's subtotal is both buildings: 63.
     expect(
       find(
         'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
-      )?.[4],
+      )?.[2],
     ).toBe(63);
     expect(find('All types of Plant and Machinery and all its accessories')?.slice(0, 1)).toEqual([
       '5',
     ]);
-    expect(find('All types of Plant and Machinery and all its accessories')?.[4]).toBe(3000);
+    expect(find('All types of Plant and Machinery and all its accessories')?.[2]).toBe(3000);
     expect(find('Any other stocks kept at third party job work location')?.[0]).toBe('a');
-    expect(find('Total sum insured')?.[4]).toBe(3563);
+    expect(find('Total sum insured')?.[2]).toBe(3563);
     expect(find('Hypothecation if any - Please specify')?.[2]).toBe('State Bank of India, Pune');
     expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
       'Steel coils in the yard',
@@ -513,7 +514,7 @@ describe('new-business proposals', () => {
     );
     expect(find('Compressor and all its accessories')).toBeUndefined();
     expect(find('Compound wall')).toBeUndefined();
-    expect(find('All types of stock pertaining to insured business')?.[4]).toBeUndefined();
+    expect(find('All types of stock pertaining to insured business')?.[2]).toBeUndefined();
     // Sub-items are indented, letter and description; the headings are not.
     const sheet = workbook.getWorksheet('fire by location')!;
     const rowNumber = (label: string) =>
@@ -792,6 +793,54 @@ describe('new-business proposals', () => {
       1000000,
     ]);
     expect(stocks?.[0]).toBeLessThan(6);
+  });
+
+  it('ticks the asked add-on covers in the Existing Sum Insured column too', async () => {
+    const { body: proposal } = await create(manager, [plant1]).expect(201);
+    await request(app)
+      .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [],
+          fireOption2: [],
+          fireCovers: [{ name: 'Earthquake', required: true }],
+          existing: {
+            insurer: 'Current General, Fort',
+            policyNumber: 'CUR/2025/7',
+            fireLines: [{ group: 'STOCKS', amount: '900000' }],
+            fireTotal: null,
+          },
+        }),
+      )
+      .expect(200);
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const rows = workbook
+      .getWorksheet('schedule')!
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
+    const earthquake = rows.find((row) => row[1] === 'Earthquake');
+    expect(earthquake?.[2]).toBeTruthy();
   });
 
   it('leaves out of the RFQ whatever is empty or not required', async () => {
@@ -1165,13 +1214,7 @@ describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
     const at = rows.findIndex((row) => row[1] === 'Furniture, Fixtures and Fittings & Interiors');
-    expect(rows[at]).toEqual([
-      '2',
-      'Furniture, Fixtures and Fittings & Interiors',
-      undefined,
-      undefined,
-      1000000,
-    ]);
+    expect(rows[at]).toEqual(['2', 'Furniture, Fixtures and Fittings & Interiors', 1000000]);
     expect(rows[at + 1]?.[0]).toBe('6');
     expect(rows.some((row) => row[1] === 'Interiors')).toBe(false);
   });

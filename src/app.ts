@@ -49,6 +49,10 @@ import { cloudStoreFromEnv, type CloudStore } from './modules/cloud-storage/clou
 import { useFileStore } from './modules/files/file-store.ts';
 import { createQcrRouter } from './modules/qcr/qcr.routes.ts';
 import { createWorklistsRouter } from './modules/worklists/worklists.routes.ts';
+import {
+  existingReaderFromEnv,
+  type ExistingOcrReader,
+} from './modules/proposals/existing-ocr-reader.ts';
 import { quoteReaderFromEnv, type QuoteReader } from './modules/quotes/quote-reader.ts';
 import { createQuotesRouter } from './modules/quotes/quotes.routes.ts';
 import { createRfqRouter } from './modules/rfq/rfq.routes.ts';
@@ -70,6 +74,8 @@ export interface AppDependencies {
   mailTransport?: MailTransport;
   /** Q1: who reads quote files for the auto-fill; from OCR_PROVIDER when not given (tests pass a fake). */
   quoteReader?: QuoteReader;
+  /** Reads the existing sum insured from a policy file; tests pass a fake. */
+  existingOcrReader?: ExistingOcrReader;
   /** Where every file goes (S3); from CLOUD_STORAGE when not given (tests pass a memory store). */
   cloudStore?: CloudStore;
   /** The chat's live delivery; a new one when not given (tests pass theirs to watch it). */
@@ -85,6 +91,7 @@ export function createApp({
   existingPolicySource,
   mailTransport,
   quoteReader,
+  existingOcrReader,
   cloudStore,
   chatHub,
   chatPingMs,
@@ -171,6 +178,7 @@ export function createApp({
       gstRatePercent: config.GST_RATE_PERCENT,
       policySource,
       mailTransport: transport,
+      existingReader: existingOcrReader ?? existingReaderFromEnv(config, logger),
     }),
   );
   api.use(

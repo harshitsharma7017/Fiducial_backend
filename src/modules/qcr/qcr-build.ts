@@ -96,7 +96,8 @@ export function buildComparison(
         !insurer.declined && quotes.qcr.some((entry) => entry.insurerId === insurer.insurerId),
     )
     .slice(0, 5);
-  const renewal = record.type === 'EXISTING';
+  // The existing columns show for a renewal and for new business with a current policy (QCR-1).
+  const renewal = record.type === 'EXISTING' || record.existing !== null;
   const existingPremium = new Map(
     record.existingPolicy?.sections.map((section) => [section.code, section.premium]) ?? [],
   );

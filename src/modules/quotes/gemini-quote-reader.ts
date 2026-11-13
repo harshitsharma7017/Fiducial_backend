@@ -283,7 +283,7 @@ const FAILURE_MESSAGES: Record<Failure, string> = {
 const RETRIED: ReadonlySet<Failure> = new Set(['RATE_LIMITED', 'UNAVAILABLE']);
 
 /** What went wrong, from a thrown error; its message (which may echo the request) is not kept. */
-function failureOf(error: unknown): { reason: Failure; status: number | null } {
+export function failureOf(error: unknown): { reason: Failure; status: number | null } {
   if (error instanceof ApiError) {
     const { status } = error;
     if (status === 429) return { reason: 'RATE_LIMITED', status };

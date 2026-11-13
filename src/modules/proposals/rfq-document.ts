@@ -30,6 +30,7 @@ import { RfqStateModel, RfqVersionModel } from '../rfq/rfq.model.ts';
 import { rfqAttributionOf, rfqAttributionUserIds } from '../rfq/rfq-approval.ts';
 import { roleNameMap } from '../roles/roles.service.ts';
 import { UserModel } from '../users/user.model.ts';
+import { addRfqExtras } from './rfq-extras.ts';
 import { fillRfqTemplate } from './rfq-template.ts';
 import { buildRfqWorkbookDocument, type RfqMasters } from './rfq-workbook.ts';
 
@@ -43,7 +44,7 @@ export interface RfqDocument {
   layout: RfqLayout;
 }
 
-/** The order sheets are printed in the PDF; others follow in the workbook's order. */
+/** The order sheets are printed in the QCR's and the placement slip's PDF; others follow. */
 const PDF_ORDER = [
   'premium details',
   'schedule',
@@ -53,7 +54,28 @@ const PDF_ORDER = [
   'claim details',
 ];
 
-export function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): ExcelJS.Worksheet[] {
+/**
+ * The RFQ's PDF (change requests RFQ-1, RFQ-4, RFQ-5): it starts at the schedule, without the
+ * premium details page, and has last year's premium and the claim experience in place of the claim
+ * details. The Excel keeps every sheet.
+ */
+const RFQ_PDF_ORDER = [
+  'schedule',
+  'fire by location',
+  'last year premium',
+  'claim experience',
+  'Annexure',
+  'risk details',
+];
+const RFQ_NOT_IN_PDF = ['premium details', 'claim details'];
+
+export function pdfSheets(
+  workbook: ExcelJS.Workbook,
+  record: ProposalRecord,
+  document: 'RFQ' | 'OTHER' = 'OTHER',
+): ExcelJS.Worksheet[] {
+  const order = document === 'RFQ' ? RFQ_PDF_ORDER : PDF_ORDER;
+  const notInPdf = document === 'RFQ' ? RFQ_NOT_IN_PDF : [];
   const anyAnnexure = record.sections.some(
     (section) => section.included && isAnnexureSection(section.code) && section.annexure.length > 0,
   );
@@ -64,9 +86,10 @@ export function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): E
   const empty: Record<string, boolean> = {
     Annexure: !anyAnnexure,
     'risk details': !anyRisk,
+    'claim experience': record.claims.length === 0,
     'claim details': record.claims.length === 0,
   };
-  const first = PDF_ORDER.flatMap((name) => {
+  const first = order.flatMap((name) => {
     const sheet = sheetNamed(workbook, name);
     if (!sheet || empty[name]) return [];
     return [sheet];
@@ -74,8 +97,9 @@ export function pdfSheets(workbook: ExcelJS.Workbook, record: ProposalRecord): E
   const rest = workbook.worksheets.filter(
     (sheet) =>
       !first.includes(sheet) &&
+      !notInPdf.some((name) => sheetNamed(workbook, name) === sheet) &&
       sheet.state !== 'hidden' &&
-      !PDF_ORDER.some((name) => sheetNamed(workbook, name) === sheet),
+      !order.some((name) => sheetNamed(workbook, name) === sheet),
   );
   return [...first, ...rest];
 }
@@ -108,6 +132,8 @@ export async function rfqDocument(
   } else {
     workbook = buildRfqWorkbookDocument(record, client, masters, { title, attribution });
   }
+  // Last year's premium, the claim experience and the RFQ's notes (RFQ-4, RFQ-5, NOTE-1).
+  addRfqExtras(workbook, record, masters);
   // Every line bold, so the RFQ reads easily (client review, 28 Oct 2026).
   emboldenWorkbook(workbook);
   letterhead = await withBrokerLetterhead(letterhead);
@@ -116,7 +142,7 @@ export async function rfqDocument(
   if (format === 'pdf') {
     return {
       data: await workbookToPdf(workbook, {
-        sheets: pdfSheets(workbook, record),
+        sheets: pdfSheets(workbook, record, 'RFQ'),
         letterhead,
         title: `RFQ ${record.reference} — ${record.client.name}`,
         footer: `RFQ ${record.reference} · ${record.client.name}`,

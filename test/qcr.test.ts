@@ -375,11 +375,10 @@ describe('QC-4, QC-5: the export', () => {
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) && typeof row[1] === 'string' ? [row[1]] : []));
     // B5: only Fire and the included Money appear; Burglary and the rest are omitted.
-    expect(labels).toContain('Fire (premium with terrorism)');
+    expect(labels).toContain('Fire');
     expect(labels).toContain('Money');
     expect(labels).not.toContain('Burglary');
     // B2: Fire and the totals with and without terrorism, and the terrorism extra.
-    expect(labels).toContain('Fire (premium without terrorism)');
     // The premium without terrorism, then with, each its own band with the totals under it.
     const bands = labels.filter((text) => /^Premium (with|without) terrorism$/.test(text ?? ''));
     expect(bands.slice(0, 2)).toEqual(['Premium without terrorism', 'Premium with terrorism']);
@@ -387,19 +386,17 @@ describe('QC-4, QC-5: the export', () => {
     // Option 1, insurer A (column E, after the existing figures and the sum insured): Fire
     // 1,20,000 with terrorism and 1,00,000 without; totals as its quote entries give them.
     const rows = premium.getSheetValues();
-    const start = rows.findIndex(
-      (row) =>
-        Array.isArray(row) && row[1] === 'Proposed – Option 1 — premium with and without terrorism',
-    );
+    const start = rows.findIndex((row) => Array.isArray(row) && row[1] === 'Proposed – Option 1');
     expect(start).toBeGreaterThan(0);
-    const value = (label: string) => {
-      const at = rows.findIndex(
-        (row, index) => index > start && Array.isArray(row) && row[1] === label,
-      );
-      return premium.getRow(at).getCell(5).value;
-    };
-    expect(value('Fire (premium with terrorism)')).toBe(120000);
-    expect(value('Fire (premium without terrorism)')).toBe(100000);
+    // One plain Fire row, with the with-terrorism premium (QCR-3, QCR-4).
+    const fireAt = rows.findIndex(
+      (row, index) => index > start && Array.isArray(row) && row[1] === 'Fire',
+    );
+    expect(premium.getRow(fireAt).getCell(5).value).toBe(120000);
+    // QCR-4: no second Fire row; the next row is the next section.
+    expect(premium.getRow(fireAt + 1).getCell(1).value).not.toBe(
+      premium.getRow(fireAt).getCell(1).value,
+    );
     // The totals sit under their own band: "Total Premium" appears once under each.
     const totalUnder = (band: string) => {
       const from = rows.findIndex(
