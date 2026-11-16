@@ -45,22 +45,17 @@ function comparison(
   notes: readonly string[],
 ) {
   const renewal = record.type === 'EXISTING';
-  // The policy in force beside the proposed values, so old and new compare (change request QCR-1):
-  // on a renewal, and on new business that has the client's current policy.
-  const withExisting = renewal || record.existing !== null;
+  // Each option compares the insurers on its own sum insured: the existing policy's sum insured
+  // and premium are not repeated in its blocks (client review); its insurer and number are above.
   const sheet = workbook.addWorksheet('premium details');
-  const span = 2 + (withExisting ? 2 : 0) + qcr.insurers.length;
-  sheet.columns = [
-    { width: 26 },
-    ...(withExisting ? [{ width: 18 }, { width: 18 }] : []),
-    { width: 18 },
-    ...qcr.insurers.map(() => ({ width: 22 })),
-  ];
+  const span = 2 + qcr.insurers.length;
+  sheet.columns = [{ width: 26 }, { width: 18 }, ...qcr.insurers.map(() => ({ width: 22 }))];
   title(sheet, `PREMIUM COMPARISON — ${renewal ? 'RENEWAL' : 'NEW BUSINESS'}`, span);
   labelled(sheet, 'Insured Name:', record.client.name, span);
   labelled(sheet, 'Reference:', record.reference, span);
-  if (renewal && record.existing) {
-    labelled(sheet, 'Existing insurer:', record.existing.insurer, span);
+  if (record.existing) {
+    labelled(sheet, 'Existing Insurer:', record.existing.insurer, span);
+    labelled(sheet, 'Existing Policy No:', record.existing.policyNumber ?? '', span);
   }
   if (record.policyStart) labelled(sheet, 'Policy starts:', formatDate(record.policyStart), span);
   // The policy's name on the first page (client review, 27 Oct 2026).
@@ -78,7 +73,6 @@ function comparison(
     );
     const head = header(sheet, [
       'Coverage Section',
-      ...(withExisting ? ['Existing sum insured', 'Existing premium'] : []),
       'Sum insured',
       ...qcr.insurers.map(
         (insurer, index) =>
@@ -88,18 +82,15 @@ function comparison(
     quotes.forEach((quote, index) => {
       if (!quote?.lowest) return;
       // The lowest quote's heading is green; navy text reads on it where white would not.
-      const cell = head.getCell((withExisting ? 4 : 2) + index + 1);
+      const cell = head.getCell(3 + index);
       cell.fill = LOWEST_FILL;
       cell.font = { bold: true, color: { argb: SECTION_HEADING_FILL_ARGB } };
     });
-    const firstColumn = withExisting ? 5 : 3;
+    const firstColumn = 3;
     const moneyColumns = Array.from({ length: span - 1 }, (_, index) => index + 2);
     const quoted = (premium: string | null | undefined) =>
       premium ? Number(premium) : 'Not quoted';
     for (const section of option.sections) {
-      const existing = withExisting
-        ? [amount(section.existingSumInsured), amount(section.existingPremium)]
-        : [];
       if (section.code === 'FIRE') {
         // One plain "Fire" row (change request QCR-3, QCR-4): Fire with terrorism where the
         // insurer quoted it so, else the one figure it gave. The premium bands below show the
@@ -107,7 +98,6 @@ function comparison(
         money(
           sheet.addRow([
             section.name,
-            ...existing,
             amount(section.sumInsured),
             ...quotes.map((quote) =>
               quote ? quoted(quote.fire.withTerrorism ?? quote.fire.withoutTerrorism) : null,
@@ -119,7 +109,6 @@ function comparison(
       }
       const row = sheet.addRow([
         section.name,
-        ...existing,
         amount(section.sumInsured),
         ...quotes.map((quote) =>
           quote ? quoted(quote.premiums.find((item) => item.code === section.code)?.premium) : null,
@@ -145,10 +134,9 @@ function comparison(
       quote.fire.withoutTerrorism !== null || quote.fire.withTerrorism === null
         ? quote.totals
         : null;
-    const totalRows = (band: string, pick: (quote: Quote) => Totals | null, existing: boolean) => {
+    const totalRows = (band: string, pick: (quote: Quote) => Totals | null) => {
       premiumBand(sheet, band, span);
       const values = (key: keyof Totals) => [
-        ...(withExisting ? [null, existing ? amount(option.existing?.[key] ?? null) : null] : []),
         null,
         ...quotes.map((quote) => {
           if (!quote) return null;
@@ -174,14 +162,12 @@ function comparison(
       quotes.some((quote) => quote && pick(quote) !== null);
     // "Premium without terrorism" first, then "Premium with terrorism", as the client's format.
     const totalWithout = !hasFire
-      ? totalRows('Premium', (quote) => quote.totals, true)
+      ? totalRows('Premium', (quote) => quote.totals)
       : any(withoutTerrorism)
-        ? totalRows('Premium without terrorism', withoutTerrorism, true)
+        ? totalRows('Premium without terrorism', withoutTerrorism)
         : null;
     const totalWith =
-      hasFire && any(withTerrorism)
-        ? totalRows('Premium with terrorism', withTerrorism, false)
-        : null;
+      hasFire && any(withTerrorism) ? totalRows('Premium with terrorism', withTerrorism) : null;
     quotes.forEach((quote, index) => {
       if (!quote?.lowest) return;
       const row = totalWithout && withoutTerrorism(quote) ? totalWithout : totalWith;
@@ -193,21 +179,13 @@ function comparison(
     ) {
       const terrorismRow = sheet.addRow([
         'Terrorism, extra net premium',
-        ...(withExisting ? [null, null] : []),
         null,
         ...quotes.map((quote) => amount(quote?.terrorismExtra ?? null)),
       ]);
       terrorismRow.font = { italic: true };
       money(terrorismRow, moneyColumns);
     }
-    for (const difference of option.differences) {
-      labelled(
-        sheet,
-        `Differs: ${difference.topic}`,
-        difference.values.map((value) => `${name(value.insurerId)}: ${value.value}`).join('; '),
-        span,
-      );
-    }
+    // The coverage differences are not printed (client review); the QCR tab shows them.
   }
   sheet.addRow([]);
   labelled(sheet, 'Cheque / payment in favour of:', qcr.paymentInFavourOf ?? '', span);
@@ -246,6 +224,13 @@ function comparison(
   }
 }
 
+/** The schedule's Option 2 and 3 columns, only for an option some insurer quoted on. */
+export function quotedOptions(qcr: Qcr): { option2: boolean; option3: boolean } {
+  const quoted = (option: string) =>
+    qcr.options.some((item) => item.option === option && item.quotes.length > 0);
+  return { option2: quoted('P2'), option3: quoted('P3') };
+}
+
 /** The built-in QCR layout. */
 export function buildQcrWorkbookDocument(
   record: ProposalRecord,
@@ -263,7 +248,7 @@ export function buildQcrWorkbookDocument(
       fillTerrorismNote(note, qcr),
     ),
   );
-  schedule(workbook, record, client, masters, 'QCR');
+  schedule(workbook, record, client, masters, 'QCR', quotedOptions(qcr));
   annexure(workbook, record);
   riskDetails(workbook, record);
   addonCovers(workbook, record, masters.addons);

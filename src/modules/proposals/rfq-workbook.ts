@@ -28,6 +28,7 @@ import {
 } from '../../shared/index.ts';
 import ExcelJS from 'exceljs';
 import type { ClientDoc } from '../clients/client.model.ts';
+import { BURGLARY_CONTENTS_LABEL, burglaryContentsLines } from './burglary-breakdown.ts';
 import {
   COVER_TICK,
   COVER_TICK_ARGB,
@@ -50,13 +51,6 @@ export interface RfqMasters {
   /** The clause library; without it the template's own clauses are kept. */
   clauses?: readonly CatalogItem<'clauses'>[];
 }
-
-const DEFAULT_PRODUCT_LINES = [
-  'Upto 5 Cr sum insured: Bharat Sookshma Udyam Suraksha (BSUS)',
-  'Above 5 Cr & Upto 50 Cr sum insured: Bharat Laghu Udyam Suraksha (BLUS)',
-  'Above 50 Cr sum insured: Standard Fire & Special Perils Policy (SFSP)',
-  'Above 5 Cr sum insured: Property All Risk (PAR)',
-];
 
 /** Indian digit grouping (1,23,45,678) for whole rupees. */
 export const RUPEES = '[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
@@ -308,6 +302,8 @@ export function schedule(
   client: ClientDoc,
   masters: RfqMasters,
   document: 'RFQ' | 'QCR' = 'RFQ',
+  /** The QCR leaves out an option column no insurer quoted on. */
+  options: { option2?: boolean; option3?: boolean } = {},
 ) {
   const sectionMaster = new Map(masters.sections.map((section) => [section.code, section]));
   // The client format's "Existing Sum Insured" column, for the policy in force (last year's on a
@@ -316,8 +312,9 @@ export function schedule(
   const existing = record.existing;
   const copy = record.existingPolicy;
   // Option 3 is a Fire figure: its column is there only when a Fire line has one.
-  const withOption3 = record.fire.proposed3 !== null;
-  const span = (withExisting ? 5 : 4) + (withOption3 ? 1 : 0);
+  const withOption2 = options.option2 ?? true;
+  const withOption3 = record.fire.proposed3 !== null && (options.option3 ?? true);
+  const span = (withExisting ? 4 : 3) + (withOption2 ? 1 : 0) + (withOption3 ? 1 : 0);
   const amountColumns = Array.from({ length: span - 2 }, (_, index) => index + 3);
   const figures = (
     existingValue: string | null | undefined,
@@ -327,7 +324,7 @@ export function schedule(
   ) => [
     ...(withExisting ? [amount(existingValue ?? null)] : []),
     amount(p1 ?? null),
-    amount(p2 ?? null),
+    ...(withOption2 ? [amount(p2 ?? null)] : []),
     ...(withOption3 ? [amount(p3 ?? null)] : []),
   ];
   // The S No column is centred (client review, 27 Oct 2026).
@@ -346,7 +343,7 @@ export function schedule(
           cover.name,
           ...(withExisting ? [COVER_TICK] : []),
           COVER_TICK,
-          option2 ? COVER_TICK : null,
+          ...(withOption2 ? [option2 ? COVER_TICK : null] : []),
           ...(withOption3 ? [option3 ? COVER_TICK : null] : []),
         ]);
         row.eachCell((cell) => {
@@ -366,9 +363,7 @@ export function schedule(
     { width: 20 },
     { width: 20 },
   ].slice(0, span);
-  if (withExisting && existing?.policyNumber) {
-    sheet.addRow([`Policy No: ${existing.policyNumber}`]).font = { bold: true };
-  }
+  // No policy number above the title: it is in the Existing Policy row.
   title(
     sheet,
     document === 'QCR'
@@ -404,16 +399,17 @@ export function schedule(
     span,
   );
   if (withExisting && existing) {
+    const period =
+      copy?.periodStart && copy.periodEnd
+        ? `${formatDate(copy.periodStart)} to ${formatDate(copy.periodEnd)}`
+        : null;
+    const premium = copy?.totalPremium ? `premium ${copy.totalPremium}` : null;
+    // The existing insurance company on a row of its own, then the policy it holds.
+    labelled(sheet, 'Existing Insurer', existing.insurer, span);
     labelled(
       sheet,
       'Existing Policy',
-      [
-        `${existing.policyNumber ? `${existing.policyNumber} with ` : ''}${existing.insurer}`,
-        copy?.periodStart && copy.periodEnd
-          ? `${formatDate(copy.periodStart)} to ${formatDate(copy.periodEnd)}`
-          : null,
-        copy?.totalPremium ? `premium ${copy.totalPremium}` : null,
-      ]
+      [existing.policyNumber ? `Policy No ${existing.policyNumber}` : null, period, premium]
         .filter(Boolean)
         .join(', '),
       span,
@@ -433,7 +429,7 @@ export function schedule(
     'Description',
     ...(withExisting ? ['Existing Sum Insured'] : []),
     'Proposed Sum Insured - Option 1',
-    'Proposed Sum Insured - Option 2',
+    ...(withOption2 ? ['Proposed Sum Insured - Option 2'] : []),
     ...(withOption3 ? ['Proposed Sum Insured - Option 3'] : []),
   ]);
   sectionHeading(sheet, 'Fire & Allied Perils', span);
@@ -472,31 +468,32 @@ export function schedule(
     record.fire.proposed2 !== null,
     withOption3,
   );
-  // C-1: the product the case chose, else every product with its range.
+  // C-1: the product the case chose. Until one is chosen the RFQ lists no products (the
+  // "Policy to be chosen" rows are not printed).
   const decided = record.product && record.product.source !== 'SUGGESTED' ? record.product : null;
-  const products = masters.products.filter((product) => product.active);
   const chosenProduct = decided
     ? masters.products.find((product) => product.code === decided.code)
     : undefined;
-  const productLines = decided
-    ? [
-        chosenProduct
-          ? `${productRangeText(chosenProduct)} sum insured: ${chosenProduct.name}`
-          : decided.name,
-      ]
-    : products.length > 0
-      ? products.map((product) => `${productRangeText(product)} sum insured: ${product.name}`)
-      : DEFAULT_PRODUCT_LINES;
   // The policy and the additional add-on cover rows are the RFQ's: the QCR leaves them out (QCR-5).
-  if (document === 'RFQ') {
-    productLines.forEach((line, index) => {
-      sheet.addRow([index === 0 ? (decided ? 'Policy' : 'Policy to be chosen') : null, line]);
-    });
+  if (document === 'RFQ' && decided) {
+    sheet.addRow([
+      'Policy',
+      chosenProduct
+        ? `${productRangeText(chosenProduct)} sum insured: ${chosenProduct.name}`
+        : decided.name,
+    ]);
   }
   if (document === 'RFQ' && record.addons.length > 0) {
     sheet.addRow(['Additional Addon cover', 'Details as per attached list of addons']);
   }
-  for (const location of record.locations) {
+  // The RFQ prints the Data Sheet's Fire & Burglary table under Burglary (with hypothecation and
+  // stock in the open), when Burglary is the Fire contents.
+  const contentsTable =
+    document === 'RFQ' &&
+    record.sections.some((section) => section.code === 'BURGLARY' && isSectionShown(section))
+      ? burglaryContentsLines(record)
+      : [];
+  for (const location of contentsTable.length > 0 ? [] : record.locations) {
     const name = location.location?.name ?? location.locationId;
     if (location.hypothecation)
       sheet.addRow(['Hypothecation', `${name}: ${location.hypothecation}`]);
@@ -538,22 +535,34 @@ export function schedule(
       if (line.kind === 'rupees') money(row, amountColumns);
       number += 1;
     }
+    const breakdown = section.code === 'BURGLARY' ? contentsTable : [];
+    for (const line of breakdown) {
+      const row = sheet.addRow([
+        line.number,
+        line.label,
+        ...figures(line.existing, line.proposed1, line.proposed2),
+      ]);
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'top' };
+      row.getCell(2).alignment = { wrapText: true, indent: line.kind === 'sub' ? 2 : 0 };
+      if (line.kind === 'heading' || line.kind === 'total') row.font = { bold: true };
+      money(row, amountColumns);
+    }
     if (sumInsured) {
       const sumInsuredLine = SECTION_LINES[section.code as SectionWithLines]?.find(
         (line) => line.key === SUM_INSURED_LINE[section.code],
       );
-      money(
-        numbered(
-          sheet.addRow([
-            number,
-            isAnnexureSection(section.code)
-              ? `As per Annexure${annexureItems > 0 ? ` (${annexureItems} ${annexureItems === 1 ? 'item' : 'items'})` : ''}`
-              : (sumInsuredLine?.label ?? 'Sum insured'),
-            ...figures(section.existing, section.proposed1, section.proposed2),
-          ]),
-        ),
-        amountColumns,
-      );
+      const row = sheet.addRow([
+        // Under the Data Sheet's table, Burglary's own sum insured is a total, not numbered.
+        breakdown.length > 0 ? null : number,
+        isAnnexureSection(section.code)
+          ? `As per Annexure${annexureItems > 0 ? ` (${annexureItems} ${annexureItems === 1 ? 'item' : 'items'})` : ''}`
+          : breakdown.length > 0
+            ? BURGLARY_CONTENTS_LABEL
+            : (sumInsuredLine?.label ?? 'Sum insured'),
+        ...figures(section.existing, section.proposed1, section.proposed2),
+      ]);
+      if (breakdown.length > 0) row.font = { bold: true };
+      money(numbered(row), amountColumns);
     }
     // C-3: the sum insured on the chosen basis (100% or first loss).
     if (
@@ -589,7 +598,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
   for (const location of record.locations) {
     sheet.addRow([]);
     const place = location.location;
-    sectionHeading(sheet, place?.name ?? location.locationId, 3);
+    // No heading with the location's name: its address opens the block.
     if (place) {
       sheet.addRow([addressLine(place)]);
       sheet.addRow([
@@ -786,7 +795,10 @@ export function addonCovers(
   workbook: ExcelJS.Workbook,
   record: ProposalRecord,
   addons: readonly CatalogItem<'addons'>[],
+  /** The column naming the add-on list each cover is from; the RFQ leaves it out. */
+  options: { list?: boolean } = {},
 ) {
+  const withList = options.list ?? true;
   if (record.addons.length === 0) return;
   const limitOf = (addon: (typeof record.addons)[number]) =>
     addons.find(
@@ -794,15 +806,25 @@ export function addonCovers(
     )?.limit ?? null;
   // The limit column only when some cover has a limit.
   const limits = record.addons.some((addon) => limitOf(addon));
-  const span = limits ? 4 : 3;
+  const span = 2 + (withList ? 1 : 0) + (limits ? 1 : 0);
   const sheet = workbook.addWorksheet('add-on covers');
-  sheet.columns = [{ width: 6 }, { width: 18 }, { width: 60 }, { width: 50 }].slice(0, span);
+  sheet.columns = [
+    { width: 6 },
+    ...(withList ? [{ width: 18 }] : []),
+    { width: 60 },
+    ...(limits ? [{ width: 50 }] : []),
+  ];
   title(sheet, `ADD-ON COVERS${record.product ? ` — ${record.product.name}` : ''}`, span);
-  header(sheet, ['S No', 'List', 'Addon cover', ...(limits ? ['Sum insured limit'] : [])]);
+  header(sheet, [
+    'S No',
+    ...(withList ? ['List'] : []),
+    'Addon cover',
+    ...(limits ? ['Sum insured limit'] : []),
+  ]);
   record.addons.forEach((addon, index) => {
     const row = sheet.addRow([
       index + 1,
-      ADDON_LIST_LABELS[addon.list],
+      ...(withList ? [ADDON_LIST_LABELS[addon.list]] : []),
       addon.name,
       ...(limits ? [limitOf(addon)] : []),
     ]);
@@ -831,7 +853,7 @@ export function buildRfqWorkbookDocument(
   annexure(workbook, record);
   riskDetails(workbook, record);
   claimDetails(workbook, record);
-  addonCovers(workbook, record, masters.addons ?? []);
+  addonCovers(workbook, record, masters.addons ?? [], { list: false });
   frameWorkbook(workbook);
   return workbook;
 }

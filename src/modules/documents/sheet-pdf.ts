@@ -377,6 +377,8 @@ export interface PdfOptions {
   /** Document title (PDF metadata) and the footer's left text. */
   title: string;
   footer: string;
+  /** Sheets printed without the band naming them (their own title row says what they are). */
+  withoutHeading?: readonly ExcelJS.Worksheet[];
 }
 
 /** The workbook's sheets as an A4 PDF with the letterhead on every page. */
@@ -387,13 +389,12 @@ export async function workbookToPdf(
   const sheets = options.sheets ?? workbook.worksheets.filter((sheet) => sheet.state !== 'hidden');
   const logoImage = logoDataUrl(options.letterhead.logo);
 
-  const content: Content[] = sheets.flatMap((sheet, index): Content[] => [
-    {
-      ...sheetHeading(sheet.name),
-      ...(index > 0 ? { pageBreak: 'before' as const } : {}),
-    },
-    sheetTable(sheet),
-  ]);
+  const content: Content[] = sheets.flatMap((sheet, index): Content[] => {
+    const pageBreak = index > 0 ? { pageBreak: 'before' as const } : {};
+    if (options.withoutHeading?.includes(sheet))
+      return [{ stack: [sheetTable(sheet)], ...pageBreak }];
+    return [{ ...sheetHeading(sheet.name), ...pageBreak }, sheetTable(sheet)];
+  });
 
   const definition: TDocumentDefinitions = {
     pageSize: 'A4',

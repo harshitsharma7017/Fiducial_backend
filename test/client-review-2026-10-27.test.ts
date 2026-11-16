@@ -330,9 +330,9 @@ describe('a third proposed Fire option and covers added on the case', () => {
       ]);
     }
     expect(JSON.stringify(schedule.getSheetValues())).not.toContain('Required');
-    // The RFQ prints the notes marked for it (change request NOTE-1).
-    expect(rowsOf(schedule).map((line) => line.text)).toContain('NOTE:');
-    expect(JSON.stringify(schedule.getSheetValues())).toContain(NOTE);
+    // The RFQ prints no notes, even those marked for it (client review; NOTE-1 withdrawn).
+    expect(rowsOf(schedule).map((line) => line.text)).not.toContain('NOTE:');
+    expect(JSON.stringify(schedule.getSheetValues())).not.toContain(NOTE);
     // The Fire lines shown are numbered 1, 2… in order, centred.
     const fireLines = rowsOf(schedule).filter(
       (line) => line.row > header + 1 && line.row < stocks!.row + 1 && /^\d+$/.test(line.text),

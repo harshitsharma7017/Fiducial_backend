@@ -45,6 +45,7 @@ import {
   quoteBlocks,
 } from '../proposals/rfq-template.ts';
 import type { RfqMasters } from '../proposals/rfq-workbook.ts';
+import { quotedOptions } from './qcr-workbook.ts';
 
 // The QCR in the client's own template (QC-4, QC-5): "premium details" becomes the comparison —
 // the existing policy and up to five insurers per option, net, GST and total as formulas with
@@ -163,10 +164,21 @@ function fillPremiumComparison(
   }
   // The policy's name on the first page, under the dates (client review, 27 Oct 2026).
   const nameAfter = expiryRow ?? insuredRow;
-  if (record.product && nameAfter) {
-    insertRows(sheet, nameAfter + 1, 1, nameAfter);
-    clearCells(sheet, { from: nameAfter + 1, to: nameAfter + 1 }, printColumns(sheet));
-    setValue(sheet, nameAfter + 1, 1, `Policy Name: ${record.product.name}`);
+  // Then the existing policy's insurer and number (client review).
+  const heading = [
+    ...(record.product ? [`Policy Name: ${record.product.name}`] : []),
+    ...(record.existing ? [`Existing Insurer: ${record.existing.insurer}`] : []),
+    ...(record.existing?.policyNumber
+      ? [`Existing Policy No: ${record.existing.policyNumber}`]
+      : []),
+  ];
+  if (nameAfter && heading.length > 0) {
+    insertRows(sheet, nameAfter + 1, heading.length, nameAfter);
+    heading.forEach((text, offset) => {
+      const row = nameAfter + 1 + offset;
+      clearCells(sheet, { from: row, to: row }, printColumns(sheet));
+      setValue(sheet, row, 1, text);
+    });
   }
 
   const plans: { option: QcrOption['option']; caption: string }[] = quoteBlocks(renewal);
@@ -227,11 +239,11 @@ function fillPremiumComparison(
     const sumColumn = findColumn(sheet, namesRow, 'Sum Insured') ?? quoteColumn;
     const existingSum = findColumn(sheet, top + 2, 'Sum Insured') ?? existingColumn;
     const existingPremium = existingSum + 1;
-    // Left out: the existing policy's columns for new business, and insurer columns not used.
-    if (!renewal) {
-      for (const column of new Set([existingColumn, existingSum, existingPremium])) {
-        sheet.getColumn(column).hidden = true;
-      }
+    // Left out: the existing policy's sum insured and premium (client review: each option
+    // compares the insurers on its own sum insured; the existing insurer and number are above),
+    // and insurer columns not used.
+    for (const column of new Set([existingColumn, existingSum, existingPremium])) {
+      sheet.getColumn(column).hidden = true;
     }
     insurerColumns.slice(qcr.insurers.length).forEach((column) => {
       sheet.getColumn(column).hidden = true;
@@ -279,14 +291,6 @@ function fillPremiumComparison(
         sheet.getRow(row).hidden = true;
         continue;
       }
-      if (renewal) {
-        setValue(sheet, row, existingSum, amount(section.existingSumInsured ?? null), {
-          rupees: true,
-        });
-        setValue(sheet, row, existingPremium, amount(section.existingPremium ?? null), {
-          rupees: true,
-        });
-      }
       setValue(sheet, row, sumColumn, amount(section.sumInsured), { rupees: true });
       insurerColumns.forEach((column, position) => {
         const quote = quotes[position];
@@ -308,14 +312,11 @@ function fillPremiumComparison(
       column: number;
       totals: { net: string; gst: string; total: string } | null;
       lowest: boolean;
-    }[] = [
-      ...(renewal ? [{ column: existingPremium, totals: data.existing, lowest: false }] : []),
-      ...insurerColumns.map((column, position) => ({
-        column,
-        totals: quotes[position]?.totals ?? null,
-        lowest: quotes[position]?.lowest ?? false,
-      })),
-    ];
+    }[] = insurerColumns.map((column, position) => ({
+      column,
+      totals: quotes[position]?.totals ?? null,
+      lowest: quotes[position]?.lowest ?? false,
+    }));
     for (const { column, totals, lowest } of columns) {
       const letter = sheet.getColumn(column).letter;
       if (!totals) {
@@ -332,7 +333,8 @@ function fillPremiumComparison(
     }
   });
 
-  // The broker's part (QC-3): payment, then the recommendation, remarks and coverage differences.
+  // The broker's part (QC-3): payment, then the recommendation and remarks. The coverage
+  // differences are not printed (client review); the QCR tab shows them.
   const paymentRow = findRow(sheet, 'Cheque / payment in favour of', { prefix: true });
   const width = printColumns(sheet);
   const lines: string[] = [];
@@ -344,17 +346,6 @@ function fillPremiumComparison(
     lines.push(`Our recommendation: ${qcr.recommendation}`);
   }
   if (qcr.remarks) lines.push(`Remarks: ${qcr.remarks}`);
-  for (const option of qcr.options) {
-    if (option.differences.length === 0) continue;
-    lines.push(
-      `Coverage differences, ${QUOTE_OPTION_LABELS[option.option]}: ${option.differences
-        .map(
-          (difference) =>
-            `${difference.topic} — ${difference.values.map((value) => `${insurerName(qcr, value.insurerId)}: ${value.value}`).join('; ')}`,
-        )
-        .join(' | ')}`,
-    );
-  }
   if (paymentRow) {
     setValue(sheet, paymentRow, 1, `Cheque / payment in favour of: ${qcr.paymentInFavourOf ?? ''}`);
     if (lines.length > 0) {
@@ -495,6 +486,20 @@ function fillConditions(
   hideRowsBetween(sheet, title + 1 + lines.length, title + 1 + Math.max(lines.length, free));
 }
 
+/** The schedule's Option 2 and 3 columns are left out when no insurer quoted on that option. */
+function hideUnquotedOptions(sheet: ExcelJS.Worksheet, qcr: Qcr) {
+  const header = findRow(sheet, 'S No');
+  if (!header) return;
+  const shown = quotedOptions(qcr);
+  for (const [label, keep] of [
+    ['Proposed Sum Insured - Option 2', shown.option2],
+    ['Proposed Sum Insured - Option 3', shown.option3],
+  ] as const) {
+    const column = findColumn(sheet, header, label);
+    if (column && !keep) sheet.getColumn(column).hidden = true;
+  }
+}
+
 /** Fills the client's QCR template in place. */
 export function fillQcrTemplate(
   workbook: ExcelJS.Workbook,
@@ -512,6 +517,7 @@ export function fillQcrTemplate(
   if (schedule) {
     fillSchedule(schedule, context);
     fillConditions(schedule, qcr, terms);
+    hideUnquotedOptions(schedule, qcr);
   }
   const annexure = sheet(SHEETS.annexure);
   if (annexure) fillAnnexure(annexure, record);

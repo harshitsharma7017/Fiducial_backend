@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
+import { pdfLines } from '../src/modules/quotes/quote-extraction.ts';
 import type {
   ExistingPolicyResult,
   ExistingPolicySource,
@@ -501,6 +502,124 @@ describe('C-2: Existing, Option 1 and Option 2 for every schedule line', () => {
 });
 
 describe('The RFQ carries the options, basis, covers, product and add-ons', () => {
+  const download = (id: string, format: 'xlsx' | 'pdf') =>
+    request(app)
+      .get(`/api/v1/proposals/${id}/rfq?format=${format}`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+
+  it('prints them in the built-in layout, as the client reviewed it', async () => {
+    const id = await newCase('NEW');
+    await save(
+      id,
+      sheet(
+        { BUILDING_1: '2000000', COMPOUND_WALL: '100000', FFF: '1000000', STOCKS: '50000000' },
+        [{ code: 'BURGLARY', included: true, basis: 'FULL' }],
+        {
+          addons: [{ list: 'BSUS_BLUS', name: 'Earth quake' }],
+          fireOption2: [{ group: 'STOCKS', amount: '55000000' }],
+          existing: {
+            insurer: 'Example General Insurance, Fort',
+            policyNumber: 'EGI/FIRE/2025/0042',
+            fireLines: [{ group: 'STOCKS', amount: '40000000' }],
+            fireTotal: null,
+          },
+        },
+      ),
+    ).expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await download(id, 'xlsx')).body as ArrayBuffer);
+    const schedule = workbook.getWorksheet('schedule')!;
+    const texts = (name: string) => {
+      const lines: string[][] = [];
+      workbook.getWorksheet(name)!.eachRow((row) => {
+        const cells: string[] = [];
+        row.eachCell((cell) => {
+          if (cell.isMerged && cell.master !== cell) return;
+          cells.push(cell.text.trim());
+        });
+        lines.push(cells);
+      });
+      return lines;
+    };
+    // No policy number above the title; the existing insurer has a row of its own, and the policy
+    // number is in the Existing Policy row.
+    expect(schedule.getCell(1, 1).text).toBe('RFQ - SCHEDULE FOR PROPERTY INSURANCE');
+    const rows = texts('schedule');
+    expect(rows.some((cells) => cells[0]?.startsWith('Policy No'))).toBe(false);
+    expect(rows).toContainEqual(['Existing Insurer', 'Example General Insurance, Fort']);
+    expect(rows).toContainEqual(['Existing Policy', 'Policy No EGI/FIRE/2025/0042']);
+    // No "Policy to be chosen" rows while no policy is chosen.
+    expect(rows.some((cells) => cells[0]?.startsWith('Policy to be'))).toBe(false);
+    // Amounts sit at the right of their cells; the S No stays centred.
+    // The Fire line (the first of its name; Burglary's breakdown repeats it).
+    let stock = 0;
+    schedule.eachRow((row, number) => {
+      if (!stock && row.getCell(2).text === 'All types of stock pertaining to insured business')
+        stock = number;
+    });
+    const stockRow = schedule.getRow(stock);
+    expect(stockRow.getCell(3).value).toBe(40000000);
+    expect([3, 4].map((column) => stockRow.getCell(column).alignment?.horizontal)).toEqual([
+      'right',
+      'right',
+    ]);
+    expect(stockRow.getCell(1).alignment?.horizontal).toBe('center');
+    // Under Burglary, the Data Sheet's Fire & Burglary table: every item with its number, the
+    // buildings and sub-items indented, Existing and Option 2 on the row of their Fire line, the
+    // total; then Burglary's own sum insured (Fire less the buildings), not numbered.
+    let burglary = 0;
+    schedule.eachRow((row, number) => {
+      if (row.getCell(1).text.trim() === 'Burglary') burglary = number;
+    });
+    const block: unknown[][] = [];
+    for (let number = burglary + 1; number <= schedule.rowCount; number += 1) {
+      const row = schedule.getRow(number);
+      block.push([
+        row.getCell(1).value,
+        row.getCell(2).text,
+        ...[3, 4, 5].map((c) => row.getCell(c).value),
+      ]);
+      if (row.getCell(2).text === 'All the contents as per Fire section except building') break;
+    }
+    expect(block).toEqual([
+      [
+        '1',
+        'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
+        null,
+        2100000,
+        null,
+      ],
+      [null, 'Building 1', null, 2000000, null],
+      ['a', 'Compound wall', null, 100000, null],
+      ['2', 'Furniture, Fixtures and Fittings & Interiors', null, 1000000, null],
+      ['6', 'All types of stock pertaining to insured business', 40000000, 50000000, 55000000],
+      [null, 'Total sum insured', 40000000, 53100000, 55000000],
+      [null, 'All the contents as per Fire section except building', null, 51100000, 55000000],
+    ]);
+    const indent = (offset: number) =>
+      schedule.getCell(burglary + offset, 2).alignment?.indent ?? 0;
+    expect([1, 2, 3, 4].map(indent)).toEqual([0, 2, 2, 0]);
+    // Fire by location: no heading with the location's name, the address opens the block.
+    const location = texts('fire by location');
+    expect(location.some((cells) => cells[0] === 'Plant 1')).toBe(false);
+    expect(location.some((cells) => cells[0]?.startsWith('Plot 1, Mumbai'))).toBe(true);
+    // Add-on covers without the List column.
+    expect(texts('add-on covers')).toContainEqual(['S No', 'Addon cover', 'Sum insured limit']);
+    expect(texts('add-on covers')).toContainEqual(['1', 'Earth quake', 'Full sum insured']);
+
+    // The PDF's schedule page has no "Schedule" band above its title.
+    const lines = (await pdfLines((await download(id, 'pdf')).body as Buffer)) ?? [];
+    expect(lines.some((line) => line.trim() === 'Schedule')).toBe(false);
+    expect(lines.some((line) => line.includes('Fire by Location'))).toBe(true);
+  });
+
   it('fills them into the client’s template', async () => {
     await request(app)
       .post('/api/v1/templates/RFQ?fileName=Fiducial_RFQ%20format.xlsx')
@@ -571,6 +690,11 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     // The "Addon coverages" label stays on the row still shown.
     expect(schedule.getCell(rowOf('Earthquake'), 1).text).toBe('Addon coverages');
 
+    // No policy number above the title; the existing insurer under the policy period.
+    expect(schedule.getRow(rowOf('Policy No:', 1)).hidden).toBe(true);
+    const insurer = rowOf('Existing Insurer', 1);
+    expect(schedule.getCell(insurer, 2).text).toBe('Example General Insurance, Fort');
+    expect(insurer).toBe(rowOf('Policy Period', 1) + 1);
     // C-1: only the chosen policy is shown, under the label Policy.
     const product = rowOf('Policy', 1);
     expect(schedule.getCell(product, 2).value).toBe(
@@ -581,6 +705,31 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     // C-3: Burglary is the contents; a 75% first-loss row is added and the others hidden.
     const contents = rowOf('All the contents as per Fire section except building');
     expect(schedule.getCell(contents, 4).value).toBe(51000000);
+    // Above it, the Data Sheet's Fire & Burglary table with its numbers; the contents row is a
+    // total, not numbered.
+    const table = [5, 4, 3, 2, 1].map((back) => {
+      const row = contents - back;
+      return [
+        schedule.getCell(row, 1).text,
+        schedule.getCell(row, 2).text,
+        ...[3, 4, 5].map((column) => schedule.getCell(row, column).value),
+      ];
+    });
+    expect(table).toEqual([
+      [
+        '1',
+        'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
+        null,
+        100000000,
+        null,
+      ],
+      ['', 'Building 1', null, 100000000, null],
+      ['2', 'Furniture, Fixtures and Fittings & Interiors', null, 1000000, null],
+      ['6', 'All types of stock pertaining to insured business', null, 50000000, null],
+      ['', 'Total sum insured', 150000000, 151000000, null],
+    ]);
+    expect(schedule.getCell(contents - 4, 2).alignment?.indent).toBe(2);
+    expect(schedule.getCell(contents, 1).text).toBe('');
     const basis = rowOf('Total Sum Insured - Burglary on 1st loss basis 75% of sum insured');
     expect(schedule.getCell(basis, 4).value).toBe(38250000);
     expect(
@@ -593,6 +742,10 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     expect([3, 4, 5].map((column) => schedule.getCell(cash, column).value)).toEqual([
       80000, 100000, 150000,
     ]);
+    // Amounts at the right of their cells.
+    expect([3, 4, 5].map((column) => schedule.getCell(cash, column).alignment?.horizontal)).toEqual(
+      ['right', 'right', 'right'],
+    );
 
     // C-4: the PAR list holds the chosen add-on only; the other products' lists are hidden.
     const par = workbook.getWorksheet('PAR-Addon')!;

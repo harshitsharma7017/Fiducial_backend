@@ -30,6 +30,7 @@ import {
   emboldenWorkbook,
   openTemplate,
   saveWorkbook,
+  sheetNamed,
 } from '../documents/excel-template.ts';
 import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, workbookToPdf, type Letterhead } from '../documents/sheet-pdf.ts';
@@ -394,6 +395,10 @@ async function fileOf(loaded: Loaded, format: MailAttachmentFormat, defaultGstRa
         contentType: PDF_CONTENT_TYPE,
         data: await workbookToPdf(workbook, {
           sheets,
+          // The comparison and the schedule open with their own titles: no band naming them.
+          withoutHeading: ['premium details', 'schedule'].flatMap(
+            (sheetName) => sheetNamed(workbook, sheetName) ?? [],
+          ),
           letterhead,
           title: `QCR ${loaded.record.reference} — ${loaded.record.client.name}`,
           footer: `QCR ${loaded.record.reference} · ${loaded.record.client.name}`,

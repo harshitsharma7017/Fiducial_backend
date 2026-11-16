@@ -546,7 +546,7 @@ describe('product and cover masters', () => {
     );
   });
 
-  it('M-9: the RFQ prints the notes marked for it (change request NOTE-1), with the masters’ names and add-ons', async () => {
+  it('M-9: the RFQ prints the masters’ names and add-ons, and no notes', async () => {
     const note = (await list('notes'))[0]!;
     const { id, updatedAt: _u, ...row } = note;
     await request(app)
@@ -556,10 +556,11 @@ describe('product and cover masters', () => {
       .expect(200);
     const proposal = await newProposal();
     const lines = await rfqSchedule(proposal.id);
-    expect(lines.some((line) => line.startsWith('NOTE:'))).toBe(true);
+    // The RFQ prints no notes, even one marked On RFQ (client review).
+    expect(lines.some((line) => line.startsWith('NOTE:'))).toBe(false);
     expect(
       lines.some((line) => line.startsWith('Insure all assets at current replacement value.')),
-    ).toBe(true);
+    ).toBe(false);
     // The covers asked for are printed with a tick; one not required is left out.
     expect(lines).toContain('Addon coverages | Theft | ✓');
     expect(lines).toContain('Riot Strike Malicious Damage | ✓');
@@ -590,11 +591,9 @@ describe('product and cover masters', () => {
     // "Not required".
     expect(lines).not.toContain('Money Insurance | Not required');
     expect(lines.some((line) => line.startsWith('Money Insurance'))).toBe(false);
-    expect(
-      lines.some((line) =>
-        line.startsWith('Policy to be chosen | Up to ₹5 Cr sum insured: Bharat Sookshma'),
-      ),
-    ).toBe(true);
+    // Until a policy is chosen the RFQ lists none: no "Policy to be chosen" rows.
+    expect(lines.some((line) => line.startsWith('Policy to be chosen'))).toBe(false);
+    expect(lines.some((line) => line.includes('Bharat Sookshma'))).toBe(false);
   });
 
   it('lets every role read and only Admins change', async () => {

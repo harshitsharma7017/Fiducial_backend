@@ -7,6 +7,7 @@ import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AuditLogModel } from '../src/modules/audit/audit.model.ts';
 import { MailLogModel } from '../src/modules/mail/mail-log.model.ts';
+import { pdfLines } from '../src/modules/quotes/quote-extraction.ts';
 import type {
   ExistingPolicyResult,
   ExistingPolicySource,
@@ -383,7 +384,7 @@ describe('QC-4, QC-5: the export', () => {
     const bands = labels.filter((text) => /^Premium (with|without) terrorism$/.test(text ?? ''));
     expect(bands.slice(0, 2)).toEqual(['Premium without terrorism', 'Premium with terrorism']);
     expect(labels).toContain('Terrorism, extra net premium');
-    // Option 1, insurer A (column E, after the existing figures and the sum insured): Fire
+    // Option 1, insurer A (column C, after the sum insured): Fire
     // 1,20,000 with terrorism and 1,00,000 without; totals as its quote entries give them.
     const rows = premium.getSheetValues();
     const start = rows.findIndex((row) => Array.isArray(row) && row[1] === 'Proposed – Option 1');
@@ -392,7 +393,7 @@ describe('QC-4, QC-5: the export', () => {
     const fireAt = rows.findIndex(
       (row, index) => index > start && Array.isArray(row) && row[1] === 'Fire',
     );
-    expect(premium.getRow(fireAt).getCell(5).value).toBe(120000);
+    expect(premium.getRow(fireAt).getCell(3).value).toBe(120000);
     // QCR-4: no second Fire row; the next row is the next section.
     expect(premium.getRow(fireAt + 1).getCell(1).value).not.toBe(
       premium.getRow(fireAt).getCell(1).value,
@@ -405,13 +406,43 @@ describe('QC-4, QC-5: the export', () => {
       const at = rows.findIndex(
         (row, index) => index > from && Array.isArray(row) && row[1] === 'Total Premium',
       );
-      return premium.getRow(at).getCell(5).value;
+      return premium.getRow(at).getCell(3).value;
     };
     expect(totalUnder('Premium with terrorism')).toBe(143370);
     expect(totalUnder('Premium without terrorism')).toBe(119770);
+    // The existing insurer and policy number above the blocks; the blocks have no existing sum
+    // insured or premium columns, and the coverage differences are not printed.
+    const pairs = premium
+      .getSheetValues()
+      .flatMap((row) => (Array.isArray(row) ? [[row[1], row[2]]] : []));
+    expect(pairs).toContainEqual(['Existing Insurer:', 'Example General Insurance, Fort']);
+    expect(pairs).toContainEqual(['Existing Policy No:', 'EGI/FIRE/2025/0042']);
+    expect(premium.getRow(start + 1).values).toEqual([
+      undefined,
+      'Coverage Section',
+      'Sum insured',
+      'Test General, Fort (lowest total)',
+      'Test General, Andheri',
+    ]);
+    expect(labels.some((text) => text.startsWith('Differs'))).toBe(false);
     // B5: no aggregate "Not required" line in the schedule.
     const schedule = workbook.getWorksheet('schedule')!;
     expect(JSON.stringify(schedule.getSheetValues())).not.toContain('Not required');
+    // The schedule: its title first (no policy number above it), the existing insurer on its own
+    // row, and no Option 2 column, as no insurer quoted on Option 2.
+    expect(schedule.getCell(1, 1).value).toBe('QUOTE COMPARISON - SCHEDULE FOR PROPERTY INSURANCE');
+    const scheduleText = JSON.stringify(schedule.getSheetValues());
+    expect(scheduleText).not.toContain('Policy No:');
+    expect(scheduleText).toContain('"Existing Insurer","Example General Insurance, Fort"');
+    expect(scheduleText).toContain('Proposed Sum Insured - Option 1');
+    expect(scheduleText).not.toContain('Proposed Sum Insured - Option 2');
+    // The PDF: no "Premium Details" or "Schedule" band above their titles.
+    const pdf = await binary(
+      request(app).get(`/api/v1/proposals/${caseId}/qcr/document?format=pdf`).set(bearer(manager)),
+    ).expect(200);
+    const lines = (await pdfLines(pdf.body as Buffer)) ?? [];
+    expect(lines.some((line) => /^(Premium Details|Schedule)$/.test(line.trim()))).toBe(false);
+    expect(lines.some((line) => line.includes('Risk Details'))).toBe(true);
   });
 
   it('fills the client’s QCR template in its layout, with the figures as formulas', async () => {
@@ -435,33 +466,45 @@ describe('QC-4, QC-5: the export', () => {
     const premium = filled.getWorksheet('premium details')!;
     expect(premium.getCell('A1').value).toBe('PREMIUM COMPARISON FOR THE RENEWAL OF 2026-27');
     // Option 2 block (Proposed Option 1): A lowest, B second.
-    expect(premium.getCell('E28').value).toBe('Test General, Fort\n(lowest total)');
-    expect(premium.getCell('F28').value).toBe('Test General, Andheri');
-    expect(premium.getCell('D31').value).toBe(60000000);
-    expect([premium.getCell('E31').value, premium.getCell('F31').value]).toEqual([100000, 110000]);
-    expect(premium.getCell('E45').value).toMatchObject({ formula: 'SUM(E31:E44)', result: 101500 });
-    expect(premium.getCell('E46').value).toMatchObject({
-      formula: 'ROUND(E45*0.18,2)',
+    expect(premium.getCell('E30').value).toBe('Test General, Fort\n(lowest total)');
+    expect(premium.getCell('F30').value).toBe('Test General, Andheri');
+    expect(premium.getCell('D33').value).toBe(60000000);
+    expect([premium.getCell('E33').value, premium.getCell('F33').value]).toEqual([100000, 110000]);
+    expect(premium.getCell('E47').value).toMatchObject({ formula: 'SUM(E33:E46)', result: 101500 });
+    expect(premium.getCell('E48').value).toMatchObject({
+      formula: 'ROUND(E47*0.18,2)',
       result: 18270,
     });
-    expect(premium.getCell('E47').value).toMatchObject({ result: 119770 });
-    expect(premium.getCell('C31').value).toBe(96000);
-    // The existing insurer in place of "Insurer Name".
-    expect(premium.getCell('B28').value).toBe('Example General Insurance, Fort');
+    expect(premium.getCell('E49').value).toMatchObject({ result: 119770 });
+    // The existing insurer and policy number under the dates; the existing policy's sum insured
+    // and premium columns are left out, with no figures in them.
+    expect(premium.getCell('A4').value).toBe('Existing Insurer: Example General Insurance, Fort');
+    expect(premium.getCell('A5').value).toBe('Existing Policy No: EGI/FIRE/2025/0042');
+    expect(['B', 'C'].map((column) => premium.getColumn(column).hidden)).toEqual([true, true]);
+    expect(premium.getCell('C33').value).toBeNull();
+    // No coverage differences under the recommendation.
+    expect(JSON.stringify(premium.getSheetValues())).not.toContain('Coverage differences');
     // Option 3 has no quotes: its block is hidden.
-    expect(premium.getRow(53).hidden).toBe(true);
-    expect(premium.getCell('A71').value).toBe(
+    expect(premium.getRow(55).hidden).toBe(true);
+    expect(premium.getCell('A73').value).toBe(
       'Cheque / payment in favour of: Test General Insurance Co Ltd',
     );
-    expect(premium.getCell('A72').text).toMatch(
+    expect(premium.getCell('A74').text).toMatch(
       /^Our recommendation: Test General, Fort, Proposed – Option 1\. Lowest premium/,
     );
-    expect(premium.getCell('A73').text).toBe('Remarks: Changed');
+    expect(premium.getCell('A75').text).toBe('Remarks: Changed');
 
     const schedule = filled.getWorksheet('schedule')!;
-    expect(schedule.getCell('D17').value).toBe(60000000);
-    expect(schedule.getCell('E17').value).toBe(70000000);
-    expect(schedule.getCell('C17').value).toBe(50000000);
+    // The policy number row above the title is left out, and the existing insurer is a row of
+    // its own under the policy period (moving the table down one row).
+    expect(schedule.getRow(1).hidden).toBe(true);
+    expect(schedule.getCell('A8').value).toBe('Existing Insurer');
+    expect(schedule.getCell('B8').value).toBe('Example General Insurance, Fort');
+    expect(schedule.getCell('D18').value).toBe(60000000);
+    expect(schedule.getCell('C18').value).toBe(50000000);
+    // No insurer quoted on Option 2: its column is left out.
+    expect(schedule.getCell('E11').text).toBe('Proposed Sum Insured - Option 2');
+    expect(schedule.getColumn('E').hidden).toBe(true);
 
     const pdf = await binary(
       request(app).get(`/api/v1/proposals/${caseId}/qcr/document?format=pdf`).set(bearer(manager)),

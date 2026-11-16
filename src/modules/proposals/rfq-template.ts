@@ -51,6 +51,7 @@ import {
 } from '../documents/excel-template.ts';
 import { letterheadOf } from '../documents/sheet-pdf.ts';
 import type { ClientDoc } from '../clients/client.model.ts';
+import { BURGLARY_CONTENTS_LABEL, burglaryContentsLines } from './burglary-breakdown.ts';
 import { filled, type RfqMasters } from './rfq-workbook.ts';
 
 // The RFQ in the client's own template (R-3): the uploaded workbook is filled in place, so its
@@ -774,8 +775,9 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
 
   const policyNo = findRow(sheet, 'Policy No', { prefix: true });
   if (policyNo) {
-    // Only a case with the policy number of the policy in force has one to print.
-    if (existing?.policyNumber) {
+    // Only a case with the policy number of the policy in force has one to print; the RFQ and
+    // the QCR have none above their title (it is beside the existing insurer).
+    if (existing?.policyNumber && context.document === 'PLACEMENT_SLIP') {
       setValue(sheet, policyNo, 1, `Policy No: ${existing.policyNumber}`);
     } else hideRow(sheet, policyNo);
   }
@@ -826,6 +828,17 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     if (label === 'Risk Location' && locations.length > 1) {
       sheet.getRow(row).height = Math.max(15, 15 * locations.length);
     }
+  }
+  // The RFQ and the QCR name the existing insurance company, on a row under the policy period.
+  if (context.document !== 'PLACEMENT_SLIP' && existing) {
+    let row = findRow(sheet, 'Existing Insurer');
+    const period = findRow(sheet, 'Policy Period');
+    if (!row && period) {
+      insertRows(sheet, period + 1, 1, period);
+      row = period + 1;
+      setValue(sheet, row, 1, 'Existing Insurer');
+    }
+    if (row) setValue(sheet, row, 2, existing.insurer);
   }
 
   // The Fire table: Existing, Option 1, 2 and 3 by line.
@@ -988,7 +1001,18 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
           },
       ]
     : active;
-  if (productRow && products.length > 0) {
+  if (productRow && context.document === 'RFQ' && !decided) {
+    // The RFQ leaves out "Policy to be chosen" and its list: it prints the policy once chosen.
+    const block = sheet.getCell(productRow, 1);
+    let rows = 1;
+    while (
+      sheet.getCell(productRow + rows, 1).isMerged &&
+      sheet.getCell(productRow + rows, 1).master === block
+    )
+      rows += 1;
+    if (rows > 1) sheet.unMergeCells(productRow, 1, productRow + rows - 1, 1);
+    for (let row = productRow; row < productRow + rows; row += 1) hideRow(sheet, row);
+  } else if (productRow && products.length > 0) {
     const block = sheet.getCell(productRow, 1);
     let rows = 1;
     while (
@@ -1006,8 +1030,8 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       rows = 1;
     }
     setValue(sheet, productRow, 1, decided ? 'Policy' : 'Policy to be chosen');
+    // The policy rows are the RFQ's: the QCR leaves them out (change request QCR-5).
     if (context.document === 'QCR') {
-      // The policy rows are the RFQ's: the QCR leaves them out (change request QCR-5).
       sheet.unMergeCells(productRow, 1, productRow + rows - 1, 1);
       for (let row = productRow; row < productRow + rows; row += 1) hideRow(sheet, row);
       rows = 0;
@@ -1038,6 +1062,7 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
 
   // Each section: its lines, or "Not required". Blocks are found again for each section, as a
   // basis row added to one moves those below it.
+  let dataSheetNumbers: (string | null)[] = [];
   for (const section of record.sections) {
     const block = scheduleBlocks(sheet).get(section.code);
     if (!block) continue;
@@ -1099,6 +1124,30 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     let shown = false;
     for (let row = title + 1; row <= end; row += 1) shown ||= !sheet.getRow(row).hidden;
     if (!shown) hideRow(sheet, title);
+    // The RFQ prints the Data Sheet's Fire & Burglary table above Burglary's contents row, with
+    // Existing, Option 1 and Option 2; the contents row is then a total, not numbered.
+    const breakdown =
+      context.document === 'RFQ' && section.code === 'BURGLARY' && shown
+        ? burglaryContentsLines(record)
+        : [];
+    if (breakdown.length > 0) {
+      insertRows(sheet, first, breakdown.length, first);
+      breakdown.forEach((line, offset) => {
+        const row = first + offset;
+        setValue(sheet, row, 1, null);
+        setValue(sheet, row, 2, line.label);
+        const label = sheet.getCell(row, 2);
+        restyle(label, {
+          alignment: { ...label.alignment, wrapText: true, indent: line.kind === 'sub' ? 2 : 0 },
+          font: { ...label.font, bold: line.kind === 'heading' || line.kind === 'total' },
+        });
+        writeFigures(row, line.existing, line.proposed1, line.proposed2);
+      });
+      setValue(sheet, first + breakdown.length, 1, null);
+      // The Data Sheet's numbers are written once the blocks are numbered (renumberSchedule
+      // would count them as the block's own).
+      dataSheetNumbers = breakdown.map((line) => line.number);
+    }
   }
 
   fillClauses(sheet, context);
@@ -1107,6 +1156,19 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   // highlighted. The notes are not on the schedule (client review, 27 Oct 2026): the RFQ and the
   // placement slip have none, the QCR shows them on its first page (documentNotes).
   renumberSchedule(sheet, header);
+  // Found again by Burglary's contents row, which the table sits right above.
+  const contentsRow =
+    dataSheetNumbers.length > 0
+      ? findRow(sheet, BURGLARY_CONTENTS_LABEL, { column: 2, from: header })
+      : null;
+  if (contentsRow) {
+    const from = contentsRow - dataSheetNumbers.length;
+    dataSheetNumbers.forEach((number, offset) => {
+      setValue(sheet, from + offset, 1, number);
+      const cell = sheet.getCell(from + offset, 1);
+      restyle(cell, { alignment: { ...cell.alignment, horizontal: 'center', vertical: 'middle' } });
+    });
+  }
   highlightHeading(sheet, header, printColumns(sheet));
   for (let column = 1; column <= printColumns(sheet).to; column += 1) {
     const cell = sheet.getCell(header, column);

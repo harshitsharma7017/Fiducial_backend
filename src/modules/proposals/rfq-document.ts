@@ -19,6 +19,7 @@ import {
   centreFigures,
   emboldenWorkbook,
   openTemplate,
+  rightAlignFigures,
   saveWorkbook,
   sheetNamed,
 } from '../documents/excel-template.ts';
@@ -132,8 +133,10 @@ export async function rfqDocument(
   } else {
     workbook = buildRfqWorkbookDocument(record, client, masters, { title, attribution });
   }
-  // Last year's premium, the claim experience and the RFQ's notes (RFQ-4, RFQ-5, NOTE-1).
-  addRfqExtras(workbook, record, masters);
+  // Last year's premium and the claim experience (RFQ-4, RFQ-5). No notes (client review).
+  addRfqExtras(workbook, record);
+  // Amounts and counts to the right of their cells; S No and ticks stay centred.
+  rightAlignFigures(workbook);
   // Every line bold, so the RFQ reads easily (client review, 28 Oct 2026).
   emboldenWorkbook(workbook);
   letterhead = await withBrokerLetterhead(letterhead);
@@ -143,6 +146,8 @@ export async function rfqDocument(
     return {
       data: await workbookToPdf(workbook, {
         sheets: pdfSheets(workbook, record, 'RFQ'),
+        // The schedule opens with its own title, so no "Schedule" band above it.
+        withoutHeading: [sheetNamed(workbook, 'schedule')].filter((sheet) => sheet !== undefined),
         letterhead,
         title: `RFQ ${record.reference} — ${record.client.name}`,
         footer: `RFQ ${record.reference} · ${record.client.name}`,
