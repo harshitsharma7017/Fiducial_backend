@@ -186,13 +186,14 @@ export async function buildCoverageLetter(input: CoverageLetterInput): Promise<B
       color: DOCUMENT_COLORS.ink,
     },
     watermark: { ...WATERMARK },
-    header: () => documentHeader(logoImage),
+    header: () => documentHeader(logoImage, input.letterhead.brand),
     background: () => documentBackground(),
     footer: (page: number, pages: number) =>
       documentFooter(
         `Coverage confirmation ${policy.reference} · ${policy.insuredName}`,
         page,
         pages,
+        input.letterhead.brand,
       ),
     content: body,
   };

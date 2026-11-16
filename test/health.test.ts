@@ -141,6 +141,8 @@ describe('API documentation', () => {
         'GET /api/v1/templates',
         'GET /api/v1/templates/{kind}/file',
         'POST /api/v1/templates/{kind}',
+        'GET /api/v1/templates/document-brand',
+        'PUT /api/v1/templates/document-brand',
         'GET /api/v1/catalog/workbook',
         'POST /api/v1/catalog/import',
         'GET /api/v1/catalog/products/suggest',

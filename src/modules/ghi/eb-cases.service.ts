@@ -25,6 +25,7 @@ import { ClientModel } from '../clients/client.model.ts';
 import { gpaRequirementsOf, gtliRequirementsOf } from './eb-census-context.ts';
 import { planView } from './eb-plan-view.ts';
 import { createCaseOf } from './ghi-cases.service.ts';
+import { checkEbAddons } from './eb-addons.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { GhiMemberModel } from './ghi-census.model.ts';
 import {
@@ -250,6 +251,7 @@ export async function saveEbRequirements(
   }
   const actorId = new Types.ObjectId(actor.id);
   const previous = doc.requirements as unknown as GpaRequirementsInput | GtliRequirementsInput;
+  input = { ...input, addons: await checkEbAddons(input.addons, previous.addons) };
   const affectsCensus = censusFields(previous) !== censusFields(input);
   await withTransaction(async (session) => {
     const result = await GhiCaseModel.updateOne(

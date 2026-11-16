@@ -187,6 +187,8 @@ export function missingCensus(summary: GhiCensusSummary): string[] {
 export function requirementsOut(requirements: GhiRequirementsInput): GhiRequirements {
   return {
     ...requirements,
+    // Cases saved before add-on covers were asked have none.
+    addons: requirements.addons ?? [],
     claims: requirements.claims.map((claim) => {
       const premium = claim.premium === null ? null : new Decimal(claim.premium);
       const claimed =

@@ -154,6 +154,7 @@ describe('audit vocabulary', () => {
       'MASTER_SUPERSEDED',
       'CATALOG_ITEM_UPDATED',
       'TEMPLATE_UPLOADED',
+      'DOCUMENT_BRAND_UPDATED',
       'ADDON_FAVOURITES_UPDATED',
       'QCR_SAVED',
       'CLIENT_APPROVAL_RECORDED',

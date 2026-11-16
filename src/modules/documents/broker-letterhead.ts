@@ -1,3 +1,4 @@
+import { documentBrandFields } from './document-brand.service.ts';
 import { openTemplate } from './excel-template.ts';
 import { letterheadOf, type Letterhead } from './sheet-pdf.ts';
 import { templateFile } from './templates.service.ts';
@@ -19,7 +20,9 @@ async function placementSlipLetterhead(): Promise<Letterhead> {
 
 /** The document's own letterhead, with what it lacks taken from the Placement Slip template. */
 export async function withBrokerLetterhead(own: Letterhead): Promise<Letterhead> {
-  if (own.logo && own.address) return own;
+  // The header and footer text as set in Settings (Fiducial's until saved).
+  const brand = await documentBrandFields();
+  if (own.logo && own.address) return { ...own, brand };
   const broker = await placementSlipLetterhead();
-  return { logo: own.logo ?? broker.logo, address: own.address ?? broker.address };
+  return { logo: own.logo ?? broker.logo, address: own.address ?? broker.address, brand };
 }

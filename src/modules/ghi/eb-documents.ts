@@ -199,8 +199,14 @@ function gpaRows(record: GpaCaseRecord): SheetRow[] {
     label('Nominees', NOMINEE_REQUIREMENT_LABELS[nomineeRequirementOf(sheet)]),
     label('Age limits (completed years)', ageLimitsText(record)),
     label('Ages worked out on', formatDate(record.ageReferenceDate)),
+    ...addonRows(sheet.addons),
     ...(sheet.otherRequirements ? [label('Other requirements', sheet.otherRequirements)] : []),
   ];
+}
+
+/** The add-on covers asked for, from the Employee Benefits add-on list; none, no row. */
+function addonRows(addons: readonly string[] | undefined): SheetRow[] {
+  return addons && addons.length > 0 ? [label('Add-on covers', addons.join('; '))] : [];
 }
 
 function gtliRows(record: GtliCaseRecord): SheetRow[] {
@@ -218,6 +224,7 @@ function gtliRows(record: GtliCaseRecord): SheetRow[] {
     ...(sheet.additionalBenefits ? [label('Additional benefits', sheet.additionalBenefits)] : []),
     label('Age limits (completed years)', ageLimitsText(record)),
     label('Ages worked out on', formatDate(record.ageReferenceDate)),
+    ...addonRows(sheet.addons),
     ...(sheet.otherRequirements ? [label('Other requirements', sheet.otherRequirements)] : []),
   ];
 }
@@ -393,6 +400,7 @@ export function ebQcrDocument(
             'Census',
             `${summary.employees} employees, ${summary.lives} lives, total sum insured ${rupeesText(summary.totalSumInsured)}`,
           ),
+          ...addonRows(record.requirements.addons),
           { cells: ['Terms offered'], style: 'section' },
           header,
           ...qcr.rows.map((row) => ({

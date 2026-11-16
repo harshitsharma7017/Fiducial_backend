@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EbAddonsSchema } from './addon-lists.ts';
 import { AgeBandSelectionSchema } from './age-bands.ts';
 import { EmailSchema } from './auth.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
@@ -277,6 +278,8 @@ export const GhiRequirementsInputSchema = z
     ),
     /** The date ages are worked out on; blank: the policy start, else the day the case was created. */
     ageReferenceDate: blankAsNull(z.iso.date({ error: 'Enter a date' })),
+    /** Add-on covers from the Employee Benefits add-on list. */
+    addons: EbAddonsSchema,
     otherRequirements: OptionalText(2000),
   })
   .superRefine((input, context) => {
@@ -357,6 +360,7 @@ export function emptyGhiRequirements(): GhiRequirementsInput {
     claims: [],
     ageLimits: { employee: noLimit, spouse: noLimit, child: noLimit, parent: noLimit },
     ageReferenceDate: null,
+    addons: [],
     otherRequirements: null,
   };
 }

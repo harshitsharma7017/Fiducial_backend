@@ -20,6 +20,7 @@ export * from './cloud-documents.ts';
 export * from './common.ts';
 export * from './contacts.ts';
 export * from './data-sheet-import.ts';
+export * from './document-brand.ts';
 export * from './documents.ts';
 export * from './eb.ts';
 export * from './eb-census.ts';

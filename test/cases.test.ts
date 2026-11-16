@@ -259,12 +259,12 @@ describe('D-2: renewals', () => {
     expect(rows.find((row) => row[0] === 'Existing Policy')?.[1]).toMatch(
       /^Policy No EGI\/FIRE\/2025\/0042, /,
     );
-    expect(rows).toContainEqual([
+    // No Option 2 figures on the case: no Option 2 column (client, 16 Nov 2026).
+    expect(rows.find((row) => row[0] === 'S No')).toEqual([
       'S No',
       'Description',
       'Existing Sum Insured',
       'Proposed Sum Insured - Option 1',
-      'Proposed Sum Insured - Option 2',
     ]);
     expect(
       rows.find((row) => row[1] === 'Total Sum Insured - Fire & Allied Perils')?.slice(2, 4),

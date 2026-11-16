@@ -39,6 +39,7 @@ import {
   openTemplate,
   saveWorkbook,
 } from '../documents/excel-template.ts';
+import { withBrokerLetterhead } from '../documents/broker-letterhead.ts';
 import { letterheadOf, workbookToPdf } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import { getEmailTemplate } from '../email-templates/email-templates.service.ts';
@@ -393,7 +394,8 @@ async function fileOf(
     );
   }
   const workbook = await openTemplate(template.data);
-  const letterhead = letterheadOf(workbook);
+  // The template's logo and address, with the header and footer text set in Settings.
+  const letterhead = await withBrokerLetterhead(letterheadOf(workbook));
   fillPlacementSlipTemplate(
     workbook,
     record,

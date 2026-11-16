@@ -1,4 +1,9 @@
-import { formatDate, formatIndianNumber } from '../../shared/index.ts';
+import {
+  DEFAULT_DOCUMENT_BRAND,
+  formatDate,
+  formatIndianNumber,
+  type DocumentBrandInput,
+} from '../../shared/index.ts';
 import type ExcelJS from 'exceljs';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -6,7 +11,6 @@ import { dirname, join } from 'node:path';
 import pdfmake from 'pdfmake';
 import type { Content, TableCell } from 'pdfmake';
 import {
-  BROKER,
   CONTENT_WIDTH,
   COVER_TICK,
   COVER_TICK_ARGB,
@@ -73,6 +77,8 @@ const MINOR_WORDS = new Set([
 export interface Letterhead {
   logo: { data: Buffer; extension: string } | null;
   address: string | null;
+  /** The header's name and address and the footer's contact line, as set in Settings. */
+  brand?: DocumentBrandInput;
 }
 
 /**
@@ -408,8 +414,9 @@ export async function workbookToPdf(
       color: DOCUMENT_COLORS.ink,
     },
     watermark: { ...WATERMARK },
-    header: () => documentHeader(logoImage),
-    footer: (page: number, pages: number) => documentFooter(options.footer, page, pages),
+    header: () => documentHeader(logoImage, options.letterhead.brand),
+    footer: (page: number, pages: number) =>
+      documentFooter(options.footer, page, pages, options.letterhead.brand),
     background: () => documentBackground(),
     content,
   };
@@ -472,7 +479,10 @@ const BRAND_LOGO = ((): string | null => {
  * navy rule across the full width of the page. Exported so the Coverage Confirmation Letter (Q4),
  * which pdfmake draws directly, shows the same header.
  */
-export function documentHeader(logoImage: string | null): Content {
+export function documentHeader(
+  logoImage: string | null,
+  brand: DocumentBrandInput = DEFAULT_DOCUMENT_BRAND,
+): Content {
   const logo = BRAND_LOGO ?? logoImage;
   return {
     margin: [MARGIN.left, 20, MARGIN.right, 0],
@@ -491,7 +501,7 @@ export function documentHeader(logoImage: string | null): Content {
               },
           {
             width: '*',
-            stack: [BROKER.name, ...BROKER.address],
+            stack: [brand.companyName, ...brand.addressLines],
             bold: true,
             fontSize: DOCUMENT_FONT.letterheadAddress,
             color: DOCUMENT_COLORS.letterhead,
@@ -521,8 +531,20 @@ export function documentHeader(logoImage: string | null): Content {
  * The foot of every page (Q2): the document's reference and "Page X of Y", then the letterhead's
  * contact line (telephone, e-mail and website) in navy.
  */
-export function documentFooter(text: string, page: number, pages: number): Content {
+export function documentFooter(
+  text: string,
+  page: number,
+  pages: number,
+  brand: DocumentBrandInput = DEFAULT_DOCUMENT_BRAND,
+): Content {
   const separator = { text: '  |  ', fontSize: DOCUMENT_FONT.contact + 3 };
+  // The contact line as set in Settings: each part left out when blank.
+  const contact = [
+    brand.telephone ? `Tel : ${brand.telephone}` : null,
+    brand.email ? `E-mail : ${brand.email}` : null,
+    brand.website || null,
+  ].filter((part): part is string => part !== null);
+  const contactLine = contact.flatMap((part, index) => (index === 0 ? [part] : [separator, part]));
   return {
     margin: [MARGIN.left, 10, MARGIN.right, 0],
     stack: [
@@ -537,20 +559,29 @@ export function documentFooter(text: string, page: number, pages: number): Conte
           },
         ],
       },
-      {
-        text: [
-          `Tel : ${BROKER.telephone}`,
-          separator,
-          `E-mail : ${BROKER.email}`,
-          separator,
-          BROKER.website,
-        ],
-        alignment: 'center',
-        bold: true,
-        fontSize: DOCUMENT_FONT.contact,
-        color: DOCUMENT_COLORS.contact,
-        margin: [0, 8, 0, 0],
-      },
+      ...(contactLine.length > 0
+        ? [
+            {
+              text: contactLine,
+              alignment: 'center' as const,
+              bold: true,
+              fontSize: DOCUMENT_FONT.contact,
+              color: DOCUMENT_COLORS.contact,
+              margin: [0, 8, 0, 0] as [number, number, number, number],
+            },
+          ]
+        : []),
+      ...(brand.footerNote
+        ? [
+            {
+              text: brand.footerNote,
+              alignment: 'center' as const,
+              fontSize: DOCUMENT_FONT.footer,
+              color: DOCUMENT_COLORS.muted,
+              margin: [0, 2, 0, 0] as [number, number, number, number],
+            },
+          ]
+        : []),
     ],
   };
 }

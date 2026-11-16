@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EbAddonsSchema } from './addon-lists.ts';
 import { blankAsNull } from './common.ts';
 import { NomineeRequirementSchema } from './eb-nominees.ts';
 import { formatIndianNumber } from './format.ts';
@@ -405,6 +406,8 @@ export const GpaRequirementsInputSchema = z
     ageLimits: shared.ageLimits,
     ageReferenceDate: shared.ageReferenceDate,
     claims: ClaimsSchema,
+    /** Add-on covers from the Employee Benefits add-on list. */
+    addons: EbAddonsSchema,
     otherRequirements: OptionalText(2000),
   })
   .superRefine((input, context) => {
@@ -454,6 +457,8 @@ export const GtliRequirementsInputSchema = z
     ageReferenceDate: shared.ageReferenceDate,
     claims: ClaimsSchema,
     additionalBenefits: OptionalText(2000),
+    /** Add-on covers from the Employee Benefits add-on list. */
+    addons: EbAddonsSchema,
     otherRequirements: OptionalText(2000),
   })
   .superRefine((input, context) => uniqueClaimYears(input.claims, context));
@@ -495,6 +500,7 @@ export function emptyGpaRequirements(): GpaRequirementsInput {
     ageLimits: noAgeLimits(),
     ageReferenceDate: null,
     claims: [],
+    addons: [],
     otherRequirements: null,
   };
 }
@@ -510,6 +516,7 @@ export function emptyGtliRequirements(): GtliRequirementsInput {
     ageReferenceDate: null,
     claims: [],
     additionalBenefits: null,
+    addons: [],
     otherRequirements: null,
   };
 }

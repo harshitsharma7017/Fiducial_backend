@@ -50,9 +50,16 @@ function comparison(
   const sheet = workbook.addWorksheet('premium details');
   const span = 2 + qcr.insurers.length;
   sheet.columns = [{ width: 26 }, { width: 18 }, ...qcr.insurers.map(() => ({ width: 22 }))];
+  // The reference above the heading, the number only, at the right (client, 16 Nov 2026); not
+  // boxed, as it is outside the table.
+  const reference = sheet.addRow([record.reference]);
+  if (span > 1) sheet.mergeCells(reference.number, 1, reference.number, span);
+  const referenceCell = reference.getCell(1);
+  referenceCell.alignment = { horizontal: 'right', vertical: 'middle' };
+  referenceCell.font = { bold: true };
+  referenceCell.border = { top: {}, left: {}, bottom: {}, right: {} };
   title(sheet, `PREMIUM COMPARISON — ${renewal ? 'RENEWAL' : 'NEW BUSINESS'}`, span);
   labelled(sheet, 'Insured Name:', record.client.name, span);
-  labelled(sheet, 'Reference:', record.reference, span);
   if (record.existing) {
     labelled(sheet, 'Existing Insurer:', record.existing.insurer, span);
     labelled(sheet, 'Existing Policy No:', record.existing.policyNumber ?? '', span);
@@ -73,7 +80,8 @@ function comparison(
     );
     const head = header(sheet, [
       'Coverage Section',
-      'Sum insured',
+      // The renewal's Existing block compares the insurers on last year's sum insured.
+      option.option === 'EXISTING' ? 'Existing sum insured' : 'Sum insured',
       ...qcr.insurers.map(
         (insurer, index) =>
           `${insurer.company}, ${insurer.branch}${quotes[index]?.lowest ? ' (lowest total)' : ''}`,

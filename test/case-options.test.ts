@@ -553,8 +553,10 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     expect(schedule.getCell(1, 1).text).toBe('RFQ - SCHEDULE FOR PROPERTY INSURANCE');
     const rows = texts('schedule');
     expect(rows.some((cells) => cells[0]?.startsWith('Policy No'))).toBe(false);
-    expect(rows).toContainEqual(['Existing Insurer', 'Example General Insurance, Fort']);
-    expect(rows).toContainEqual(['Existing Policy', 'Policy No EGI/FIRE/2025/0042']);
+    // New business shows no Existing anywhere (hard rule, client 16 Nov 2026), though the client's
+    // current policy was sent with the Data Sheet.
+    expect(JSON.stringify(rows)).not.toContain('Existing');
+    expect(JSON.stringify(rows)).not.toContain('EGI/FIRE/2025/0042');
     // No "Policy to be chosen" rows while no policy is chosen.
     expect(rows.some((cells) => cells[0]?.startsWith('Policy to be'))).toBe(false);
     // Amounts sit at the right of their cells; the S No stays centred.
@@ -565,15 +567,15 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
         stock = number;
     });
     const stockRow = schedule.getRow(stock);
-    expect(stockRow.getCell(3).value).toBe(40000000);
+    expect(stockRow.getCell(3).value).toBe(50000000);
     expect([3, 4].map((column) => stockRow.getCell(column).alignment?.horizontal)).toEqual([
       'right',
       'right',
     ]);
     expect(stockRow.getCell(1).alignment?.horizontal).toBe('center');
     // Under Burglary, the Data Sheet's Fire & Burglary table: every item with its number, the
-    // buildings and sub-items indented, Existing and Option 2 on the row of their Fire line, the
-    // total; then Burglary's own sum insured (Fire less the buildings), not numbered.
+    // buildings and sub-items indented, Option 2 on the row of its Fire line, the total; then
+    // Burglary's own sum insured (Fire less the buildings), not numbered. No Existing column.
     let burglary = 0;
     schedule.eachRow((row, number) => {
       if (row.getCell(1).text.trim() === 'Burglary') burglary = number;
@@ -584,7 +586,7 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
       block.push([
         row.getCell(1).value,
         row.getCell(2).text,
-        ...[3, 4, 5].map((c) => row.getCell(c).value),
+        ...[3, 4].map((c) => row.getCell(c).value),
       ]);
       if (row.getCell(2).text === 'All the contents as per Fire section except building') break;
     }
@@ -592,16 +594,15 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
       [
         '1',
         'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
-        null,
         2100000,
         null,
       ],
-      [null, 'Building 1', null, 2000000, null],
-      ['a', 'Compound wall', null, 100000, null],
-      ['2', 'Furniture, Fixtures and Fittings & Interiors', null, 1000000, null],
-      ['6', 'All types of stock pertaining to insured business', 40000000, 50000000, 55000000],
-      [null, 'Total sum insured', 40000000, 53100000, 55000000],
-      [null, 'All the contents as per Fire section except building', null, 51100000, 55000000],
+      [null, 'Building 1', 2000000, null],
+      ['a', 'Compound wall', 100000, null],
+      ['2', 'Furniture, Fixtures and Fittings & Interiors', 1000000, null],
+      ['6', 'All types of stock pertaining to insured business', 50000000, 55000000],
+      [null, 'Total sum insured', 53100000, 55000000],
+      [null, 'All the contents as per Fire section except building', 51100000, 55000000],
     ]);
     const indent = (offset: number) =>
       schedule.getCell(burglary + offset, 2).alignment?.indent ?? 0;

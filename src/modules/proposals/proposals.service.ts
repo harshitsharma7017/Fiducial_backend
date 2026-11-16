@@ -701,6 +701,12 @@ export async function readExistingFromFile(
   reader: ExistingOcrReader,
 ): Promise<ExistingOcr> {
   const doc = await loadDoc(id);
+  // Existing figures are a renewal's only (hard rule, client 16 Nov 2026).
+  if (doc.type !== 'EXISTING') {
+    throw validationError([
+      { location: 'params', path: 'id', message: 'Existing figures are read for renewals only.' },
+    ]);
+  }
   if (doc.stage === 'CLOSED') throw closed();
   if (doc.insurers.some((insurer) => hasRfq(insurer.status))) throw locked();
   return reader.read(file);
@@ -818,9 +824,10 @@ export async function updateDataSheet(
     })),
     notes: input.notes,
   };
-  // The Existing column: the policy in force, typed (new business and renewals) or copied.
+  // The Existing column: the policy in force, typed or copied. Renewals only (hard rule, client
+  // 16 Nov 2026): new business keeps no existing figures, whatever is sent.
   const copy = await recordOf({ ...doc, ...set, existingFigures: null });
-  set.existingFigures = existingFiguresOf(input, copy);
+  set.existingFigures = doc.type === 'EXISTING' ? existingFiguresOf(input, copy) : null;
   await checkProductAndAddons(input, await recordOf({ ...doc, ...set }));
   return saveWith(doc, set, 'Data Sheet saved', AUDIT_ACTIONS.PROPOSAL_UPDATED, actor, before);
 }

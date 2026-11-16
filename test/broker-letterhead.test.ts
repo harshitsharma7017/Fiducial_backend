@@ -1,3 +1,4 @@
+import { DEFAULT_DOCUMENT_BRAND } from '../src/shared/index.ts';
 import ExcelJS from 'exceljs';
 import { Types } from 'mongoose';
 import { describe, expect, it } from 'vitest';
@@ -37,6 +38,8 @@ describe('withBrokerLetterhead', () => {
     expect(await withBrokerLetterhead({ logo: null, address: null })).toEqual({
       logo: null,
       address: null,
+      // The header and footer text as set in Settings (Fiducial's until saved).
+      brand: DEFAULT_DOCUMENT_BRAND,
     });
   });
 
@@ -45,10 +48,14 @@ describe('withBrokerLetterhead', () => {
     expect(await withBrokerLetterhead({ logo: null, address: null })).toEqual({
       logo: null,
       address: ADDRESS,
+      // The header and footer text as set in Settings (Fiducial's until saved).
+      brand: DEFAULT_DOCUMENT_BRAND,
     });
     expect(await withBrokerLetterhead({ logo: null, address: 'Its own address' })).toEqual({
       logo: null,
       address: 'Its own address',
+      // The header and footer text as set in Settings (Fiducial's until saved).
+      brand: DEFAULT_DOCUMENT_BRAND,
     });
   });
 });

@@ -24,6 +24,7 @@ import { conflict, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { escapeRegExp } from '../../lib/text.ts';
 import { taxRatePercentOn } from '../catalog/catalog.service.ts';
+import { checkEbAddons } from './eb-addons.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { CounterModel } from '../proposals/proposal.model.ts';
@@ -415,6 +416,7 @@ export async function saveRequirements(
 ): Promise<GhiCaseRecord> {
   const doc = await loadCase(id);
   assertEditable(doc);
+  input = { ...input, addons: await checkEbAddons(input.addons, doc.requirements.addons) };
   // Moved from the Data Sheet schema (design D6): with a plan, the plan says who is covered.
   if (
     input.parentsCoPayPercent !== null &&

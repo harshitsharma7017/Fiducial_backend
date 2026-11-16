@@ -392,8 +392,13 @@ describe('the QCR (client review, 27 Oct 2026)', () => {
     // white on navy.
     expect(premium.getCell(policy, 1).border.top?.style).toBe('thin');
     expect(premium.getCell(policy, 2).font.bold).toBe(true);
-    expect(premium.getCell(1, 1).fill).toMatchObject({ fgColor: { argb: 'FF12285E' } });
-    expect(premium.getCell(1, 1).font.color?.argb).toBe('FFFFFFFF');
+    // The reference above the heading, the number only, at the right (client, 16 Nov 2026).
+    expect(premium.getCell(1, 1).value).toMatch(/^PRP-\d{4}-\d{4}$/);
+    expect(premium.getCell(1, 1).alignment.horizontal).toBe('right');
+    expect(premium.getCell(1, 1).border.top?.style).toBeUndefined();
+    expect(rowsOf(premium).some((line) => line.text === 'Reference:')).toBe(false);
+    expect(premium.getCell(2, 1).fill).toMatchObject({ fgColor: { argb: 'FF12285E' } });
+    expect(premium.getCell(2, 1).font.color?.argb).toBe('FFFFFFFF');
     const recommendation = rowOf(premium, 'Our recommendation:');
     const note = rowOf(premium, 'NOTE:');
     expect(note).toBe(recommendation + 1);

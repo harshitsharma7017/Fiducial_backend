@@ -853,6 +853,11 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     4;
   const option2Found = findColumn(sheet, header, 'Proposed Sum Insured - Option 2');
   const option2Column = option2Found ?? 5;
+  // No Option 2 asked (no Fire line or included section has an Option 2 figure): its column is
+  // left out, as its quote block is.
+  if (option2Found !== null && !quoteOptionsOf(record).includes('P2')) {
+    sheet.getColumn(option2Found).hidden = true;
+  }
   // Option 3 (Fire only) gets its own column after Option 2 when the template has none.
   let option3Column = findColumn(sheet, header, 'Proposed Sum Insured - Option 3');
   if (record.fire.proposed3 !== null && option3Column === null && option2Found !== null) {

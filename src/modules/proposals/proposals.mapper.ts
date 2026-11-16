@@ -164,10 +164,12 @@ const linesRecord = (
   );
 
 /**
- * The Existing column (C-2): the figures typed on the Data Sheet, else (a renewal) the policy
- * software's copy. New business has one when the client's current policy was typed in.
+ * The Existing column (C-2): the figures typed on the Data Sheet, else the policy software's copy.
+ * Renewals only (hard rule, client 16 Nov 2026): new business shows no Existing anywhere (Data
+ * Sheet, RFQ, quotes, QCR), even when a case saved earlier has figures stored.
  */
 function existingColumn(doc: ProposalDoc) {
+  if (doc.type !== 'EXISTING') return null;
   const figures = doc.existingFigures ?? null;
   const copy = doc.existingPolicy ?? null;
   if (figures) {
@@ -426,7 +428,8 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   const anySent = doc.insurers.some((insurer) => hasRfq(insurer.status));
   const stage = stageOf(missing, anySent, doc.stageOverride ?? null);
   const today = istDay(context.now);
-  const copy = doc.existingPolicy ?? null;
+  // Last year's policy is a renewal's only (hard rule: no Existing for new business).
+  const copy = doc.type === 'EXISTING' ? (doc.existingPolicy ?? null) : null;
   const lookup = doc.existingPolicyLookup ?? null;
   const fireMaster = context.sections.find((section) => section.code === 'FIRE');
 

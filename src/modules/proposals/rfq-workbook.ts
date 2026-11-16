@@ -311,8 +311,10 @@ export function schedule(
   const withExisting = record.existing !== null;
   const existing = record.existing;
   const copy = record.existingPolicy;
-  // Option 3 is a Fire figure: its column is there only when a Fire line has one.
-  const withOption2 = options.option2 ?? true;
+  // Option 2's column only when the case asks for Option 2 (a Fire line or an included section has
+  // an Option 2 figure), as its quote block; Option 3 is a Fire figure: its column is there only
+  // when a Fire line has one.
+  const withOption2 = quoteOptionsOf(record).includes('P2') && (options.option2 ?? true);
   const withOption3 = record.fire.proposed3 !== null && (options.option3 ?? true);
   const span = (withExisting ? 4 : 3) + (withOption2 ? 1 : 0) + (withOption3 ? 1 : 0);
   const amountColumns = Array.from({ length: span - 2 }, (_, index) => index + 3);
@@ -660,12 +662,13 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       if (!itemFilled(item.key) && !parent) continue;
       const values = saved.get(item.key);
       const sub = heading !== undefined || item.number.length > 1;
+      // The S No column holds the items' numbers only; a sub-item's letter opens its description,
+      // indented under its item, so points and sub-points line up (client, 16 Nov 2026).
       const row = sheet.addRow([
-        sub ? item.number.slice(-1) : item.number,
-        item.label,
+        sub ? null : item.number,
+        sub ? `${item.number.slice(-1)}) ${item.label}` : item.label,
         values ? amount(values.sumInsured) || null : null,
       ]);
-      // The S No is centred; a sub-item's description is indented under its heading.
       row.getCell(1).alignment = { horizontal: 'center' };
       row.getCell(2).alignment = { wrapText: true, indent: sub ? 2 : 0 };
       money(row, [3]);
