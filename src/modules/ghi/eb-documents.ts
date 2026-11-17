@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   COVER_CHOICE_LABELS,
   DEPENDANT_BASIS_LABELS,
@@ -59,7 +60,7 @@ function insuredRows(record: EbCaseRecord): SheetRow[] {
     ),
     label('Type of case', GHI_CASE_TYPE_LABELS[record.type]),
     label('Policy period', periodText(record)),
-    ...(record.type === 'RENEWAL'
+    ...(continuesPolicy(record.type)
       ? [
           label(
             'Expiring policy',

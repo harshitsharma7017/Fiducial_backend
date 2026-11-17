@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   ERROR_CODES,
   GHI_STAGES,
@@ -167,7 +168,7 @@ export function missingRequirements(doc: GhiCaseDoc): string[] {
   if (gmcFamilyCover(doc).parentsCovered && requirements.parentsCoPayPercent === null) {
     missing.push('Co-payment for parents');
   }
-  if (doc.type === 'RENEWAL' && requirements.claims.length === 0) {
+  if (continuesPolicy(doc.type) && requirements.claims.length === 0) {
     missing.push('Previous years’ premium and claims (renewal)');
   }
   return missing;

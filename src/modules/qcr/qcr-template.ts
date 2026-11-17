@@ -1,3 +1,4 @@
+import { renewalWord } from '../../shared/case-types.ts';
 import {
   QUOTE_OPTION_LABELS,
   formatDate,
@@ -146,7 +147,7 @@ function fillPremiumComparison(
     1,
     1,
     renewal
-      ? `PREMIUM COMPARISON FOR THE RENEWAL OF ${year}`
+      ? `PREMIUM COMPARISON FOR THE ${renewalWord(record.type)} OF ${year}`
       : `PREMIUM COMPARISON FOR NEW BUSINESS ${year}`,
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });

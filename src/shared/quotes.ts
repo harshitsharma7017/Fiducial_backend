@@ -1,3 +1,4 @@
+import { continuesPolicy } from './case-types.ts';
 import { z } from 'zod';
 import { SECTION_CODES, type SectionCode } from './catalog.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
@@ -237,7 +238,7 @@ export function quoteOptionsOf(
     record.sections.some((s) => s.included && s.proposed2 !== null);
   const option3 = record.fire.proposed3 !== null;
   return [
-    ...(record.type === 'EXISTING' ? (['EXISTING'] as const) : []),
+    ...(continuesPolicy(record.type) ? (['EXISTING'] as const) : []),
     'P1' as const,
     ...(option2 ? (['P2'] as const) : []),
     ...(option3 ? (['P3'] as const) : []),

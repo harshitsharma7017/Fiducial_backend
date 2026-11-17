@@ -171,8 +171,9 @@ function displayText(cell: ExcelJS.Cell): string {
         : null;
   if (number !== null) {
     const format = cell.numFmt ?? '';
-    if (/#,##0|##0/.test(format)) return formatIndianNumber(number.toFixed(2), 0);
+    // Paise first: the paise format holds the whole-rupee pattern too ("##0.00").
     if (/0\.00/.test(format)) return formatIndianNumber(number.toFixed(2), 2);
+    if (/#,##0|##0/.test(format)) return formatIndianNumber(number.toFixed(2), 0);
     return Number.isInteger(number) ? String(number) : String(Number(number.toFixed(2)));
   }
   if (value instanceof Date) return formatDate(value.toISOString().slice(0, 10));

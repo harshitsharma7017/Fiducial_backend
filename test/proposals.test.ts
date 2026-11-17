@@ -855,6 +855,65 @@ describe('new-business proposals', () => {
     expect(earthquake?.[2]).toBeTruthy();
   });
 
+  it('handles a roll over exactly as a renewal: Existing column, printed as ROLL OVER', async () => {
+    const { body: proposal } = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager))
+      .send({
+        clientId,
+        type: 'ROLLOVER',
+        locationIds: [plant1],
+        dueDate: '2026-11-15',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
+      .expect(201);
+    expect(proposal.type).toBe('ROLLOVER');
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id as string}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [],
+          fireOption2: [],
+          existing: {
+            insurer: 'Previous General, Fort',
+            policyNumber: 'PRV/2025/9',
+            fireLines: [{ group: 'STOCKS', amount: '900000' }],
+            fireTotal: null,
+          },
+        }),
+      )
+      .expect(200);
+    expect(saved.body.existing).toMatchObject({ insurer: 'Previous General, Fort' });
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id as string}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
+    expect(schedule).toContain('Existing Sum Insured');
+    expect(JSON.stringify(workbook.getWorksheet('premium details')!.getSheetValues())).toContain(
+      'RFQ FOR ROLL OVER',
+    );
+  });
+
   it('leaves out of the RFQ whatever is empty or not required', async () => {
     const { body: proposal } = await create(manager, [plant1]).expect(201);
     await request(app)

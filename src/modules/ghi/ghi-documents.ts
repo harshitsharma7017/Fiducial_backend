@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   GHI_AGE_GROUPS,
   GHI_AGE_GROUP_LABELS,
@@ -78,7 +79,7 @@ function insuredRows(record: GhiCaseRecord): SheetRow[] {
     ),
     label('Type of case', GHI_CASE_TYPE_LABELS[record.type]),
     label('Policy period', periodText(record)),
-    ...(record.type === 'RENEWAL'
+    ...(continuesPolicy(record.type)
       ? [
           label(
             'Expiring policy',

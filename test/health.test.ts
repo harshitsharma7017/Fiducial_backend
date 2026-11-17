@@ -284,6 +284,15 @@ describe('API documentation', () => {
         'GET /api/v1/claim-links/current',
         'POST /api/v1/claim-links/current/claims',
         'POST /api/v1/claim-links/current/claims/{claimNumber}/documents',
+        // Workmen compensation
+        'GET /api/v1/wc/cases',
+        'POST /api/v1/wc/cases',
+        'GET /api/v1/wc/cases/{id}',
+        'PUT /api/v1/wc/cases/{id}/data-sheet',
+        'PUT /api/v1/wc/cases/{id}/quotes',
+        'PUT /api/v1/wc/cases/{id}/rfq',
+        'PUT /api/v1/wc/cases/{id}/placement',
+        'GET /api/v1/wc/cases/{id}/documents/{kind}',
         // Employee Benefits (N1 to N3): GPA, GTLI, family plans, employees, templates
         'PUT /api/v1/ghi/cases/{id}/plan',
         'GET /api/v1/ghi/cases/{id}/census/imports/{importId}/error-report',

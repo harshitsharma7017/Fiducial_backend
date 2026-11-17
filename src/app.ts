@@ -31,6 +31,7 @@ import { getCase } from './modules/ghi/ghi-cases.service.ts';
 import { loadCase } from './modules/ghi/ghi-common.ts';
 import { GMC_SCOPE, GPA_SCOPE, GTLI_SCOPE } from './modules/ghi/products/profile.ts';
 import { createEbRouter } from './modules/ghi/eb.routes.ts';
+import { createWcRouter } from './modules/wc/wc.routes.ts';
 import { createEmailTemplatesRouter } from './modules/email-templates/email-templates.routes.ts';
 import { createFamilyPlansRouter } from './modules/family-plans/family-plans.routes.ts';
 import {
@@ -224,6 +225,8 @@ export function createApp({
   api.use('/eb/gpa', createEbProductRouter('GPA', { ...jwt, mailTransport: transport }));
   api.use('/eb/gtli', createEbProductRouter('GTLI', { ...jwt, mailTransport: transport }));
   api.use('/eb', createEbRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
+  // Workmen compensation cases (WC Format.xlsx: Data Sheet, RFQ and Quote).
+  api.use('/wc', createWcRouter({ ...jwt, gstRatePercent: config.GST_RATE_PERCENT }));
   api.use('/family-plans', createFamilyPlansRouter(jwt));
   // N4 and N7: the Age Band Master, and each case's age bands and RFQ selection summary.
   api.use('/age-bands', createAgeBandsRouter(jwt));

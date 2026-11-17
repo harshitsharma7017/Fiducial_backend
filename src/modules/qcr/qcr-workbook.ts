@@ -1,3 +1,4 @@
+import { continuesPolicy, renewalWord } from '../../shared/case-types.ts';
 import {
   QUOTE_OPTION_LABELS,
   formatDate,
@@ -44,7 +45,7 @@ function comparison(
   qcr: Qcr,
   notes: readonly string[],
 ) {
-  const renewal = record.type === 'EXISTING';
+  const renewal = continuesPolicy(record.type);
   // Each option compares the insurers on its own sum insured: the existing policy's sum insured
   // and premium are not repeated in its blocks (client review); its insurer and number are above.
   const sheet = workbook.addWorksheet('premium details');
@@ -58,7 +59,7 @@ function comparison(
   referenceCell.alignment = { horizontal: 'right', vertical: 'middle' };
   referenceCell.font = { bold: true };
   referenceCell.border = { top: {}, left: {}, bottom: {}, right: {} };
-  title(sheet, `PREMIUM COMPARISON — ${renewal ? 'RENEWAL' : 'NEW BUSINESS'}`, span);
+  title(sheet, `PREMIUM COMPARISON — ${renewal ? renewalWord(record.type) : 'NEW BUSINESS'}`, span);
   labelled(sheet, 'Insured Name:', record.client.name, span);
   if (record.existing) {
     labelled(sheet, 'Existing Insurer:', record.existing.insurer, span);

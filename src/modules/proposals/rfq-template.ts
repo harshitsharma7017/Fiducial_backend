@@ -1,3 +1,4 @@
+import { continuesPolicy, renewalWord } from '../../shared/case-types.ts';
 import {
   ANNEXURE_SECTIONS,
   BURGLARY_BASIS_LABELS,
@@ -258,7 +259,7 @@ export function fillContextOf(
     record,
     client,
     masters,
-    renewal: record.type === 'EXISTING',
+    renewal: continuesPolicy(record.type),
     document,
     existingOf: (code) => {
       const sumInsured = sums.get(code) ?? null;
@@ -283,7 +284,10 @@ function fillPremiumDetails(sheet: ExcelJS.Worksheet, context: FillContext) {
     sheet,
     1,
     1,
-    context.title ?? (renewal ? `RFQ FOR THE RENEWAL OF ${year}` : `RFQ FOR NEW BUSINESS ${year}`),
+    context.title ??
+      (renewal
+        ? `RFQ FOR THE ${renewalWord(record.type)} OF ${year}`
+        : `RFQ FOR NEW BUSINESS ${year}`),
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });
   if (insuredRow) setValue(sheet, insuredRow, 1, `Insured Name: ${record.client.name}`);

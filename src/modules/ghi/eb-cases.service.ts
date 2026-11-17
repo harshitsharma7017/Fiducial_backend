@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   AUDIT_ACTIONS,
   EB_PRODUCTS,
@@ -53,7 +54,7 @@ export function ebMissingItems(doc: GhiCaseDoc): MissingItem[] {
       planHasDependants: doc.planAssignment ? planHasDependants(doc.planAssignment.slots) : false,
     });
   }
-  return gtliMissing(gtliRequirementsOf(doc), { renewal: doc.type === 'RENEWAL' });
+  return gtliMissing(gtliRequirementsOf(doc), { renewal: continuesPolicy(doc.type) });
 }
 
 /** A GPA or GTLI case as the API returns it. */

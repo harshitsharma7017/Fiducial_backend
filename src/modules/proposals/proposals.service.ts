@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITIES,
@@ -500,7 +501,7 @@ export async function createProposal(
   }
   // A renewal copies last year's policy from the policy software (D-2). Looked up before the
   // transaction: it is a call to another system.
-  const renewal = input.type === 'EXISTING';
+  const renewal = continuesPolicy(input.type);
   const now = new Date();
   const result = renewal
     ? await options.policySource.latest({ gstin: client.gstin, clientName: client.name })
@@ -702,7 +703,7 @@ export async function readExistingFromFile(
 ): Promise<ExistingOcr> {
   const doc = await loadDoc(id);
   // Existing figures are a renewal's only (hard rule, client 16 Nov 2026).
-  if (doc.type !== 'EXISTING') {
+  if (!continuesPolicy(doc.type)) {
     throw validationError([
       { location: 'params', path: 'id', message: 'Existing figures are read for renewals only.' },
     ]);
@@ -827,7 +828,7 @@ export async function updateDataSheet(
   // The Existing column: the policy in force, typed or copied. Renewals only (hard rule, client
   // 16 Nov 2026): new business keeps no existing figures, whatever is sent.
   const copy = await recordOf({ ...doc, ...set, existingFigures: null });
-  set.existingFigures = doc.type === 'EXISTING' ? existingFiguresOf(input, copy) : null;
+  set.existingFigures = continuesPolicy(doc.type) ? existingFiguresOf(input, copy) : null;
   await checkProductAndAddons(input, await recordOf({ ...doc, ...set }));
   return saveWith(doc, set, 'Data Sheet saved', AUDIT_ACTIONS.PROPOSAL_UPDATED, actor, before);
 }
@@ -977,7 +978,7 @@ export async function refreshExistingPolicy(
   source: ExistingPolicySource,
 ): Promise<ProposalRecord> {
   const doc = await loadDoc(id);
-  if (doc.type !== 'EXISTING') {
+  if (!continuesPolicy(doc.type)) {
     throw conflict(ERROR_CODES.CONFLICT, 'Only a renewal has an existing policy.');
   }
   if (doc.stage === 'CLOSED') throw closed();

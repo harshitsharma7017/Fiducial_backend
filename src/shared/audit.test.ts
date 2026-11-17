@@ -93,6 +93,7 @@ describe('audit vocabulary', () => {
       'PINCODE_CREATED',
       'CATALOG_IMPORTED',
       'CATALOG_ITEM_CREATED',
+      'WC_CASE_CREATED',
       'QUOTE_RECORDED',
       'QUOTE_ATTACHMENT_UPLOADED',
       'CLIENT_APPROVAL_FILE_UPLOADED',
@@ -155,6 +156,9 @@ describe('audit vocabulary', () => {
       'CATALOG_ITEM_UPDATED',
       'TEMPLATE_UPLOADED',
       'DOCUMENT_BRAND_UPDATED',
+      'WC_CASE_UPDATED',
+      'WC_QUOTES_SAVED',
+      'WC_PLACEMENT_SAVED',
       'ADDON_FAVOURITES_UPDATED',
       'QCR_SAVED',
       'CLIENT_APPROVAL_RECORDED',
@@ -252,6 +256,7 @@ describe('audit vocabulary', () => {
       'RFQ_EMAILED',
       'RFQ_REMINDER_EMAILED',
       'RFQ_EMAIL_FAILED',
+      'WC_RFQ_SENT',
       'QCR_EMAILED',
       'QCR_EMAIL_FAILED',
       'PLACEMENT_SLIP_EMAILED',
@@ -274,6 +279,7 @@ describe('audit vocabulary', () => {
     ]);
     expect(auditActionsOfKind('EXPORT')).toEqual([
       'RFQ_DOWNLOADED',
+      'WC_DOCUMENT_DOWNLOADED',
       'QCR_DOWNLOADED',
       'PLACEMENT_SLIP_DOWNLOADED',
       'CLOUD_DOCUMENT_SAVED',

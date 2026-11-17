@@ -1,3 +1,4 @@
+import { continuesPolicy, renewalWord } from './case-types.ts';
 import { z } from 'zod';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import {
@@ -199,8 +200,8 @@ export function rfqTitleOf(
 ): string {
   if (edits.title) return edits.title;
   const year = policyYearOf(record.policyStart ?? record.dueDate);
-  return record.type === 'EXISTING'
-    ? `RFQ FOR THE RENEWAL OF ${year}`
+  return continuesPolicy(record.type)
+    ? `RFQ FOR THE ${renewalWord(record.type)} OF ${year}`
     : `RFQ FOR NEW BUSINESS ${year}`;
 }
 

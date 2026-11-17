@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   formatDate,
   formatIndianNumber,
@@ -97,7 +98,7 @@ export function buildComparison(
     )
     .slice(0, 5);
   // The existing columns are a renewal's only (hard rule, client 16 Nov 2026).
-  const renewal = record.type === 'EXISTING';
+  const renewal = continuesPolicy(record.type);
   const existingPremium = new Map(
     record.existingPolicy?.sections.map((section) => [section.code, section.premium]) ?? [],
   );

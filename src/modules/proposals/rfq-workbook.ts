@@ -1,3 +1,4 @@
+import { continuesPolicy, renewalWord } from '../../shared/case-types.ts';
 import {
   ADDON_LIST_LABELS,
   BURGLARY_BASIS_LABELS,
@@ -212,12 +213,12 @@ function premiumDetails(
 ) {
   const sheet = workbook.addWorksheet('premium details');
   sheet.columns = [{ width: 50 }, { width: 30 }];
-  const renewal = record.type === 'EXISTING';
+  const renewal = continuesPolicy(record.type);
   title(
     sheet,
     heading ??
       (renewal
-        ? 'RFQ FOR RENEWAL — PROPERTY INSURANCE'
+        ? `RFQ FOR ${renewalWord(record.type)} — PROPERTY INSURANCE`
         : 'RFQ FOR NEW BUSINESS — PROPERTY INSURANCE'),
     4,
   );

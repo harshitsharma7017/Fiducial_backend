@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   DEFAULT_FIRE_COVERS,
   OTHER_SECTION_LABELS,
@@ -169,7 +170,7 @@ const linesRecord = (
  * Sheet, RFQ, quotes, QCR), even when a case saved earlier has figures stored.
  */
 function existingColumn(doc: ProposalDoc) {
-  if (doc.type !== 'EXISTING') return null;
+  if (!continuesPolicy(doc.type)) return null;
   const figures = doc.existingFigures ?? null;
   const copy = doc.existingPolicy ?? null;
   if (figures) {
@@ -429,7 +430,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   const stage = stageOf(missing, anySent, doc.stageOverride ?? null);
   const today = istDay(context.now);
   // Last year's policy is a renewal's only (hard rule: no Existing for new business).
-  const copy = doc.type === 'EXISTING' ? (doc.existingPolicy ?? null) : null;
+  const copy = continuesPolicy(doc.type) ? (doc.existingPolicy ?? null) : null;
   const lookup = doc.existingPolicyLookup ?? null;
   const fireMaster = context.sections.find((section) => section.code === 'FIRE');
 

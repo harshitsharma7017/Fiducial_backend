@@ -3,7 +3,7 @@ import { EmailSchema } from './auth.ts';
 import { SECTION_CODES } from './catalog.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { MAX_MAIL_RECIPIENTS, MailAttachmentFormatSchema } from './mail.ts';
-import { InsurerStatusSchema, ProposalStageSchema } from './proposals.ts';
+import { InsurerStatusSchema, ProposalStageSchema, ProposalTypeSchema } from './proposals.ts';
 import { QuoteOptionSchema } from './quotes.ts';
 
 // The QCR, the quote comparison report (QC-1 to QC-6): the existing policy and up to five insurers
@@ -169,7 +169,7 @@ export const QcrSummarySchema = z.object({
   reference: z.string(),
   clientName: z.string(),
   clientCity: z.string(),
-  type: z.enum(['NEW', 'EXISTING']),
+  type: ProposalTypeSchema,
   stage: ProposalStageSchema,
   dueDate: z.iso.date(),
   insurers: z.object({
