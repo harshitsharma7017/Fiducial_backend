@@ -519,7 +519,7 @@ export function documentHeader(
             y1: 10,
             x2: PAGE.width - MARGIN.left,
             y2: 10,
-            lineWidth: 2.5,
+            lineWidth: 1.25,
             lineColor: DOCUMENT_COLORS.rule,
           },
         ],
