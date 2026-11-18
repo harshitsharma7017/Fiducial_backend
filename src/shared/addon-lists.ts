@@ -1,13 +1,26 @@
 // The add-on cover lists of the client's workbooks (M-6). In a module of their own because both the
 // catalog (the add-on master) and proposals (the add-ons chosen on a case, C-4) use them.
 
-export const ADDON_LISTS = ['FIRE_ADDITIONAL', 'PAR', 'SFSP', 'BSUS_BLUS'] as const;
+export const ADDON_LISTS = [
+  'FIRE_ADDITIONAL',
+  'PAR',
+  'SFSP',
+  'BSUS_BLUS',
+  'GHI',
+  'GPI',
+  'GTLI',
+  'WC',
+] as const;
 export type AddonList = (typeof ADDON_LISTS)[number];
 export const ADDON_LIST_LABELS: Record<AddonList, string> = {
   FIRE_ADDITIONAL: 'Fire additional',
   PAR: 'PAR',
   SFSP: 'SFSP',
   BSUS_BLUS: 'BSUS & BLUS',
+  GHI: 'GHI',
+  GPI: 'GPI',
+  GTLI: 'GTLI',
+  WC: 'WC',
 };
 
 /**

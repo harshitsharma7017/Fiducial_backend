@@ -278,8 +278,14 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
     }
   }
 
-  const body: TableCell[][] = visible.map((row) =>
-    columnNumbers.map((column): TableCell => {
+  const body: TableCell[][] = visible.map((row) => {
+    const firstCol = columnNumbers[0];
+    const secondCol = columnNumbers[1];
+    const firstCellText = firstCol ? displayText(sheet.getCell(row, firstCol)).trim() : '';
+    const letterMatch = firstCellText.match(/^\(?([a-z])\)?$/i);
+    const subLetter = letterMatch && letterMatch[1] ? letterMatch[1].toLowerCase() : null;
+
+    return columnNumbers.map((column): TableCell => {
       if (covered.has(`${row}:${column}`)) return {};
       const cell = sheet.getCell(row, column);
       const span = masterOf.get(`${row}:${column}`);
@@ -291,7 +297,25 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
       const fill =
         cell.fill?.type === 'pattern' ? designFill(argbColour(cell.fill.fgColor?.argb)) : undefined;
       const horizontal = cell.alignment?.horizontal;
-      const text = displayText(cell);
+      let text = displayText(cell);
+
+      // Sub-options like a, b, c: align inside the description column (e.g. "a. Compound wall")
+      // rather than sitting in the S No column.
+      if (subLetter) {
+        if (column === firstCol) {
+          text = '';
+        } else if (column === secondCol) {
+          const trimmed = text.trim();
+          if (
+            trimmed &&
+            !trimmed.toLowerCase().startsWith(`${subLetter}.`) &&
+            !trimmed.toLowerCase().startsWith(`${subLetter})`)
+          ) {
+            text = `${subLetter}. ${trimmed}`;
+          }
+        }
+      }
+
       const isNumber =
         typeof cell.value === 'number' ||
         (typeof cell.value === 'object' && cell.value !== null && 'formula' in cell.value);
@@ -315,8 +339,9 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
       };
       if (fill) result.fillColor = fill;
       const indent = cell.alignment?.indent ?? 0;
-      if (indent > 0 && result.alignment === 'left') {
-        result.margin = [indent * POINTS_PER_INDENT * scale, 0, 0, 0];
+      const effectiveIndent = subLetter && column === secondCol ? Math.max(indent, 1.5) : indent;
+      if (effectiveIndent > 0 && result.alignment === 'left') {
+        result.margin = [effectiveIndent * POINTS_PER_INDENT * scale, 0, 0, 0];
       }
       // Theme colours 0 and 1 are the sheet's light and dark (white and black in Office themes).
       const theme = cell.font?.color?.theme;
@@ -349,8 +374,8 @@ function sheetTable(sheet: ExcelJS.Worksheet): Content {
         return { ...rest, svg: CROSS_SVG, width: 8, height: 8, alignment: 'center' };
       }
       return result;
-    }),
-  );
+    });
+  });
 
   return {
     table: { widths, body, dontBreakRows: true },
