@@ -1,4 +1,5 @@
 import { RISK_DETAIL_FIELDS, XLSX_CONTENT_TYPE, formatDate } from '../src/shared/index.ts';
+import { istDay } from '../src/lib/ist-day.ts';
 import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -93,6 +94,12 @@ function create(token = manager, locationIds = [plant1, plant2]) {
     policyEnd: '2027-11-30',
   });
 }
+
+const futureDate = (days = 7) => {
+  const date = new Date(`${istDay(new Date())}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 
 const dataSheet = (overrides: Record<string, unknown> = {}) => ({
   dueDate: '2026-11-20',
@@ -1079,7 +1086,7 @@ describe('new-business proposals', () => {
     await request(app)
       .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
       .set(bearer(manager))
-      .send(dataSheet({ sections: [] }))
+      .send(dataSheet({ dueDate: futureDate(7), sections: [] }))
       .expect(200);
     // R-5: not before the RFQ is approved.
     const unapproved = await request(app)
