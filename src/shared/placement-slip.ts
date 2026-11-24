@@ -4,7 +4,7 @@ import { SECTION_CODES } from './catalog.ts';
 import { ClientApprovalSchema } from './client-approval.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
 import { MAX_MAIL_RECIPIENTS, MailAttachmentFormatSchema } from './mail.ts';
-import { ProposalStageSchema } from './proposals.ts';
+import { ProposalStageSchema, ProposalTypeSchema } from './proposals.ts';
 import { QUOTE_ATTACHMENT_TYPES, QuoteOptionSchema } from './quotes.ts';
 
 // The placement slip: the quote the client accepted, filled into the client's Placement Slip
@@ -178,7 +178,7 @@ export const PlacementSlipSummarySchema = z.object({
   reference: z.string(),
   clientName: z.string(),
   clientCity: z.string(),
-  type: z.enum(['NEW', 'EXISTING']),
+  type: ProposalTypeSchema,
   stage: ProposalStageSchema,
   accepted: z.object({
     company: z.string(),

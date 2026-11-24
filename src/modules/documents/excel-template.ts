@@ -596,6 +596,22 @@ export function centreFigures(workbook: ExcelJS.Workbook): void {
   }
 }
 
+/**
+ * Aligns every amount and count of a document to the right of its cell, as the RFQ asks: the
+ * first column (an S No, or a label) and the cover ticks stay centred.
+ */
+export function rightAlignFigures(workbook: ExcelJS.Workbook): void {
+  for (const sheet of workbook.worksheets) {
+    sheet.eachRow((row) => {
+      row.eachCell((cell, column) => {
+        if (column === 1 || isCovered(cell) || !isFigure(cell)) return;
+        if (cellText(cell).trim() === COVER_TICK) return;
+        restyle(cell, { alignment: { ...cell.alignment, horizontal: 'right' } });
+      });
+    });
+  }
+}
+
 const THIN: Partial<ExcelJS.Borders> = {
   top: { style: 'thin' },
   left: { style: 'thin' },

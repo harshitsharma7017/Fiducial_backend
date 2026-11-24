@@ -20,6 +20,7 @@ import { conflict, notFound, unprocessable, validationError } from '../../lib/er
 import { writeAudit } from '../audit/audit.service.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { openTemplate } from '../documents/excel-template.ts';
+import { documentBrandFields } from '../documents/document-brand.service.ts';
 import { letterheadOf, type Letterhead } from '../documents/sheet-pdf.ts';
 import { templateFile } from '../documents/templates.service.ts';
 import { getEmailTemplate } from '../email-templates/email-templates.service.ts';
@@ -266,10 +267,12 @@ export async function recordCoverageConfirmation(
 
 /** The broker's letterhead from the uploaded Placement Slip template, so the letter is branded. */
 async function letterheadFor(): Promise<Letterhead> {
+  // The header and footer text as set in Settings (Fiducial's until saved).
+  const brand = await documentBrandFields();
   const template = await templateFile('PLACEMENT_SLIP');
-  if (!template) return { logo: null, address: null };
+  if (!template) return { logo: null, address: null, brand };
   const workbook = await openTemplate(template.data);
-  return letterheadOf(workbook);
+  return { ...letterheadOf(workbook), brand };
 }
 
 interface LetterFile {

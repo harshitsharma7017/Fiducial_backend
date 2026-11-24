@@ -1,4 +1,6 @@
 import {
+  DocumentBrandInputSchema,
+  DocumentBrandSchema,
   DocumentKindParamsSchema,
   DocumentTemplateListSchema,
   MAX_TEMPLATE_BYTES,
@@ -13,6 +15,7 @@ import { documentRoute, errorResponses } from '../../lib/openapi.ts';
 import { authenticate } from '../../middleware/auth.ts';
 import { currentUser, requirePermission } from '../../middleware/require-permission.ts';
 import { route } from '../../middleware/validate.ts';
+import { documentBrand, updateDocumentBrand } from './document-brand.service.ts';
 import { listTemplates, templateFile, uploadTemplate } from './templates.service.ts';
 
 const UploadSchema = z.instanceof(Buffer, {
@@ -33,6 +36,24 @@ export function createTemplatesRouter(options: { jwtSecret: string }): Router {
     '/',
     route({}, async (_input, _req, res) => {
       res.json(await listTemplates());
+    }),
+  );
+
+  // The header and footer of every generated PDF (Settings).
+  router.get(
+    '/document-brand',
+    route({}, async (_input, _req, res) => {
+      res.json(await documentBrand());
+    }),
+  );
+
+  router.put(
+    '/document-brand',
+    requirePermission('templates.manage'),
+    route({ body: DocumentBrandInputSchema }, async ({ body }, req, res) => {
+      res.json(
+        await updateDocumentBrand(body, { id: currentUser(req).id, requestId: req.requestId }),
+      );
     }),
   );
 
@@ -120,5 +141,40 @@ documentRoute({
       content: { 'application/json': { schema: TemplateUploadResultSchema } },
     },
     ...errorResponses(400, 401, 403, 413),
+  },
+});
+
+documentRoute({
+  method: 'get',
+  path: '/api/v1/templates/document-brand',
+  tags: ['Document templates'],
+  summary: 'The documents’ header and footer',
+  description:
+    'Needs templates.view. The broker’s name and address printed at the top of every generated PDF, and the contact line and note at its foot. isDefault: never saved, Fiducial’s letterhead is printed.',
+  responses: {
+    200: {
+      description: 'The header and footer',
+      content: { 'application/json': { schema: DocumentBrandSchema } },
+    },
+    ...errorResponses(401, 403),
+  },
+});
+
+documentRoute({
+  method: 'put',
+  path: '/api/v1/templates/document-brand',
+  tags: ['Document templates'],
+  summary: 'Save the documents’ header and footer',
+  description:
+    'Needs templates.manage. Every PDF generated afterwards (RFQ, QCR, placement slip, the group health and GPA/GTLI documents, the coverage confirmation letter) prints them. Audited with the old and new values.',
+  request: {
+    body: { content: { 'application/json': { schema: DocumentBrandInputSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The saved header and footer',
+      content: { 'application/json': { schema: DocumentBrandSchema } },
+    },
+    ...errorResponses(400, 401, 403),
   },
 });

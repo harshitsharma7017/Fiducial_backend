@@ -68,6 +68,10 @@ export const PERMISSIONS = [
   'gtli.send',
   'gtli.approve',
   'gtli.export',
+  'wc.view',
+  'wc.create',
+  'wc.edit',
+  'wc.export',
   'employees.view',
   'employees.update',
   'employees.view_dob',
@@ -422,6 +426,38 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     label: 'GTLI (Group Term Life)',
     description: 'Group term life cases.',
     permissions: caseActions('gtli', 'GTLI'),
+  },
+  {
+    key: 'wc',
+    label: 'WC (Workmen Compensation)',
+    description: 'Workmen compensation cases.',
+    permissions: [
+      {
+        key: 'wc.view',
+        label: 'View cases',
+        description: 'See WC cases: their Data Sheet, worker categories, quotes and documents.',
+      },
+      {
+        key: 'wc.create',
+        label: 'Create cases',
+        description: 'Start new WC cases.',
+        requires: ['wc.view', 'clients.view'],
+      },
+      {
+        key: 'wc.edit',
+        label: 'Edit cases',
+        description:
+          'Change WC cases: Data Sheet, worker categories, coverage options, clauses, conditions and quotes.',
+        requires: ['wc.view'],
+      },
+      {
+        key: 'wc.export',
+        label: 'Download documents',
+        description: 'Download the WC Data Sheet, RFQ and quote comparison.',
+        sensitive: true,
+        requires: ['wc.view'],
+      },
+    ],
   },
   {
     key: 'employees',
@@ -821,6 +857,10 @@ export const LEGACY_SOURCE: Record<Permission, LegacyPermission> = {
   'renewal_analysis.view': 'proposals.view',
   'renewal_analysis.export': 'proposals.export',
   'renewal_analysis.manage': 'proposals.edit',
+  'wc.view': 'proposals.view',
+  'wc.create': 'proposals.create',
+  'wc.edit': 'proposals.edit',
+  'wc.export': 'proposals.export',
 };
 
 /** The catalog permissions a legacy role is migrated with: exactly the access it had. */

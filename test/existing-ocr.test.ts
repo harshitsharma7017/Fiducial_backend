@@ -79,6 +79,7 @@ describe('POST /proposals/:id/data-sheet/existing-ocr', () => {
   });
   let manager: string;
   let caseId: string;
+  let newBusinessId: string;
 
   beforeAll(async () => {
     await seedMasters();
@@ -114,19 +115,33 @@ describe('POST /proposals/:id/data-sheet/existing-ocr', () => {
         occupancyCode: null,
       })
       .expect(201);
-    const created = await request(app)
-      .post('/api/v1/proposals')
+    const create = (type: 'NEW' | 'EXISTING') =>
+      request(app)
+        .post('/api/v1/proposals')
+        .set(bearer(manager))
+        .send({
+          clientId: client.body.id,
+          type,
+          locationIds: [location.body.id],
+          dueDate: '2026-11-20',
+          policyStart: '2026-12-01',
+          policyEnd: '2027-11-30',
+        })
+        .expect(201);
+    caseId = (await create('EXISTING')).body.id as string;
+    newBusinessId = (await create('NEW')).body.id as string;
+  });
+
+  it('reads existing figures for renewals only', async () => {
+    const response = await request(app)
+      .post(`/api/v1/proposals/${newBusinessId}/data-sheet/existing-ocr?fileName=p.pdf`)
       .set(bearer(manager))
-      .send({
-        clientId: client.body.id,
-        type: 'NEW',
-        locationIds: [location.body.id],
-        dueDate: '2026-11-20',
-        policyStart: '2026-12-01',
-        policyEnd: '2027-11-30',
-      })
-      .expect(201);
-    caseId = created.body.id as string;
+      .set('Content-Type', 'application/pdf')
+      .send(Buffer.from('%PDF-1.4 test'))
+      .expect(400);
+    expect(JSON.stringify(response.body.details)).toContain(
+      'Existing figures are read for renewals only.',
+    );
   });
 
   it('returns candidate values and saves nothing', async () => {

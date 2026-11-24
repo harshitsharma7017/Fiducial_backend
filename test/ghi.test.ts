@@ -130,6 +130,7 @@ const requirements = (): GhiRequirementsInput => ({
     parent: { min: null, max: 80 },
   },
   ageReferenceDate: REFERENCE_DATE,
+  addons: [],
   otherRequirements: 'Cashless at network hospitals in Mumbai and Pune',
 });
 
@@ -369,6 +370,43 @@ describe('group health case (G1, G2)', () => {
         (claim: { claimsRatioPercent: string | null }) => claim.claimsRatioPercent,
       ),
     ).toEqual(['75.00', '50.00', null]);
+  });
+
+  it('takes add-on covers only from the Employee Benefits add-on list', async () => {
+    await request(app)
+      .post('/api/v1/catalog/addons')
+      .set(bearer(admin))
+      .send({
+        list: 'EMPLOYEE_BENEFITS',
+        seq: 1,
+        name: 'Ambulance cover',
+        kind: null,
+        limit: null,
+        active: true,
+      })
+      .expect(201);
+    const unknown = await request(app)
+      .put(c('/requirements'))
+      .set(bearer(exec))
+      .send({ ...requirements(), addons: ['Ambulance cover', 'Gym membership'] })
+      .expect(400);
+    expect(unknown.body.details).toEqual([
+      expect.objectContaining({
+        path: 'addons.1',
+        message: 'Gym membership is not an active add-on of the Employee Benefits list',
+      }),
+    ]);
+    // Spelled as the master spells it.
+    const saved = await request(app)
+      .put(c('/requirements'))
+      .set(bearer(exec))
+      .send({ ...requirements(), addons: ['ambulance COVER'] })
+      .expect(200);
+    expect(saved.body.requirements.addons).toEqual(['Ambulance cover']);
+    const preview = (await request(app).get(c('/rfq/preview')).set(bearer(readOnly)).expect(200))
+      .body;
+    expect(preview.sheets[0].rows).toContainEqual(['Add-on covers', 'Ambulance cover']);
+    await request(app).put(c('/requirements')).set(bearer(exec)).send(requirements()).expect(200);
   });
 
   it('imports the company details from Excel into the form and keeps the workbook (3/11/2026)', async () => {

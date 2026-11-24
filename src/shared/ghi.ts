@@ -1,4 +1,6 @@
+import { continuesPolicy } from './case-types.ts';
 import { z } from 'zod';
+import { EbAddonsSchema } from './addon-lists.ts';
 import { AgeBandSelectionSchema } from './age-bands.ts';
 import { EmailSchema } from './auth.ts';
 import { IsoDateTimeSchema, ObjectIdSchema, blankAsNull } from './common.ts';
@@ -12,12 +14,13 @@ import { MAIL_RESULTS } from './mail.ts';
 // rupees as digit strings; premiums are rupees with paise as decimal strings; counts are numbers.
 
 /** New business, or the renewal of the group's existing policy. */
-export const GHI_CASE_TYPES = ['NEW', 'RENEWAL'] as const;
+export const GHI_CASE_TYPES = ['NEW', 'RENEWAL', 'ROLLOVER'] as const;
 export const GhiCaseTypeSchema = z.enum(GHI_CASE_TYPES);
 export type GhiCaseType = z.infer<typeof GhiCaseTypeSchema>;
 export const GHI_CASE_TYPE_LABELS: Record<GhiCaseType, string> = {
   NEW: 'New business',
   RENEWAL: 'Renewal',
+  ROLLOVER: 'Roll over',
 };
 
 /**
@@ -277,6 +280,8 @@ export const GhiRequirementsInputSchema = z
     ),
     /** The date ages are worked out on; blank: the policy start, else the day the case was created. */
     ageReferenceDate: blankAsNull(z.iso.date({ error: 'Enter a date' })),
+    /** Add-on covers from the Employee Benefits add-on list. */
+    addons: EbAddonsSchema,
     otherRequirements: OptionalText(2000),
   })
   .superRefine((input, context) => {
@@ -357,6 +362,7 @@ export function emptyGhiRequirements(): GhiRequirementsInput {
     claims: [],
     ageLimits: { employee: noLimit, spouse: noLimit, child: noLimit, parent: noLimit },
     ageReferenceDate: null,
+    addons: [],
     otherRequirements: null,
   };
 }
@@ -401,12 +407,12 @@ export const CreateGhiCaseRequestSchema = z
         message: 'The policy period must end after it starts',
       });
     }
-    if (body.type === 'RENEWAL') {
+    if (continuesPolicy(body.type)) {
       if (!body.policyStart || !body.policyEnd) {
         context.addIssue({
           code: 'custom',
           path: [body.policyStart ? 'policyEnd' : 'policyStart'],
-          message: 'A renewal needs its policy period',
+          message: 'A renewal or roll over needs its policy period',
         });
       }
       if (!body.existingInsurer) {

@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   GHI_AGE_GROUPS,
   GHI_AGE_GROUP_LABELS,
@@ -78,7 +79,7 @@ function insuredRows(record: GhiCaseRecord): SheetRow[] {
     ),
     label('Type of case', GHI_CASE_TYPE_LABELS[record.type]),
     label('Policy period', periodText(record)),
-    ...(record.type === 'RENEWAL'
+    ...(continuesPolicy(record.type)
       ? [
           label(
             'Expiring policy',
@@ -155,6 +156,9 @@ export function requirementRows(record: GhiCaseRecord): SheetRow[] {
     ),
     label('Age limits (completed years)', ageLimits),
     label('Ages worked out on', formatDate(record.ageReferenceDate)),
+    ...(requirements.addons.length > 0
+      ? [label('Add-on covers', requirements.addons.join('; '))]
+      : []),
     ...(requirements.otherRequirements
       ? [label('Other requirements', requirements.otherRequirements)]
       : []),
@@ -516,6 +520,9 @@ export function qcrDocument(
             'Census',
             `${summary.employees} employees, ${summary.lives} lives, total sum insured ${rupeesText(summary.totalSumInsured)}`,
           ),
+          ...(record.requirements.addons.length > 0
+            ? [label('Add-on covers', record.requirements.addons.join('; '))]
+            : []),
           { cells: ['Terms offered'], style: 'section' },
           header,
           ...qcr.rows.map((row) => ({

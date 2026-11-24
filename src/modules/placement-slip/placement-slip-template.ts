@@ -1,3 +1,4 @@
+import { continuesPolicy, renewalWord } from '../../shared/case-types.ts';
 import {
   formatDate,
   optionSumInsured,
@@ -179,7 +180,7 @@ function formula(
 function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: PlacementSlip) {
   const accepted = slip.accepted;
   if (!accepted || !slip.premium) return;
-  const renewal = record.type === 'EXISTING';
+  const renewal = continuesPolicy(record.type);
   const start = record.policyStart ?? record.dueDate;
   const year = policyYear(start);
   setValue(
@@ -187,7 +188,7 @@ function fillPremium(sheet: ExcelJS.Worksheet, record: ProposalRecord, slip: Pla
     1,
     1,
     renewal
-      ? `FINAL PLACEMENT SLIP FOR THE RENEWAL OF ${year}`
+      ? `FINAL PLACEMENT SLIP FOR THE ${renewalWord(record.type)} OF ${year}`
       : `FINAL PLACEMENT SLIP FOR NEW BUSINESS ${year}`,
   );
   const insuredRow = findRow(sheet, 'Insured Name', { prefix: true });

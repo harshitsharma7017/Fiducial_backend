@@ -500,7 +500,8 @@ describe('new-business proposals', () => {
       '5',
     ]);
     expect(find('All types of Plant and Machinery and all its accessories')?.[2]).toBe(3000);
-    expect(find('Any other stocks kept at third party job work location')?.[0]).toBe('a');
+    // A sub-item's letter opens its description; the S No column has the items' numbers only.
+    expect(find('a) Any other stocks kept at third party job work location')?.[0]).toBeUndefined();
     expect(find('Total sum insured')?.[2]).toBe(3563);
     expect(find('Hypothecation if any - Please specify')?.[2]).toBe('State Bank of India, Pune');
     expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
@@ -510,8 +511,17 @@ describe('new-business proposals', () => {
     // two buildings (no S No), Plant and Machinery (5) over Genset (a) and Transformer (c), Stock
     // (6, its own line empty) over third-party stock (a), then hypothecation and open stock.
     expect(rows.map((row) => row[0]).filter((n) => typeof n === 'string' && n.length <= 2)).toEqual(
-      ['1', '5', 'a', 'c', '6', 'a', '1', '2'],
+      ['1', '5', '6', '1', '2'],
     );
+    expect(
+      rows
+        .map((row) => row[1])
+        .filter((text) => typeof text === 'string' && /^[a-z]\) /.test(text)),
+    ).toEqual([
+      'a) Genset and all its accessories',
+      'c) Transformer and all its accessories',
+      'a) Any other stocks kept at third party job work location',
+    ]);
     expect(find('Compressor and all its accessories')).toBeUndefined();
     expect(find('Compound wall')).toBeUndefined();
     expect(find('All types of stock pertaining to insured business')?.[2]).toBeUndefined();
@@ -519,9 +529,9 @@ describe('new-business proposals', () => {
     const sheet = workbook.getWorksheet('fire by location')!;
     const rowNumber = (label: string) =>
       sheet.getSheetValues().findIndex((row) => Array.isArray(row) && row[2] === label);
-    const transformer = sheet.getRow(rowNumber('Transformer and all its accessories'));
-    // The S No is centred (client review, 27 Oct 2026); the description is indented.
-    expect(transformer.getCell(1).alignment?.horizontal).toBe('center');
+    const transformer = sheet.getRow(rowNumber('c) Transformer and all its accessories'));
+    // The sub-item's letter and description are indented under its item.
+    expect(transformer.getCell(1).value).toBeNull();
     expect(transformer.getCell(2).alignment?.indent).toBe(2);
     expect(
       sheet.getRow(rowNumber('All types of Plant and Machinery and all its accessories')).getCell(2)
@@ -717,7 +727,7 @@ describe('new-business proposals', () => {
     expect(annexure).toContainEqual([1, 'CNC controller', 'Fanuc 0i-MF', 'F-77', '2021', 1250000]);
   });
 
-  it('C-2: new business takes the client’s current policy as the Existing column', async () => {
+  it('new business shows no Existing column, whatever is sent (hard rule, 16 Nov 2026)', async () => {
     const { body: proposal } = await create(manager, [plant1]).expect(201);
     const sheet = (existing: Record<string, unknown>) =>
       dataSheet({
@@ -751,15 +761,11 @@ describe('new-business proposals', () => {
       .set(bearer(manager))
       .send(sheet({ ...figures, insurer: 'Current General, Fort' }))
       .expect(200);
-    expect(saved.body.existing).toMatchObject({
-      insurer: 'Current General, Fort',
-      policyNumber: 'CUR/2025/7',
-      source: 'DATA_SHEET',
-    });
+    expect(saved.body.existing).toBeNull();
     expect(
       saved.body.fire.groups.find((g: { group: string }) => g.group === 'STOCKS').existing,
-    ).toBe('900000');
-    // The RFQ's schedule has the Existing column, with the policy in force.
+    ).toBeNull();
+    // The RFQ's schedule has no Existing column.
     const file = await request(app)
       .get(`/api/v1/proposals/${proposal.id}/rfq`)
       .set(bearer(manager))
@@ -776,27 +782,33 @@ describe('new-business proposals', () => {
       .getWorksheet('schedule')!
       .getSheetValues()
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
-    expect(rows.find((row) => row[0] === 'S No')).toEqual([
-      'S No',
-      'Description',
-      'Existing Sum Insured',
-      'Proposed Sum Insured - Option 1',
-      'Proposed Sum Insured - Option 2',
-    ]);
+    const header = rows.find((row) => row[0] === 'S No');
+    expect(header?.slice(0, 3)).toEqual(['S No', 'Description', 'Proposed Sum Insured - Option 1']);
+    expect(header).not.toContain('Existing Sum Insured');
     // Numbered in order among the lines shown (client review, 27 Oct 2026), not by Data Sheet line.
     const stocks = rows.find(
       (row) => row[1] === 'All types of stock pertaining to insured business',
     );
-    expect(stocks?.slice(1)).toEqual([
+    expect(stocks?.slice(1, 3)).toEqual([
       'All types of stock pertaining to insured business',
-      900000,
       1000000,
     ]);
     expect(stocks?.[0]).toBeLessThan(6);
   });
 
-  it('ticks the asked add-on covers in the Existing Sum Insured column too', async () => {
-    const { body: proposal } = await create(manager, [plant1]).expect(201);
+  it('ticks the asked add-on covers in a renewal’s Existing Sum Insured column too', async () => {
+    const { body: proposal } = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager))
+      .send({
+        clientId,
+        type: 'EXISTING',
+        locationIds: [plant1],
+        dueDate: '2026-11-15',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
+      .expect(201);
     await request(app)
       .put(`/api/v1/proposals/${proposal.id}/data-sheet`)
       .set(bearer(manager))
@@ -841,6 +853,65 @@ describe('new-business proposals', () => {
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
     const earthquake = rows.find((row) => row[1] === 'Earthquake');
     expect(earthquake?.[2]).toBeTruthy();
+  });
+
+  it('handles a roll over exactly as a renewal: Existing column, printed as ROLL OVER', async () => {
+    const { body: proposal } = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager))
+      .send({
+        clientId,
+        type: 'ROLLOVER',
+        locationIds: [plant1],
+        dueDate: '2026-11-15',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
+      .expect(201);
+    expect(proposal.type).toBe('ROLLOVER');
+    const saved = await request(app)
+      .put(`/api/v1/proposals/${proposal.id as string}/data-sheet`)
+      .set(bearer(manager))
+      .send(
+        dataSheet({
+          locations: [
+            {
+              locationId: plant1,
+              fire: [{ key: 'STOCKS', sqFt: '', ratePerSqFt: '', amount: '1000000' }],
+              hypothecation: '',
+              openStock: '',
+              risk: risk(),
+            },
+          ],
+          sections: [],
+          fireOption2: [],
+          existing: {
+            insurer: 'Previous General, Fort',
+            policyNumber: 'PRV/2025/9',
+            fireLines: [{ group: 'STOCKS', amount: '900000' }],
+            fireTotal: null,
+          },
+        }),
+      )
+      .expect(200);
+    expect(saved.body.existing).toMatchObject({ insurer: 'Previous General, Fort' });
+    const file = await request(app)
+      .get(`/api/v1/proposals/${proposal.id as string}/rfq`)
+      .set(bearer(manager))
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.body as never);
+    const schedule = JSON.stringify(workbook.getWorksheet('schedule')!.getSheetValues());
+    expect(schedule).toContain('Existing Sum Insured');
+    expect(JSON.stringify(workbook.getWorksheet('premium details')!.getSheetValues())).toContain(
+      'RFQ FOR ROLL OVER',
+    );
   });
 
   it('leaves out of the RFQ whatever is empty or not required', async () => {

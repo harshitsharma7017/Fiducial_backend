@@ -1,3 +1,4 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   AUDIT_ACTIONS,
   EB_PRODUCTS,
@@ -25,6 +26,7 @@ import { ClientModel } from '../clients/client.model.ts';
 import { gpaRequirementsOf, gtliRequirementsOf } from './eb-census-context.ts';
 import { planView } from './eb-plan-view.ts';
 import { createCaseOf } from './ghi-cases.service.ts';
+import { checkEbAddons } from './eb-addons.ts';
 import { GhiCaseModel, type GhiCaseDoc } from './ghi-case.model.ts';
 import { GhiMemberModel } from './ghi-census.model.ts';
 import {
@@ -52,7 +54,7 @@ export function ebMissingItems(doc: GhiCaseDoc): MissingItem[] {
       planHasDependants: doc.planAssignment ? planHasDependants(doc.planAssignment.slots) : false,
     });
   }
-  return gtliMissing(gtliRequirementsOf(doc), { renewal: doc.type === 'RENEWAL' });
+  return gtliMissing(gtliRequirementsOf(doc), { renewal: continuesPolicy(doc.type) });
 }
 
 /** A GPA or GTLI case as the API returns it. */
@@ -250,6 +252,7 @@ export async function saveEbRequirements(
   }
   const actorId = new Types.ObjectId(actor.id);
   const previous = doc.requirements as unknown as GpaRequirementsInput | GtliRequirementsInput;
+  input = { ...input, addons: await checkEbAddons(input.addons, previous.addons) };
   const affectsCensus = censusFields(previous) !== censusFields(input);
   await withTransaction(async (session) => {
     const result = await GhiCaseModel.updateOne(

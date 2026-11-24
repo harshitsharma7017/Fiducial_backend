@@ -94,6 +94,32 @@ describe('creating a case (Requirement 1)', () => {
     expect(await GhiCaseModel.countDocuments({})).toBe(cases);
   });
 
+  it('takes a roll over as a renewal: it needs the expiring insurer and period', async () => {
+    const body = {
+      product: 'GMC',
+      clientId: world.clientId,
+      dueDate: '2026-11-30',
+      type: 'ROLLOVER',
+    };
+    const refused = await request(app)
+      .post('/api/v1/eb/cases')
+      .set(bearer(world.manager))
+      .send(body)
+      .expect(400);
+    expect(JSON.stringify(refused.body.details)).toContain(
+      'A renewal or roll over needs its policy period',
+    );
+    const created = await createEbCase(app, world.manager, 'GPA', world.clientId, {
+      type: 'ROLLOVER',
+      existingInsurer: 'Previous General',
+    });
+    const record = await request(app)
+      .get(`/api/v1/eb/gpa/cases/${created.id}`)
+      .set(bearer(world.manager))
+      .expect(200);
+    expect(record.body.type).toBe('ROLLOVER');
+  });
+
   it('is open only to proposals.create', async () => {
     const body = { product: 'GPA', type: 'NEW', clientId: world.clientId, dueDate: '2026-11-30' };
     await request(app).post('/api/v1/eb/cases').send(body).expect(401);

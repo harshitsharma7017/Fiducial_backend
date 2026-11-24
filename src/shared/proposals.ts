@@ -18,8 +18,8 @@ import { EqZoneSchema } from './masters.ts';
 // paise, as in Excel), and so are the totals that include it; screens and the RFQ show them to the
 // rupee, as the client's sheets do.
 
-/** New business, or the renewal of an existing policy. */
-export const PROPOSAL_TYPES = ['NEW', 'EXISTING'] as const;
+/** New business, the renewal of an existing policy, or a roll over (handled as a renewal). */
+export const PROPOSAL_TYPES = ['NEW', 'EXISTING', 'ROLLOVER'] as const;
 export const ProposalTypeSchema = z.enum(PROPOSAL_TYPES);
 export type ProposalType = z.infer<typeof ProposalTypeSchema>;
 

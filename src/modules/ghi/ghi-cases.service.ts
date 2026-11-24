@@ -1,6 +1,8 @@
+import { continuesPolicy } from '../../shared/case-types.ts';
 import {
   AUDIT_ACTIONS,
   EB_PRODUCT_NAMES,
+  GHI_CASE_TYPE_LABELS,
   EB_REFERENCE_PREFIX,
   ERROR_CODES,
   casePermission,
@@ -24,6 +26,7 @@ import { conflict, validationError } from '../../lib/errors.ts';
 import { istDay } from '../../lib/ist-day.ts';
 import { escapeRegExp } from '../../lib/text.ts';
 import { taxRatePercentOn } from '../catalog/catalog.service.ts';
+import { checkEbAddons } from './eb-addons.ts';
 import { ClientModel } from '../clients/client.model.ts';
 import { InsurerModel } from '../insurers/insurer.model.ts';
 import { CounterModel } from '../proposals/proposal.model.ts';
@@ -168,7 +171,7 @@ export async function createCaseOf(
             {
               at: now,
               actorId: userId,
-              message: `${product === 'GMC' ? 'Group health' : EB_PRODUCT_NAMES[product]} ${input.type === 'RENEWAL' ? 'renewal' : 'new business'} case created for ${client.name}`,
+              message: `${product === 'GMC' ? 'Group health' : EB_PRODUCT_NAMES[product]} ${GHI_CASE_TYPE_LABELS[input.type].toLowerCase()} case created for ${client.name}`,
             },
             ...(planAssignment
               ? [
@@ -309,7 +312,7 @@ export async function updateCaseOf(
       message: 'The policy period must end after it starts',
     });
   }
-  if (doc.type === 'RENEWAL' && (!input.policyStart || !input.policyEnd)) {
+  if (continuesPolicy(doc.type) && (!input.policyStart || !input.policyEnd)) {
     issues.push({
       location: 'body',
       path: input.policyStart ? 'policyEnd' : 'policyStart',
@@ -415,6 +418,7 @@ export async function saveRequirements(
 ): Promise<GhiCaseRecord> {
   const doc = await loadCase(id);
   assertEditable(doc);
+  input = { ...input, addons: await checkEbAddons(input.addons, doc.requirements.addons) };
   // Moved from the Data Sheet schema (design D6): with a plan, the plan says who is covered.
   if (
     input.parentsCoPayPercent !== null &&

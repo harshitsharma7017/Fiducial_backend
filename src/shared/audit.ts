@@ -53,6 +53,13 @@ export const AUDIT_ACTIONS = {
   CATALOG_ITEM_CREATED: 'CATALOG_ITEM_CREATED',
   CATALOG_ITEM_UPDATED: 'CATALOG_ITEM_UPDATED',
   TEMPLATE_UPLOADED: 'TEMPLATE_UPLOADED',
+  DOCUMENT_BRAND_UPDATED: 'DOCUMENT_BRAND_UPDATED',
+  WC_CASE_CREATED: 'WC_CASE_CREATED',
+  WC_CASE_UPDATED: 'WC_CASE_UPDATED',
+  WC_QUOTES_SAVED: 'WC_QUOTES_SAVED',
+  WC_RFQ_SENT: 'WC_RFQ_SENT',
+  WC_PLACEMENT_SAVED: 'WC_PLACEMENT_SAVED',
+  WC_DOCUMENT_DOWNLOADED: 'WC_DOCUMENT_DOWNLOADED',
   ADDON_FAVOURITES_UPDATED: 'ADDON_FAVOURITES_UPDATED',
   QUOTE_RECORDED: 'QUOTE_RECORDED',
   QUOTE_ATTACHMENT_UPLOADED: 'QUOTE_ATTACHMENT_UPLOADED',
@@ -270,6 +277,8 @@ export const AUDIT_ENTITIES = {
   RENEWAL: 'renewal',
   /** A chat group (entity id: the conversation's id). */
   CHAT_GROUP: 'chat_group',
+  /** A workmen compensation case. */
+  WC_CASE: 'wc_case',
 } as const;
 export const AuditEntitySchema = z.enum(AUDIT_ENTITIES);
 export type AuditEntity = z.infer<typeof AuditEntitySchema>;
@@ -331,6 +340,13 @@ export const AUDIT_ACTION_KINDS: Record<AuditAction, AuditKind> = {
   CATALOG_ITEM_CREATED: 'CREATE',
   CATALOG_ITEM_UPDATED: 'EDIT',
   TEMPLATE_UPLOADED: 'EDIT',
+  DOCUMENT_BRAND_UPDATED: 'EDIT',
+  WC_CASE_CREATED: 'CREATE',
+  WC_CASE_UPDATED: 'EDIT',
+  WC_QUOTES_SAVED: 'EDIT',
+  WC_RFQ_SENT: 'SEND',
+  WC_PLACEMENT_SAVED: 'EDIT',
+  WC_DOCUMENT_DOWNLOADED: 'EXPORT',
   ADDON_FAVOURITES_UPDATED: 'EDIT',
   QUOTE_RECORDED: 'CREATE',
   QUOTE_ATTACHMENT_UPLOADED: 'CREATE',
@@ -542,6 +558,13 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CATALOG_ITEM_CREATED: 'Master row added',
   CATALOG_ITEM_UPDATED: 'Master row edited',
   TEMPLATE_UPLOADED: 'Document template uploaded',
+  DOCUMENT_BRAND_UPDATED: 'Document header and footer changed',
+  WC_CASE_CREATED: 'Workmen compensation case created',
+  WC_CASE_UPDATED: 'Workmen compensation Data Sheet saved',
+  WC_QUOTES_SAVED: 'Workmen compensation quotes saved',
+  WC_RFQ_SENT: 'Workmen compensation RFQ insurers recorded',
+  WC_PLACEMENT_SAVED: 'Workmen compensation placement recorded',
+  WC_DOCUMENT_DOWNLOADED: 'Workmen compensation document downloaded',
   ADDON_FAVOURITES_UPDATED: 'Add-on favourites changed',
   QUOTE_RECORDED: 'Quote recorded',
   QUOTE_ATTACHMENT_UPLOADED: 'Quote attachment uploaded',
@@ -748,6 +771,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   insured_policy: 'Placed policy',
   renewal: 'Renewal analysis',
   chat_group: 'Chat group',
+  wc_case: 'Workmen compensation case',
 };
 
 /** The actions of one kind, for filtering the log. */

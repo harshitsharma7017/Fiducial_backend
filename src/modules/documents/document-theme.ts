@@ -19,18 +19,8 @@ export const PAGE = { width: 595.28, height: 841.89 } as const;
  */
 export const MARGIN = { left: 36, right: 36, top: 118, bottom: 62 } as const;
 
-/** The broker as the letterhead prints it (the Fiducial letterhead, "Invoice-2"). */
-export const BROKER = {
-  name: 'Fiducial Insurance Brokers India Pvt Ltd',
-  address: [
-    'LBR Complex, 172/1, Third Floor, Rajunaidu',
-    'Road, Sivananda Colony,',
-    'Coimbatore - 641 012.',
-  ],
-  telephone: '+91 422 4372530 / 2499962',
-  email: 'info@fiducial.in',
-  website: 'www.fiducial.in',
-} as const;
+// The broker's name, address and contact line are set in Settings (DEFAULT_DOCUMENT_BRAND in
+// shared/document-brand.ts until saved), not here.
 
 export const CONTENT_WIDTH = PAGE.width - MARGIN.left - MARGIN.right;
 

@@ -5,15 +5,8 @@ import {
   COVER_CROSS_ARGB,
   COVER_TICK,
   COVER_TICK_ARGB,
-  NOTE_FILL_ARGB,
 } from '../documents/document-theme.ts';
-import {
-  extendPrintRows,
-  frameSheet,
-  printColumns,
-  sheetNamed,
-} from '../documents/excel-template.ts';
-import { fillTerrorismNote } from '../qcr/qcr-notes.ts';
+import { frameSheet } from '../documents/excel-template.ts';
 import {
   RUPEES,
   TOTAL_RED,
@@ -22,11 +15,11 @@ import {
   labelled,
   sectionHeading,
 } from './rfq-workbook.ts';
-import type { RfqMasters } from './rfq-workbook.ts';
 
-// Sections added to the RFQ whichever layout it is drawn in (change requests RFQ-4, RFQ-5, NOTE-1).
+// Sections added to the RFQ whichever layout it is drawn in (change requests RFQ-4, RFQ-5).
 // They are separate sheets of their own, so the client's template and the built-in layout both get
-// them without either being rearranged.
+// them without either being rearranged. The RFQ prints no notes (client review; it withdrew
+// NOTE-1, the standard notes under the schedule).
 
 const amount = (value: string | null | undefined) =>
   value === null || value === undefined || value === '' ? null : Number(value);
@@ -90,44 +83,8 @@ export function addClaimExperience(workbook: ExcelJS.Workbook, record: ProposalR
   frameSheet(sheet, 4);
 }
 
-/**
- * The standard notes marked for the RFQ, under the schedule in the note colours, with the
- * terrorism note's blanks filled: the RFQ has no quotes yet, so an unknown premium shows "—"
- * (NOTE-1).
- */
-export function addRfqNotes(workbook: ExcelJS.Workbook, masters: RfqMasters): void {
-  const sheet = sheetNamed(workbook, 'schedule');
-  const notes = masters.notes
-    .filter((note) => note.active && note.onRfq)
-    .map((note) => fillTerrorismNote(note.text, null));
-  if (!sheet || notes.length === 0) return;
-  const span = printColumns(sheet).to;
-  sheet.addRow([]);
-  ['NOTE:', ...notes].forEach((text, index) => {
-    const row = sheet.addRow([text]);
-    sheet.mergeCells(row.number, 1, row.number, span);
-    const cell = row.getCell(1);
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NOTE_FILL_ARGB } };
-    cell.font = { bold: true };
-    cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-    if (index > 0) row.height = Math.max(15, Math.ceil(text.length / 100) * 15);
-  });
-  extendPrintRows(sheet, sheet.rowCount);
-}
-
 /** All of the RFQ's added sections. */
-export function addRfqExtras(
-  workbook: ExcelJS.Workbook,
-  record: ProposalRecord,
-  masters: RfqMasters,
-): void {
+export function addRfqExtras(workbook: ExcelJS.Workbook, record: ProposalRecord): void {
   addLastYearPremium(workbook, record);
   addClaimExperience(workbook, record);
-  addRfqNotes(workbook, masters);
 }
