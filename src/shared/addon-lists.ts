@@ -8,14 +8,24 @@ export const ADDON_LISTS = [
   'PAR',
   'SFSP',
   'BSUS_BLUS',
+  'GHI',
+  'GPI',
+  'GTLI',
+  'WC',
   'EMPLOYEE_BENEFITS',
 ] as const;
+
 export type AddonList = (typeof ADDON_LISTS)[number];
+
 export const ADDON_LIST_LABELS: Record<AddonList, string> = {
   FIRE_ADDITIONAL: 'Fire additional',
   PAR: 'PAR',
   SFSP: 'SFSP',
   BSUS_BLUS: 'BSUS & BLUS',
+  GHI: 'GHI',
+  GPI: 'GPI',
+  GTLI: 'GTLI',
+  WC: 'WC',
   EMPLOYEE_BENEFITS: 'Employee Benefits',
 };
 
