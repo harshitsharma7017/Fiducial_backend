@@ -5,6 +5,7 @@ import {
   OTHER_SECTIONS,
   RISK_DETAIL_FIELDS,
   SECTION_LINES,
+  SUM_INSURED_LINES,
   addonListsForProduct,
   hasBasis,
   hasRfq,
@@ -361,17 +362,27 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
         ? str(section.proposed2)
         : null;
     const last = existing?.section(code);
+    const existingLinesMap = linesRecord(code, last?.lines);
+    const existingSumFromLines = (SUM_INSURED_LINES[code] ?? []).flatMap((k) => {
+      const val = existingLinesMap[k];
+      return val !== null && val !== undefined && val !== '' ? [val] : [];
+    });
+    const derivedExisting =
+      last?.sumInsured ??
+      (existingSumFromLines.length > 0
+        ? existingSumFromLines.reduce((tot, v) => tot.plus(v), new Decimal(0)).toFixed()
+        : null);
     return [
       {
         code,
         name,
         included,
-        existing: last?.sumInsured ?? null,
+        existing: derivedExisting,
         proposed1,
         proposed2,
         lines: linesRecord(code, section?.lines),
         lines2: linesRecord(code, section?.lines2),
-        existingLines: linesRecord(code, last?.lines),
+        existingLines: existingLinesMap,
         basis,
         basisAmounts: basis
           ? {

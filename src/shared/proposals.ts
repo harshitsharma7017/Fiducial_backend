@@ -207,6 +207,7 @@ export const OTHER_SECTIONS = [
   'FIRE_FLOATER',
   'BURGLARY_FLOATER',
   'FIRE_LOSS_OF_PROFIT',
+  'MACHINERY_LOSS_OF_PROFIT',
   'MONEY',
   'FIDELITY_GUARANTEE',
   'PLATE_GLASS',
@@ -222,7 +223,8 @@ export const OTHER_SECTION_LABELS: Record<OtherSection, string> = {
   BURGLARY: 'Burglary',
   FIRE_FLOATER: 'Fire Floater',
   BURGLARY_FLOATER: 'Burglary Floater',
-  FIRE_LOSS_OF_PROFIT: 'Fire Loss of Profit',
+  FIRE_LOSS_OF_PROFIT: 'Fire Loss of Profit (FLOP)',
+  MACHINERY_LOSS_OF_PROFIT: 'Machinery Loss of Profits (MLOP)',
   MONEY: 'Money',
   FIDELITY_GUARANTEE: 'Fidelity Guarantee',
   PLATE_GLASS: 'Plate Glass',
@@ -240,6 +242,9 @@ export const OTHER_SECTION_LABELS: Record<OtherSection, string> = {
  */
 export const SECTION_LINES = {
   FIRE_LOSS_OF_PROFIT: [{ key: 'annualGrossProfit', label: 'Annual Gross Profit', kind: 'rupees' }],
+  MACHINERY_LOSS_OF_PROFIT: [
+    { key: 'annualGrossProfit', label: 'Annual Gross Profit', kind: 'rupees' },
+  ],
   MONEY: [
     { key: 'cashInSafe', label: 'Cash in safe / counter', kind: 'rupees' },
     {
@@ -276,6 +281,7 @@ export const SECTION_LINE_KEYS = Object.values(SECTION_LINES).flatMap((lines) =>
  */
 export const SUM_INSURED_LINES: Partial<Record<OtherSection, readonly string[]>> = {
   FIRE_LOSS_OF_PROFIT: ['annualGrossProfit'],
+  MACHINERY_LOSS_OF_PROFIT: ['annualGrossProfit'],
   MONEY: ['cashInSafe', 'cashInTransitSingle'],
   FIDELITY_GUARANTEE: ['limitPerPeriod'],
   PUBLIC_LIABILITY: ['aggregateLimit'],
@@ -292,6 +298,7 @@ export const SUM_INSURED_LINE: Partial<Record<OtherSection, string>> = Object.fr
 /** How a sum insured taken from the lines is described next to it. */
 export const SUM_INSURED_FROM: Partial<Record<OtherSection, string>> = {
   FIRE_LOSS_OF_PROFIT: 'Annual Gross Profit',
+  MACHINERY_LOSS_OF_PROFIT: 'Annual Gross Profit',
   MONEY: 'Cash in safe + single carrying limit',
   FIDELITY_GUARANTEE: 'Limit per policy period',
   PUBLIC_LIABILITY: 'Aggregate limit',

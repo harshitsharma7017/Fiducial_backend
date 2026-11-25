@@ -77,6 +77,9 @@ export const PREMIUM_ROWS = new Map<string, 'FIRE' | OtherSection>([
   ['burglary floater', 'BURGLARY_FLOATER'],
   ['flop', 'FIRE_LOSS_OF_PROFIT'],
   ['fire loss of profit', 'FIRE_LOSS_OF_PROFIT'],
+  ['mlop', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['machinery loss of profit', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['machinery loss of profits', 'MACHINERY_LOSS_OF_PROFIT'],
   ['money', 'MONEY'],
   ['fidelity', 'FIDELITY_GUARANTEE'],
   ['plate glass', 'PLATE_GLASS'],
@@ -110,6 +113,9 @@ const SCHEDULE_TITLES: readonly [string, OtherSection][] = [
   ['burglary floater', 'BURGLARY_FLOATER'],
   ['fire floater', 'FIRE_FLOATER'],
   ['fire loss of profit', 'FIRE_LOSS_OF_PROFIT'],
+  ['machinery loss of profits', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['machinery loss of profit', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['mlop', 'MACHINERY_LOSS_OF_PROFIT'],
   ['electronic equipment', 'EEI'],
   ['mechanical breakdown', 'MECHANICAL_BREAKDOWN'],
   ['public liability', 'PUBLIC_LIABILITY'],
@@ -766,9 +772,9 @@ function itemiseBuildings(
 export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
   const { record, client, masters } = context;
   const existing = record.existing;
-  // The Existing column: the policy in force (last year's on a renewal, the client's current
-  // policy on new business); left out when there is none.
-  const withExisting = existing !== null;
+  // The Existing column: only for continuing cases (renewals and roll overs, client rule 16/25 Nov 2026);
+  // new business never shows an Existing column.
+  const withExisting = continuesPolicy(record.type) && existing !== null;
   // Working notes outside the printed columns are the client's, not the insurer's.
   const printed = printColumns(sheet);
   clearCells(
@@ -1090,7 +1096,11 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     }
     const lines = SECTION_LINES[section.code as SectionWithLines] as
       readonly { key: string; label: string; kind: string }[] | undefined;
-    if (lines && section.code !== 'FIRE_LOSS_OF_PROFIT') {
+    if (
+      lines &&
+      section.code !== 'FIRE_LOSS_OF_PROFIT' &&
+      section.code !== 'MACHINERY_LOSS_OF_PROFIT'
+    ) {
       for (const row of numbered) {
         const text = labelKey(cellText(sheet.getCell(row, 2)));
         const line = lines.find(
@@ -1117,7 +1127,12 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     if (hasBasis(section.code) && section.basis && section.basisAmounts) {
       const row = basisRow(sheet, block, section.basis);
       if (row)
-        writeFigures(row, null, section.basisAmounts.proposed1, section.basisAmounts.proposed2);
+        writeFigures(
+          row,
+          last?.sumInsured,
+          section.basisAmounts.proposed1,
+          section.basisAmounts.proposed2,
+        );
     }
     const blockEnd = scheduleBlocks(sheet).get(section.code)?.end ?? block.end;
     // The Option 3 column is Fire's: the sections are quoted at Option 1 in it.
@@ -1133,11 +1148,11 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     let shown = false;
     for (let row = title + 1; row <= end; row += 1) shown ||= !sheet.getRow(row).hidden;
     if (!shown) hideRow(sheet, title);
-    // The RFQ prints the Data Sheet's Fire & Burglary table above Burglary's contents row, with
-    // Existing, Option 1 and Option 2; the contents row is then a total, not numbered.
+    // The RFQ prints the Data Sheet's Fire & Burglary total above Burglary's contents row, with
+    // Existing, Option 1 and Option 2; the individual contents items are omitted (client review 25 Nov 2026).
     const breakdown =
       context.document === 'RFQ' && section.code === 'BURGLARY' && shown
-        ? burglaryContentsLines(record)
+        ? burglaryContentsLines(record).filter((line) => line.kind === 'total')
         : [];
     if (breakdown.length > 0) {
       insertRows(sheet, first, breakdown.length, first);
@@ -1155,7 +1170,13 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
       setValue(sheet, first + breakdown.length, 1, null);
       // The Data Sheet's numbers are written once the blocks are numbered (renumberSchedule
       // would count them as the block's own).
-      dataSheetNumbers = breakdown.map((line) => line.number);
+      let breakdownSeq = 1;
+      dataSheetNumbers = breakdown.map((line) => {
+        if (line.number !== null && /^\d+$/.test(line.number)) {
+          return String(breakdownSeq++);
+        }
+        return line.number;
+      });
     }
   }
 

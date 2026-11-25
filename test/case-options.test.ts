@@ -99,6 +99,7 @@ const SHEET_ROWS: Partial<Record<CatalogMaster, (string | number)[][]>> = {
     ['PAR', 2, 'Waiver of recourse', '', '', 'Yes'],
     ['SFSP', 1, 'Spontaneous combustion', '', '', 'Yes'],
     ['BSUS & BLUS', 1, 'Earth quake', 'PAID', 'Full sum insured', 'Yes'],
+    ['BSUS & BLUS', 2, 'Local authorities clause', 'PAID', 'Full sum insured', 'Yes'],
   ],
 };
 
@@ -522,7 +523,10 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
         { BUILDING_1: '2000000', COMPOUND_WALL: '100000', FFF: '1000000', STOCKS: '50000000' },
         [{ code: 'BURGLARY', included: true, basis: 'FULL' }],
         {
-          addons: [{ list: 'BSUS_BLUS', name: 'Earth quake' }],
+          addons: [
+            { list: 'BSUS_BLUS', name: 'Earth quake' },
+            { list: 'BSUS_BLUS', name: 'Local authorities clause' },
+          ],
           fireOption2: [{ group: 'STOCKS', amount: '55000000' }],
           existing: {
             insurer: 'Example General Insurance, Fort',
@@ -591,29 +595,20 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
       if (row.getCell(2).text === 'All the contents as per Fire section except building') break;
     }
     expect(block).toEqual([
-      [
-        '1',
-        'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
-        2100000,
-        null,
-      ],
-      [null, 'Building 1', 2000000, null],
-      ['a', 'Compound wall', 100000, null],
-      ['2', 'Furniture, Fixtures and Fittings & Interiors', 1000000, null],
-      ['6', 'All types of stock pertaining to insured business', 50000000, 55000000],
       [null, 'Total sum insured', 53100000, 55000000],
       [null, 'All the contents as per Fire section except building', 51100000, 55000000],
     ]);
-    const indent = (offset: number) =>
-      schedule.getCell(burglary + offset, 2).alignment?.indent ?? 0;
-    expect([1, 2, 3, 4].map(indent)).toEqual([0, 2, 2, 0]);
     // Fire by location: no heading with the location's name, the address opens the block.
     const location = texts('fire by location');
     expect(location.some((cells) => cells[0] === 'Plant 1')).toBe(false);
     expect(location.some((cells) => cells[0]?.startsWith('Plot 1, Mumbai'))).toBe(true);
     // Add-on covers without the List column.
     expect(texts('add-on covers')).toContainEqual(['S No', 'Addon cover', 'Sum insured limit']);
-    expect(texts('add-on covers')).toContainEqual(['1', 'Earth quake', 'Full sum insured']);
+    expect(texts('add-on covers')).toContainEqual([
+      '1',
+      'Local authorities clause',
+      'Full sum insured',
+    ]);
 
     // The PDF's schedule page has no "Schedule" band above its title.
     const lines = (await pdfLines((await download(id, 'pdf')).body as Buffer)) ?? [];
@@ -706,30 +701,14 @@ describe('The RFQ carries the options, basis, covers, product and add-ons', () =
     // C-3: Burglary is the contents; a 75% first-loss row is added and the others hidden.
     const contents = rowOf('All the contents as per Fire section except building');
     expect(schedule.getCell(contents, 4).value).toBe(51000000);
-    // Above it, the Data Sheet's Fire & Burglary table with its numbers; the contents row is a
+    // Above it, the Data Sheet's Fire & Burglary total; the contents row is a
     // total, not numbered.
-    const table = [5, 4, 3, 2, 1].map((back) => {
-      const row = contents - back;
-      return [
-        schedule.getCell(row, 1).text,
-        schedule.getCell(row, 2).text,
-        ...[3, 4, 5].map((column) => schedule.getCell(row, column).value),
-      ];
-    });
-    expect(table).toEqual([
-      [
-        '1',
-        'All Building & all type of civil structures Including Plinth & Foundation, Compound wall, False Ceiling and all Allied Building',
-        null,
-        100000000,
-        null,
-      ],
-      ['', 'Building 1', null, 100000000, null],
-      ['2', 'Furniture, Fixtures and Fittings & Interiors', null, 1000000, null],
-      ['6', 'All types of stock pertaining to insured business', null, 50000000, null],
-      ['', 'Total sum insured', 150000000, 151000000, null],
-    ]);
-    expect(schedule.getCell(contents - 4, 2).alignment?.indent).toBe(2);
+    const row = contents - 1;
+    expect([
+      schedule.getCell(row, 1).text,
+      schedule.getCell(row, 2).text,
+      ...[3, 4, 5].map((column) => schedule.getCell(row, column).value),
+    ]).toEqual(['', 'Total sum insured', 150000000, 151000000, null]);
     expect(schedule.getCell(contents, 1).text).toBe('');
     const basis = rowOf('Total Sum Insured - Burglary on 1st loss basis 75% of sum insured');
     expect(schedule.getCell(basis, 4).value).toBe(38250000);

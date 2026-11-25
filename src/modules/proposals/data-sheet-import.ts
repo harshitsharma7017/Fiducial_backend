@@ -50,6 +50,9 @@ const FIRE_LINE_WORDS: readonly [string, FireItemKey][] = [
 /** Section titles in column A, by the words they start with. */
 const SECTION_TITLES: readonly [string, OtherSection][] = [
   ['fire loss of profit', 'FIRE_LOSS_OF_PROFIT'],
+  ['machinery loss of profit', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['machinery loss of profits', 'MACHINERY_LOSS_OF_PROFIT'],
+  ['mlop', 'MACHINERY_LOSS_OF_PROFIT'],
   ['money', 'MONEY'],
   ['fidelity', 'FIDELITY_GUARANTEE'],
   ['plate glass', 'PLATE_GLASS'],

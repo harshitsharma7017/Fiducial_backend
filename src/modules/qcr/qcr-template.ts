@@ -391,7 +391,8 @@ function fillNotes(
   const notes: string[] = [];
   if (terrorismRow) {
     // No terrorism figure to give: the sentence with blanks for it is left out.
-    notes.push(fillTerrorismNote(cellText(sheet.getCell(terrorismRow, 1)), qcr));
+    const note = fillTerrorismNote(cellText(sheet.getCell(terrorismRow, 1)), qcr);
+    if (note) notes.push(note);
   }
   // The template's own notes, under its "NOTE:" heading, until a blank row.
   const templateNotes: string[] = [];
@@ -407,7 +408,10 @@ function fillNotes(
   const standard = context.masters.notes.some((note) => note.active && note.onQcr);
   notes.push(
     ...(standard ? [] : templateNotes),
-    ...documentNotes(context).map((note) => fillTerrorismNote(note, qcr)),
+    ...documentNotes(context).flatMap((note) => {
+      const filled = fillTerrorismNote(note, qcr);
+      return filled ? [filled] : [];
+    }),
   );
   if (notes.length === 0) return;
 

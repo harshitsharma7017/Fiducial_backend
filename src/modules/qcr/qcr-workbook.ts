@@ -253,14 +253,15 @@ export function buildQcrWorkbookDocument(
     workbook,
     record,
     qcr,
-    documentNotes(fillContextOf(record, client, masters, 'QCR')).map((note) =>
-      fillTerrorismNote(note, qcr),
-    ),
+    documentNotes(fillContextOf(record, client, masters, 'QCR')).flatMap((note) => {
+      const filled = fillTerrorismNote(note, qcr);
+      return filled ? [filled] : [];
+    }),
   );
   schedule(workbook, record, client, masters, 'QCR', quotedOptions(qcr));
   annexure(workbook, record);
   riskDetails(workbook, record);
-  addonCovers(workbook, record, masters.addons);
+  addonCovers(workbook, record, masters.addons, { list: false });
   frameWorkbook(workbook);
   return workbook;
 }

@@ -504,7 +504,7 @@ describe('new-business proposals', () => {
       )?.[2],
     ).toBe(63);
     expect(find('All types of Plant and Machinery and all its accessories')?.slice(0, 1)).toEqual([
-      '5',
+      '2',
     ]);
     expect(find('All types of Plant and Machinery and all its accessories')?.[2]).toBe(3000);
     // A sub-item's letter opens its description; the S No column has the items' numbers only.
@@ -514,11 +514,9 @@ describe('new-business proposals', () => {
     expect(find('Stock kept at open space if any - Please Specify')?.[2]).toBe(
       'Steel coils in the yard',
     );
-    // Only what was filled is printed, with its Data Sheet number: the Building heading over its
-    // two buildings (no S No), Plant and Machinery (5) over Genset (a) and Transformer (c), Stock
-    // (6, its own line empty) over third-party stock (a), then hypothecation and open stock.
+    // Sequential numbering 1, 2, 3... for shown items, then hypothecation and open stock:
     expect(rows.map((row) => row[0]).filter((n) => typeof n === 'string' && n.length <= 2)).toEqual(
-      ['1', '5', '6', '1', '2'],
+      ['1', '2', '3', '1', '2'],
     );
     expect(
       rows
@@ -1293,7 +1291,7 @@ describe('D1 and D2: dynamic buildings and Interior under Furniture', () => {
       .flatMap((row) => (Array.isArray(row) ? [row.slice(1, 6)] : []));
     const at = rows.findIndex((row) => row[1] === 'Furniture, Fixtures and Fittings & Interiors');
     expect(rows[at]).toEqual(['2', 'Furniture, Fixtures and Fittings & Interiors', 1000000]);
-    expect(rows[at + 1]?.[0]).toBe('6');
+    expect(rows[at + 1]?.[0]).toBe('3');
     expect(rows.some((row) => row[1] === 'Interiors')).toBe(false);
   });
 

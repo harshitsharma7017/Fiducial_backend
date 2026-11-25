@@ -10,11 +10,14 @@ const NO_FIGURE = 'Rs —/-';
  * "—", never a blank line; so does the RFQ, which has no quotes yet (pass no QCR). A note without
  * the blanks gets the sentence added when there is a figure. Any other text is returned as it is.
  */
-export function fillTerrorismNote(text: string, qcr: Qcr | null): string {
+export function fillTerrorismNote(text: string, qcr: Qcr | null): string | null {
   const hasBlanks = /If you opt for the same,/.test(text);
   const isTerrorismNote =
     /^\s*\*?\s*New \/ Renewal Quote is given as per recommended coverage/i.test(text);
   if (!hasBlanks && !isTerrorismNote) return text;
+
+  // The terrorism note is only shown when quotes have figures both with and without terrorism
+  // (i.e. at least one quote gave terrorismExtra). If only one way was quoted, the note is omitted.
   const hasExtra = (quote: { terrorismExtra: string | null }) =>
     Boolean(quote.terrorismExtra) && Number(quote.terrorismExtra) > 0;
   const figures = (qcr?.options ?? []).map((option) => {
@@ -30,22 +33,19 @@ export function fillTerrorismNote(text: string, qcr: Qcr | null): string {
     };
   });
   const anyFigure = figures.some((item) => item.value !== NO_FIGURE);
+  if (!anyFigure) {
+    return null;
+  }
   if (!hasBlanks) {
     // The template's wording has no "if you opt" sentence: add it only when there is a figure.
-    return anyFigure
-      ? `${text.trim()} If you opt for the same, additional premium of ${figures
-          .map((item) => `${item.value} for ${item.label}`)
-          .join(' & ')} (before GST) will be charged.`
-      : text;
+    return `${text.trim()} If you opt for the same, additional premium of ${figures
+      .map((item) => `${item.value} for ${item.label}`)
+      .join(' & ')} (before GST) will be charged.`;
   }
-  if (anyFigure) {
-    return text.replace(
-      /If you opt for the same,[\s\S]*$/,
-      `If you opt for the same, additional premium of ${figures
-        .map((item) => `${item.value} for ${item.label}`)
-        .join(' & ')} (before GST) will be charged.`,
-    );
-  }
-  // Nothing to fill in yet: the blanks of the printed text become dashes.
-  return text.replace(/Rs\s*_{2,}\s*\/-/g, NO_FIGURE).replace(/_{2,}/g, '—');
+  return text.replace(
+    /If you opt for the same,[\s\S]*$/,
+    `If you opt for the same, additional premium of ${figures
+      .map((item) => `${item.value} for ${item.label}`)
+      .join(' & ')} (before GST) will be charged.`,
+  );
 }

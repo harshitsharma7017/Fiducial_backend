@@ -307,9 +307,9 @@ export function schedule(
   options: { option2?: boolean; option3?: boolean } = {},
 ) {
   const sectionMaster = new Map(masters.sections.map((section) => [section.code, section]));
-  // The client format's "Existing Sum Insured" column, for the policy in force (last year's on a
-  // renewal, the client's current policy on new business); left out when there is none.
-  const withExisting = record.existing !== null;
+  // The client format's "Existing Sum Insured" column: only for continuing cases (renewals and
+  // roll overs, client rule 16/25 Nov 2026); new business never shows an Existing column.
+  const withExisting = continuesPolicy(record.type) && record.existing !== null;
   const existing = record.existing;
   const copy = record.existingPolicy;
   // Option 2's column only when the case asks for Option 2 (a Fire line or an included section has
@@ -412,9 +412,7 @@ export function schedule(
     labelled(
       sheet,
       'Existing Policy',
-      [existing.policyNumber ? `Policy No ${existing.policyNumber}` : null, period, premium]
-        .filter(Boolean)
-        .join(', '),
+      [existing.policyNumber, period, premium].filter(Boolean).join(', '),
       span,
     );
   }
@@ -538,10 +536,14 @@ export function schedule(
       if (line.kind === 'rupees') money(row, amountColumns);
       number += 1;
     }
-    const breakdown = section.code === 'BURGLARY' ? contentsTable : [];
+    const breakdown =
+      section.code === 'BURGLARY' ? contentsTable.filter((line) => line.kind === 'total') : [];
+    let breakdownSeq = 1;
     for (const line of breakdown) {
+      const isNumbered = line.number !== null && /^\d+$/.test(line.number);
+      const seqNumber = isNumbered ? breakdownSeq++ : line.number;
       const row = sheet.addRow([
-        line.number,
+        seqNumber,
         line.label,
         ...figures(line.existing, line.proposed1, line.proposed2),
       ]);
@@ -577,7 +579,11 @@ export function schedule(
         sheet.addRow([
           null,
           `Total Sum Insured - Burglary on ${BURGLARY_BASIS_LABELS[section.basis]}`,
-          ...figures(null, section.basisAmounts.proposed1, section.basisAmounts.proposed2),
+          ...figures(
+            section.existing,
+            section.basisAmounts.proposed1,
+            section.basisAmounts.proposed2,
+          ),
         ]),
         amountColumns,
       );
@@ -626,6 +632,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     };
     const buildings = location.buildings.filter((building) => filled(building.sumInsured));
     const headed = new Set<string>();
+    let itemSeq = 1;
     for (const item of FIRE_ITEMS) {
       const groupFilled =
         FIRE_ITEMS.some((other) => other.group === item.group && itemFilled(other.key)) ||
@@ -640,7 +647,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
           .reduce((total, value) => total + Number(value), 0);
         const buildingsSubtotal = item.group === 'BUILDING' ? Number(location.buildingsTotal) : 0;
         const subtotal = itemsSubtotal + buildingsSubtotal;
-        const row = sheet.addRow([heading.number, heading.label, subtotal || null]);
+        const row = sheet.addRow([String(itemSeq++), heading.label, subtotal || null]);
         row.font = { bold: true };
         row.getCell(1).alignment = { horizontal: 'center' };
         row.getCell(2).alignment = { wrapText: true };
@@ -666,7 +673,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       // The S No column holds the items' numbers only; a sub-item's letter opens its description,
       // indented under its item, so points and sub-points line up (client, 16 Nov 2026).
       const row = sheet.addRow([
-        sub ? null : item.number,
+        sub ? null : String(itemSeq++),
         sub ? `${item.number.slice(-1)}) ${item.label}` : item.label,
         values ? amount(values.sumInsured) || null : null,
       ]);

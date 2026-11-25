@@ -256,8 +256,8 @@ describe('D-2: renewals', () => {
     expect(rows.find((row) => row[0] === 'Existing Insurer')?.[1]).toBe(
       'Example General Insurance, Fort',
     );
-    expect(rows.find((row) => row[0] === 'Existing Policy')?.[1]).toMatch(
-      /^Policy No EGI\/FIRE\/2025\/0042, /,
+    expect(rows.find((row) => row[0] === 'Existing Policy No')?.[1]).toMatch(
+      /^EGI\/FIRE\/2025\/0042, /,
     );
     // No Option 2 figures on the case: no Option 2 column (client, 16 Nov 2026).
     expect(rows.find((row) => row[0] === 'S No')).toEqual([

@@ -97,6 +97,12 @@ const SECTION_WORDS: Record<SectionCode, readonly string[]> = {
   BURGLARY: ['burglary', 'house breaking', 'housebreaking'],
   BURGLARY_FLOATER: ['burglary floater'],
   FIRE_LOSS_OF_PROFIT: ['fire loss of profit', 'loss of profit', 'fire lop', 'flop'],
+  MACHINERY_LOSS_OF_PROFIT: [
+    'machinery loss of profits',
+    'machinery loss of profit',
+    'machinery lop',
+    'mlop',
+  ],
   MONEY: ['money in transit', 'money in safe', 'money'],
   FIDELITY_GUARANTEE: ['fidelity guarantee', 'fidelity'],
   PLATE_GLASS: ['plate glass'],
