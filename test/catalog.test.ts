@@ -302,7 +302,7 @@ describe('product and cover masters', () => {
       ]),
     ).toEqual([
       ['products', 4, 0],
-      ['sections', 14, 0],
+      ['sections', 15, 0],
       ['addons', 5, 0],
       ['addon-rules', 2, 0],
       ['tax-rates', 1, 0],

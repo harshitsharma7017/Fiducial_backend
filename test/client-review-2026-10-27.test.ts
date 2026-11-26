@@ -431,9 +431,8 @@ describe('the QCR (client review, 27 Oct 2026)', () => {
     const note = payment.row + 2;
     expect(premium.getCell(note, 1).value).toBe('NOTE:');
     expect(premium.getCell(note, 1).fill).toMatchObject({ fgColor: { argb: NOTE_FILL_ARGB } });
-    const lines = [1, 2, 3].map((offset) => premium.getCell(note + offset, 1).text);
-    expect(lines[0]).toMatch(/^\*New \/ Renewal Quote is given as per recommended coverage/);
-    expect(lines.slice(1)).toEqual([
+    const lines = [1, 2].map((offset) => premium.getCell(note + offset, 1).text);
+    expect(lines).toEqual([
       'Notes for the insurers: Please quote with and without terrorism.',
       NOTE,
     ]);

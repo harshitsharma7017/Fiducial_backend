@@ -4,8 +4,6 @@ import {
   NO_RFQ_EDITS,
   applyRfqEdits,
   isAnnexureSection,
-  DEFAULT_FIRE_COVERS,
-  type AddonList,
   type RfqAttribution,
   type RfqEdits,
   type CatalogItem,
@@ -112,86 +110,6 @@ export function pdfSheets(
  * place; until then the built-in layout is used. The PDF draws the same workbook on A4 with the
  * template's letterhead.
  */
-const SCHEDULE_PERIL_KEYS = new Set([
-  ...DEFAULT_FIRE_COVERS.map((name) => name.trim().toLowerCase().replace(/\s+/g, ' ')),
-  'earth quake',
-  'earthquake',
-  'terrorism',
-  'storm tempest flood & inundation',
-  'storm, tempest, flood & inundation',
-  'stfi',
-]);
-
-function isSchedulePeril(name: string): boolean {
-  const normalized = name.trim().toLowerCase().replace(/[,.-]/g, '').replace(/\s+/g, ' ');
-  if (SCHEDULE_PERIL_KEYS.has(name.trim().toLowerCase().replace(/\s+/g, ' '))) return true;
-  if (normalized.includes('earthquake') || normalized.includes('earth quake')) return true;
-  if (normalized.includes('terrorism')) return true;
-  if (
-    normalized.includes('storm') &&
-    (normalized.includes('flood') ||
-      normalized.includes('tempest') ||
-      normalized.includes('inundation'))
-  )
-    return true;
-  return false;
-}
-
-/**
- * On the RFQ, only the 3 main perils (Earthquake, STFI, Terrorism) are ticked under "Addon coverages"
- * on the Schedule sheet when asked for.
- * In the attached add-on covers list (e.g. BSUS / PAR), these 3 perils are omitted because they already
- * appear in the schedule table above. Any other fire add-on covers / clauses asked for (e.g.
- * reinstatement value clause, local authorities clause, etc.) are moved to the attached add-on covers list.
- */
-function normalizeRfqFireCovers(record: ProposalRecord): ProposalRecord {
-  const scheduleCovers: typeof record.fire.covers = [];
-  const extraCovers: string[] = [];
-
-  for (const cover of record.fire.covers) {
-    if (isSchedulePeril(cover.name)) {
-      scheduleCovers.push(cover);
-    } else if (cover.required === true) {
-      extraCovers.push(cover.name);
-    }
-  }
-
-  // Filter out the 3 schedule perils from the attached add-ons list so they aren't duplicated there.
-  const baseAddons = record.addons.filter((addon) => !isSchedulePeril(addon.name));
-
-  if (extraCovers.length === 0) {
-    return {
-      ...record,
-      addons: baseAddons,
-      fire: {
-        ...record.fire,
-        covers: scheduleCovers,
-      },
-    };
-  }
-
-  // Determine the list to use for the product (e.g. BSUS_BLUS, PAR, SFSP, etc.)
-  const targetList: AddonList = record.addonLists[0] ?? 'BSUS_BLUS';
-  const existingNames = new Set(baseAddons.map((a) => a.name.trim().toLowerCase()));
-  const appendedAddons = [...baseAddons];
-
-  for (const name of extraCovers) {
-    if (!existingNames.has(name.trim().toLowerCase())) {
-      appendedAddons.push({ list: targetList, name });
-      existingNames.add(name.trim().toLowerCase());
-    }
-  }
-
-  return {
-    ...record,
-    addons: appendedAddons,
-    fire: {
-      ...record.fire,
-      covers: scheduleCovers,
-    },
-  };
-}
-
 export async function rfqDocument(
   caseRecord: ProposalRecord,
   client: ClientDoc,
@@ -201,8 +119,7 @@ export async function rfqDocument(
   attribution?: RfqAttribution,
 ): Promise<RfqDocument> {
   // R-2: the edits made on the RFQ replace the Data Sheet's values on it.
-  const editedRecord = applyRfqEdits(caseRecord, edits);
-  const record = normalizeRfqFireCovers(editedRecord);
+  const record = applyRfqEdits(caseRecord, edits);
   const title = edits.title ?? undefined;
   const template = await templateFile('RFQ');
   let workbook: ExcelJS.Workbook;

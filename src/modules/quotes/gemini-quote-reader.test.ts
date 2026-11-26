@@ -563,7 +563,7 @@ describe('the schema Gemini is sent', () => {
 
   it('still bounds the answer on the server, and trims extra notes instead of failing', () => {
     const answer = syntheticAnswer();
-    const tooManySections = Array.from({ length: 29 }, () => answer.sections[1]!);
+    const tooManySections = Array.from({ length: 31 }, () => answer.sections[1]!);
     expect(parseGeminiAnswer(answerOf({ ...answer, sections: tooManySections }))).toBe('MALFORMED');
     const notes = Array.from({ length: 12 }, (_, index) => `Note ${index + 1}.`);
     const parsed = parseGeminiAnswer(answerOf({ ...answer, issues: notes }));
