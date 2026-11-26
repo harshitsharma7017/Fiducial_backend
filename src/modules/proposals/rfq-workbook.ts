@@ -632,6 +632,7 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
     };
     const buildings = location.buildings.filter((building) => filled(building.sumInsured));
     const headed = new Set<string>();
+    const groupSubSeq = new Map<string, number>();
     let itemSeq = 1;
     for (const item of FIRE_ITEMS) {
       const groupFilled =
@@ -670,11 +671,17 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
       if (!itemFilled(item.key) && !parent) continue;
       const values = saved.get(item.key);
       const sub = heading !== undefined || item.number.length > 1;
+      let subLetter = '';
+      if (sub) {
+        const nextIndex = groupSubSeq.get(item.group) ?? 0;
+        subLetter = String.fromCharCode(97 + nextIndex); // 0 -> 'a', 1 -> 'b', 2 -> 'c', ...
+        groupSubSeq.set(item.group, nextIndex + 1);
+      }
       // The S No column holds the items' numbers only; a sub-item's letter opens its description,
-      // indented under its item, so points and sub-points line up (client, 16 Nov 2026).
+      // indented under its item, sequentially as a), b), c), so points and sub-points line up.
       const row = sheet.addRow([
         sub ? null : String(itemSeq++),
-        sub ? `${item.number.slice(-1)}) ${item.label}` : item.label,
+        sub ? `${subLetter}) ${item.label}` : item.label,
         values ? amount(values.sumInsured) || null : null,
       ]);
       row.getCell(1).alignment = { horizontal: 'center' };

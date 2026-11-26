@@ -524,7 +524,7 @@ describe('new-business proposals', () => {
         .filter((text) => typeof text === 'string' && /^[a-z]\) /.test(text)),
     ).toEqual([
       'a) Genset and all its accessories',
-      'c) Transformer and all its accessories',
+      'b) Transformer and all its accessories',
       'a) Any other stocks kept at third party job work location',
     ]);
     expect(find('Compressor and all its accessories')).toBeUndefined();
@@ -534,7 +534,7 @@ describe('new-business proposals', () => {
     const sheet = workbook.getWorksheet('fire by location')!;
     const rowNumber = (label: string) =>
       sheet.getSheetValues().findIndex((row) => Array.isArray(row) && row[2] === label);
-    const transformer = sheet.getRow(rowNumber('c) Transformer and all its accessories'));
+    const transformer = sheet.getRow(rowNumber('b) Transformer and all its accessories'));
     // The sub-item's letter and description are indented under its item.
     expect(transformer.getCell(1).value).toBeNull();
     expect(transformer.getCell(2).alignment?.indent).toBe(2);
