@@ -167,6 +167,12 @@ export interface ProposalDoc {
   fireOption2: Array<{ group: FireGroup; amount: Money }>;
   /** Fire Option 3 by line; missing on proposals saved before it existed. */
   fireOption3?: Array<{ group: FireGroup; amount: Money }>;
+  /**
+   * Fire Option 1 override per line (renewal and roll-on only): when set, these replace the
+   * location-calculated totals for the Proposed – Option 1 column. Missing on new business and on
+   * renewals saved before this field existed (falls back to the location sum).
+   */
+  fireOption1?: Array<{ group: FireGroup; amount: Money }>;
   sections: Array<{
     code: OtherSection;
     included: boolean;
@@ -386,6 +392,15 @@ const proposalSchema = new Schema<ProposalDoc>(
       ),
     ],
     fireOption3: {
+      type: [
+        new Schema(
+          { group: { type: String, enum: FIRE_GROUPS, required: true }, amount: money },
+          noId,
+        ),
+      ],
+      default: undefined,
+    },
+    fireOption1: {
       type: [
         new Schema(
           { group: { type: String, enum: FIRE_GROUPS, required: true }, amount: money },

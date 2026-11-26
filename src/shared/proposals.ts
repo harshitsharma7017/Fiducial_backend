@@ -642,6 +642,14 @@ export const DataSheetInputSchema = z
     fireOption3: z
       .array(z.strictObject({ group: z.enum(FIRE_GROUPS), amount: OptionalRupees }))
       .default([]),
+    /**
+     * Proposed Option 1 override for each Fire line (renewal and roll-on only): when entered,
+     * these replace the auto-calculated location totals for the Proposed – Option 1 column.
+     * Blank on new business; also blank on a renewal until the team types the figures.
+     */
+    fireOption1: z
+      .array(z.strictObject({ group: z.enum(FIRE_GROUPS), amount: OptionalRupees }))
+      .default([]),
     /** Fire's add-on covers asked for (C-6). */
     fireCovers: z.array(CoverInputSchema).max(50).default([]),
     /**
@@ -1053,6 +1061,11 @@ export const ProposalRecordSchema = z.object({
         proposed1: z.string(),
         proposed2: z.string().nullable(),
         proposed3: z.string().nullable(),
+        /**
+         * Renewal/roll-on: the typed override for Option 1; null when falling back to the
+         * location-calculated sum. Used to reload the fireOption1 form field.
+         */
+        typedOption1: z.string().nullable().optional(),
       }),
     ),
     existing: z.string().nullable(),
@@ -1104,7 +1117,11 @@ export const ProposalRecordSchema = z.object({
       /** Burglary and Burglary Floater (C-3): the basis and the sum insured on it per option. */
       basis: z.enum(BURGLARY_BASES).nullable(),
       basisAmounts: z
-        .object({ proposed1: z.string().nullable(), proposed2: z.string().nullable() })
+        .object({
+          existing: z.string().nullable().optional(),
+          proposed1: z.string().nullable(),
+          proposed2: z.string().nullable(),
+        })
         .nullable(),
       /** The section's add-on covers (C-6), from the coverage section master. */
       covers: z.array(CoverSchema),

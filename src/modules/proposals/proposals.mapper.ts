@@ -335,6 +335,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     locations,
     new Map(doc.fireOption2.map((line) => [line.group, str(line.amount)])),
     new Map((doc.fireOption3 ?? []).map((line) => [line.group, str(line.amount)])),
+    new Map((doc.fireOption1 ?? []).map((line) => [line.group, str(line.amount)])),
   );
   const byCode = new Map(doc.sections.map((section) => [section.code, section]));
   const existing = existingColumn(doc);
@@ -344,6 +345,31 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
   // civil-structure items (Compound wall, False ceiling, Plinth & Foundation) stay in the base.
   const allBuildingsTotal = sumOf(locations.map((location) => buildingsTotal(location)));
   const contents = contentsTotals(totals, allBuildingsTotal);
+  const isRenewal = continuesPolicy(doc.type);
+  // Existing fire contents (all groups except BUILDING) for Burglary in renewals.
+  const existingFireContents =
+    isRenewal && existing
+      ? totals.groups
+          .filter((line) => line.group !== 'BUILDING')
+          .map((line) => existing.fireLine(line.group))
+          .filter((val): val is string => val !== null && val !== '')
+          .reduce((sum, val) => sum.plus(new Decimal(val)), new Decimal(0))
+      : null;
+  const existingFireContentsStr =
+    existingFireContents && !existingFireContents.isZero() ? existingFireContents.toFixed() : null;
+
+  const typedFireOption1Lines = isRenewal
+    ? (doc.fireOption1 ?? [])
+        .filter((line) => line.group !== 'BUILDING')
+        .map((line) => str(line.amount))
+        .filter((val): val is string => val !== null && val !== '')
+    : [];
+  const typedFireOption1Contents =
+    typedFireOption1Lines.length > 0
+      ? typedFireOption1Lines.reduce((sum, val) => sum.plus(new Decimal(val)), new Decimal(0))
+      : null;
+  const hasTypedFireOption1 = typedFireOption1Lines.length > 0;
+
   const sections = orderedSections(context).flatMap(({ code, name, active }) => {
     const section = byCode.get(code);
     const included = section?.included ?? false;
@@ -352,7 +378,11 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     // C-3: with a basis, Burglary's sum insured is the Fire contents, so it follows them.
     const fromContents = code === 'BURGLARY' && basis !== null;
     const proposed1 = fromContents
-      ? contents.proposed1.toFixed()
+      ? isRenewal
+        ? hasTypedFireOption1
+          ? typedFireOption1Contents!.toFixed()
+          : null
+        : contents.proposed1.toFixed()
       : section
         ? str(section.proposed1)
         : null;
@@ -369,6 +399,7 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
     });
     const derivedExisting =
       last?.sumInsured ??
+      (fromContents ? existingFireContentsStr : null) ??
       (existingSumFromLines.length > 0
         ? existingSumFromLines.reduce((tot, v) => tot.plus(v), new Decimal(0)).toFixed()
         : null);
@@ -386,6 +417,11 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
         basis,
         basisAmounts: basis
           ? {
+              existing:
+                onBasis(
+                  derivedExisting === null ? null : new Decimal(derivedExisting),
+                  basis,
+                )?.toFixed() ?? null,
               proposed1:
                 onBasis(proposed1 === null ? null : new Decimal(proposed1), basis)?.toFixed() ??
                 null,
@@ -508,6 +544,11 @@ export function toProposalRecord(doc: ProposalDoc, context: ProposalContext): Pr
         proposed1: line.proposed1.toFixed(),
         proposed2: line.proposed2?.toFixed() ?? null,
         proposed3: line.proposed3?.toFixed() ?? null,
+        /** The typed override for Option 1 (renewal/roll-on); null when falling back to location sum. */
+        typedOption1:
+          (doc.fireOption1 ?? []).find((o) => o.group === line.group)?.amount !== undefined
+            ? str((doc.fireOption1 ?? []).find((o) => o.group === line.group)!.amount)
+            : null,
       })),
       existing: existing?.fireTotal ?? null,
       proposed1: totals.proposed1.toFixed(),

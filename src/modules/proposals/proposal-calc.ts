@@ -86,12 +86,14 @@ export interface FireTotals {
 
 /**
  * The RFQ's Fire lines: Option 1 adds up every location's items in the line; Options 2 and 3 are
- * the amounts entered for the line, if any.
+ * the amounts entered for the line, if any. For renewal and roll-on, an optional Option 1 override
+ * map can supply typed figures that replace the location-calculated totals.
  */
 export function fireTotals(
   locations: readonly LocationValues[],
   option2: ReadonlyMap<FireGroup, string | null>,
   option3: ReadonlyMap<FireGroup, string | null> = new Map(),
+  option1Override: ReadonlyMap<FireGroup, string | null> = new Map(),
 ): FireTotals {
   const groups = FIRE_GROUPS.map((group) => {
     const items = sumOf(
@@ -103,7 +105,10 @@ export function fireTotals(
     );
     // D1: buildings add to the BUILDING line, alongside the fixed civil-structure sub-items.
     const buildings = group === 'BUILDING' ? sumOf(locations.map(buildingsTotal)) : new Decimal(0);
-    const proposed1 = items.plus(buildings);
+    const locationSum = items.plus(buildings);
+    // Renewal/roll-on: use the typed override when it is provided; fall back to the location sum.
+    const override = option1Override.get(group) ?? null;
+    const proposed1 = override !== null ? new Decimal(override) : locationSum;
     const second = option2.get(group) ?? null;
     const third = option3.get(group) ?? null;
     return {

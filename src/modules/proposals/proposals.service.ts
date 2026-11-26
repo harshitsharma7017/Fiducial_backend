@@ -176,7 +176,8 @@ function lookupOf(
 
 /**
  * A renewal starts from last year's figures: every other section the policy had is included,
- * with its sum insured as Proposed 1 (to the rupee), for the team to change.
+ * with Proposed 1 and 2 left blank so the team fills in the new figures (renewal and roll-on
+ * only; the existing figures appear in the Existing column for reference).
  */
 function sectionsFrom(snapshot: ExistingPolicyDoc | null): ProposalDoc['sections'] {
   if (!snapshot) return [];
@@ -187,7 +188,7 @@ function sectionsFrom(snapshot: ExistingPolicyDoc | null): ProposalDoc['sections
           {
             code: section.code as OtherSection,
             included: true,
-            proposed1: toDecimal128(wholeRupees(section.sumInsured.toString())),
+            proposed1: null,
             proposed2: null,
           },
         ]
@@ -776,6 +777,9 @@ export async function updateDataSheet(
       .filter((line) => line.amount !== null)
       .map((line) => ({ group: line.group, amount: money(line.amount) })),
     fireOption3: input.fireOption3
+      .filter((line) => line.amount !== null)
+      .map((line) => ({ group: line.group, amount: money(line.amount) })),
+    fireOption1: input.fireOption1
       .filter((line) => line.amount !== null)
       .map((line) => ({ group: line.group, amount: money(line.amount) })),
     fireCovers: input.fireCovers,
