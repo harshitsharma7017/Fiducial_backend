@@ -194,6 +194,36 @@ describe('new-business proposals', () => {
     expect(JSON.stringify(blank.body.details)).toContain('Enter the end of the policy period');
   });
 
+  it('refuses a client whose occupancy is not recorded yet', async () => {
+    const pending = await request(app)
+      .post('/api/v1/clients')
+      .set(bearer(admin))
+      .send({
+        name: 'Occupancy Pending Co',
+        gstin: '',
+        address: { line1: 'a', line2: '', city: 'Pune', state: 'Maharashtra', pincode: '411001' },
+        contacts: [],
+        natureOfBusiness: '',
+        occupancyCode: '',
+      })
+      .expect(201);
+    const response = await request(app)
+      .post('/api/v1/proposals')
+      .set(bearer(manager))
+      .send({
+        clientId: pending.body.id,
+        locationIds: [],
+        dueDate: '2026-11-15',
+        policyStart: '2026-12-01',
+        policyEnd: '2027-11-30',
+      })
+      .expect(400);
+    expect(response.body.details[0]).toMatchObject({
+      path: 'clientId',
+      message: expect.stringContaining('no occupancy recorded'),
+    });
+  });
+
   it("refuses another client's locations", async () => {
     const other = await request(app)
       .post('/api/v1/clients')

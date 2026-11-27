@@ -935,8 +935,8 @@ export const ProposalLocationSchema = z.object({
       address: AddressSchema,
       district: z.string(),
       eqZone: EqZoneSchema.nullable(),
-      /** The location's own occupancy, or the client's. */
-      occupancy: OccupancyRefSchema,
+      /** The location's own occupancy, or the client's. Null only if neither is recorded. */
+      occupancy: OccupancyRefSchema.nullable(),
     })
     .nullable(),
   /** D1: the location's buildings and their total sum insured. */

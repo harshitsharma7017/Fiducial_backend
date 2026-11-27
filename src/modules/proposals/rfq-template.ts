@@ -818,8 +818,10 @@ export function fillSchedule(sheet: ExcelJS.Worksheet, context: FillContext) {
     'Communication Address': address,
     'Risk Location': locations.join('\n'),
     'Policy Period': period,
-    'Nature of business': client.natureOfBusiness,
-    Occupancy: `${client.occupancy.tacCode} — ${client.occupancy.description}`,
+    'Nature of business': client.natureOfBusiness ?? '—',
+    Occupancy: client.occupancy
+      ? `${client.occupancy.tacCode} — ${client.occupancy.description}`
+      : '—',
   };
   for (const label of SCHEDULE_LABELS) {
     const row = findRow(sheet, label);

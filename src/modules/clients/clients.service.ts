@@ -146,7 +146,7 @@ export async function getClient(id: string): Promise<Client> {
 /** A new client record, as both the screen and the import save it. */
 export function newClientFields(
   input: CreateClientRequest,
-  occupancy: OccupancyRef,
+  occupancy: OccupancyRef | null,
   actorId: string,
 ): Omit<ClientDoc, '_id' | 'createdAt' | 'updatedAt'> {
   const userId = new Types.ObjectId(actorId);
@@ -156,7 +156,7 @@ export function newClientFields(
     gstin: input.gstin,
     address: input.address,
     contacts: input.contacts,
-    natureOfBusiness: input.natureOfBusiness,
+    natureOfBusiness: input.natureOfBusiness ?? null,
     occupancy,
     createdBy: userId,
     updatedBy: userId,
@@ -164,7 +164,9 @@ export function newClientFields(
 }
 
 export async function createClient(input: CreateClientRequest, actor: Actor): Promise<Client> {
-  const occupancy = await lookupOccupancy(input.occupancyCode, 'occupancyCode');
+  const occupancy = input.occupancyCode
+    ? await lookupOccupancy(input.occupancyCode, 'occupancyCode')
+    : null;
   try {
     return await withTransaction(async (session) => {
       if (input.gstin) await assertGstinFree(input.gstin, null, session);
@@ -202,10 +204,25 @@ export async function updateClient(
   const existing = await ClientModel.findById(id, { occupancy: 1 }).lean();
   if (!existing) throw clientNotFound();
   // A new code must be in the active master; an unchanged one keeps the description stored.
-  const occupancy =
-    changes.occupancyCode !== undefined && changes.occupancyCode !== existing.occupancy.tacCode
-      ? await lookupOccupancy(changes.occupancyCode, 'occupancyCode')
-      : undefined;
+  // Left out (undefined) leaves it as it is. A recorded occupancy can be changed but not removed:
+  // proposals take their covers and RFQ wording from it. A client without one may add it later.
+  let occupancy: OccupancyRef | undefined;
+  if (changes.occupancyCode === null) {
+    if (existing.occupancy) {
+      throw validationError([
+        {
+          location: 'body',
+          path: 'occupancyCode',
+          message: 'The occupancy can be changed but not removed. Choose an occupancy code.',
+        },
+      ]);
+    }
+  } else if (
+    changes.occupancyCode !== undefined &&
+    changes.occupancyCode !== existing.occupancy?.tacCode
+  ) {
+    occupancy = await lookupOccupancy(changes.occupancyCode, 'occupancyCode');
+  }
 
   try {
     return await withTransaction(async (session) => {
@@ -228,7 +245,7 @@ export async function updateClient(
       if (changes.address !== undefined) set.address = changes.address;
       if (changes.contacts !== undefined) set.contacts = changes.contacts;
       if (changes.natureOfBusiness !== undefined) set.natureOfBusiness = changes.natureOfBusiness;
-      if (occupancy) set.occupancy = occupancy;
+      if (occupancy !== undefined) set.occupancy = occupancy;
 
       const after = await ClientModel.findByIdAndUpdate(
         id,

@@ -37,13 +37,18 @@ export const CreateClientRequestSchema = z.strictObject({
   /** "Communication Address" on the Data Sheet. */
   address: AddressInputSchema,
   contacts: ContactsInputSchema,
-  natureOfBusiness: z
-    .string()
-    .trim()
-    .min(1, 'Describe the nature of business')
-    .max(300, 'Nature of business is too long'),
-  /** TAC code in the active occupancy master. */
-  occupancyCode: TacCodeSchema,
+  /**
+   * Blank or left out when not yet known (e.g. a client migrated from another system); fill in
+   * later. Optional rather than defaulted, so an update that leaves it out does not clear it.
+   */
+  natureOfBusiness: blankAsNull(
+    z.string().trim().max(300, 'Nature of business is too long'),
+  ).optional(),
+  /**
+   * TAC code in the active occupancy master. Blank or left out when not yet known; a Property
+   * proposal cannot be started for the client until it is recorded.
+   */
+  occupancyCode: blankAsNull(TacCodeSchema).optional(),
 });
 export type CreateClientRequest = z.infer<typeof CreateClientRequestSchema>;
 /** What a form holds before parsing: blank optional fields are "". */
@@ -62,8 +67,8 @@ export const ClientSchema = z.object({
   gstin: z.string().nullable(),
   address: AddressSchema,
   contacts: z.array(ContactSchema),
-  natureOfBusiness: z.string(),
-  occupancy: OccupancyRefSchema,
+  natureOfBusiness: z.string().nullable(),
+  occupancy: OccupancyRefSchema.nullable(),
   locationCount: z.number().int(),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,

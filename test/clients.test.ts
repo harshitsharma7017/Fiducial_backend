@@ -172,13 +172,54 @@ describe('client master (M-1)', () => {
       )
       .expect(400);
     const paths = (response.body.details as Array<{ path: string }>).map((issue) => issue.path);
+    // A blank nature of business is allowed (it can be added later), so it is not reported.
     expect(paths.sort()).toEqual([
       'address.line1',
       'address.pincode',
       'address.state',
       'contacts.0.email',
-      'natureOfBusiness',
     ]);
+  });
+
+  it('accepts a client without occupancy or nature of business, to be completed later', async () => {
+    const created = await createClient(
+      newClient({ name: 'Profile Pending Ltd', natureOfBusiness: '', occupancyCode: '' }),
+    );
+    expect(created).toMatchObject({ natureOfBusiness: null, occupancy: null });
+
+    // Leaving the fields out of an edit does not touch them.
+    const renamed = await request(app)
+      .patch(`/api/v1/clients/${created.id}`)
+      .set(bearer(managerToken))
+      .send({ name: 'Profile Pending Industries' })
+      .expect(200);
+    expect(renamed.body).toMatchObject({ natureOfBusiness: null, occupancy: null });
+
+    const completed = await request(app)
+      .patch(`/api/v1/clients/${created.id}`)
+      .set(bearer(managerToken))
+      .send({ natureOfBusiness: 'Textile weaving', occupancyCode: '2002' })
+      .expect(200);
+    expect(completed.body).toMatchObject({
+      natureOfBusiness: 'Textile weaving',
+      occupancy: { tacCode: '2002', description: 'Aerated Water Factories' },
+    });
+
+    // Once recorded, the occupancy can be changed but not removed.
+    const removed = await request(app)
+      .patch(`/api/v1/clients/${created.id}`)
+      .set(bearer(managerToken))
+      .send({ occupancyCode: '' })
+      .expect(400);
+    expect(removed.body.details[0]).toMatchObject({ path: 'occupancyCode' });
+
+    // A code that is given must still be in the active master.
+    const unknown = await request(app)
+      .post('/api/v1/clients')
+      .set(bearer(managerToken))
+      .send(newClient({ occupancyCode: '9999' }))
+      .expect(400);
+    expect(unknown.body.details[0]).toMatchObject({ path: 'occupancyCode' });
   });
 
   it('edits only the fields sent and records before and after', async () => {

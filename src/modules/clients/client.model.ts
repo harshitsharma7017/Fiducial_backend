@@ -29,9 +29,10 @@ export interface ClientDoc {
   gstin: string | null;
   address: AddressDoc;
   contacts: ContactDoc[];
-  natureOfBusiness: string;
-  /** The occupancy as it was in the active master when chosen. */
-  occupancy: OccupancyRefDoc;
+  /** Null until known (clients migrated from another system may arrive without it). */
+  natureOfBusiness: string | null;
+  /** The occupancy as it was in the active master when chosen; null until known. */
+  occupancy: OccupancyRefDoc | null;
   createdBy: Types.ObjectId | null;
   updatedBy: Types.ObjectId | null;
   createdAt: Date;
@@ -76,8 +77,8 @@ const clientSchema = new Schema<ClientDoc>(
     gstin: { type: String, default: null, match: /^[0-9A-Z]{15}$/ },
     address: { type: addressSchema, required: true },
     contacts: { type: [contactSchema], default: [] },
-    natureOfBusiness: { type: String, required: true, maxlength: 300 },
-    occupancy: { type: occupancyRefSchema, required: true },
+    natureOfBusiness: { type: String, default: null, maxlength: 300 },
+    occupancy: { type: occupancyRefSchema, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
