@@ -480,6 +480,18 @@ export async function createProposal(
   if (!client) {
     throw validationError([{ location: 'body', path: 'clientId', message: 'Choose a client' }]);
   }
+  // The client's occupancy chooses the starting covers and prints on the RFQ, so a client recorded
+  // without one (e.g. migrated from another system) must have it added before a proposal starts.
+  if (!client.occupancy) {
+    throw validationError([
+      {
+        location: 'body',
+        path: 'clientId',
+        message:
+          'This client has no occupancy recorded. Add the occupancy on the client (Masters → Clients) before starting a Property proposal.',
+      },
+    ]);
+  }
   await assertClientLocations(client._id, input.locationIds, 'locationIds');
   const start = await occupancyStart(client.occupancy.tacCode, input.locationIds);
   const startMessage = occupancyStartMessage(start);

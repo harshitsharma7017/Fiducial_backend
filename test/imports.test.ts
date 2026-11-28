@@ -332,17 +332,28 @@ describe('row problems', () => {
     expect(response.body.rows[0]).toMatchObject({ row: 2, label: 'Saved Elsewhere Ltd' });
   });
 
+  it('imports a client without occupancy or nature of business', async () => {
+    const file = await buildTemplate('clients', [
+      client({ name: 'Profile Pending Traders', natureOfBusiness: '', occupancyCode: '' }),
+    ]);
+    const preview = await upload('clients', file).expect(200);
+    expect(preview.body).toMatchObject({ rowsRead: 1, validRows: 1, invalidRows: 0 });
+    const done = await upload('clients', file, { dryRun: false }).expect(200);
+    expect(done.body).toMatchObject({ imported: true, createdCount: 1 });
+    const saved = await ClientModel.findOne({ name: 'Profile Pending Traders' }).lean();
+    expect(saved).toMatchObject({ natureOfBusiness: null, occupancy: null });
+  });
+
   it('reports missing columns and files that are not workbooks', async () => {
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('Clients').addRow(['Insured name', 'City']);
     const missing = await upload('clients', Buffer.from(await workbook.xlsx.writeBuffer()));
     expect(missing.body.rows).toEqual([]);
+    // Nature of business and occupancy code are optional columns, so their absence is not reported.
     expect(missing.body.fileErrors.map((e: { column: string }) => e.column)).toEqual([
       'Address line 1',
       'State',
       'Pincode',
-      'Nature of business',
-      'Occupancy code',
     ]);
     expect(missing.body.fileErrors[0]).toMatchObject({
       row: 1,

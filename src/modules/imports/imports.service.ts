@@ -196,7 +196,8 @@ function lookupValues(failed: readonly SheetRow[], key: 'occupancyCode' | 'pinco
 
 interface ClientRow {
   input: CreateClientRequest;
-  occupancy: OccupancyRef;
+  /** Null when the row leaves the occupancy code blank (it can be added on the client later). */
+  occupancy: OccupancyRef | null;
 }
 
 async function checkClients(rows: readonly SheetRow[]): Promise<Checked<ClientRow>> {
@@ -236,7 +237,7 @@ async function checkClients(rows: readonly SheetRow[]): Promise<Checked<ClientRo
   }
 
   const occupancies = await occupanciesByCode([
-    ...parsed.map((c) => c.value.occupancyCode),
+    ...parsed.flatMap((c) => (c.value.occupancyCode ? [c.value.occupancyCode] : [])),
     ...lookupValues(failed, 'occupancyCode'),
   ]);
   issues.push(...masterIssues(entity, failed, occupancies));
@@ -254,8 +255,9 @@ async function checkClients(rows: readonly SheetRow[]): Promise<Checked<ClientRo
   for (const candidate of parsed) {
     const { row, value } = candidate;
     const rowIssues: ImportIssue[] = [];
-    const occupancy = occupancies.get(value.occupancyCode);
-    if (!occupancy) {
+    // A blank code is allowed; a code that is given must be in the active master.
+    const occupancy = value.occupancyCode ? occupancies.get(value.occupancyCode) : null;
+    if (value.occupancyCode && !occupancy) {
       rowIssues.push(
         issue(
           row,
@@ -297,8 +299,8 @@ async function checkClients(rows: readonly SheetRow[]): Promise<Checked<ClientRo
         issue(row, entity, 'name', `A client named ${value.name} without a GSTIN already exists`),
       );
     }
-    if (rowIssues.length > 0 || !occupancy) issues.push(...rowIssues);
-    else valid.push({ ...candidate, value: { input: value, occupancy } });
+    if (rowIssues.length > 0) issues.push(...rowIssues);
+    else valid.push({ ...candidate, value: { input: value, occupancy: occupancy ?? null } });
   }
   return { issues, valid };
 }

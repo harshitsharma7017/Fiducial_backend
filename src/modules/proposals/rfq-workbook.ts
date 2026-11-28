@@ -416,11 +416,11 @@ export function schedule(
       span,
     );
   }
-  labelled(sheet, 'Nature of business', client.natureOfBusiness, span);
+  labelled(sheet, 'Nature of business', client.natureOfBusiness ?? '—', span);
   labelled(
     sheet,
     'Occupancy',
-    `${client.occupancy.tacCode} — ${client.occupancy.description}`,
+    client.occupancy ? `${client.occupancy.tacCode} — ${client.occupancy.description}` : '—',
     span,
   );
 
@@ -614,7 +614,9 @@ function fireByLocation(workbook: ExcelJS.Workbook, record: ProposalRecord) {
         [
           place.district ? `District ${place.district}` : null,
           place.eqZone ? `EQ zone ${place.eqZone}` : null,
-          `Occupancy ${place.occupancy.tacCode} — ${place.occupancy.description}`,
+          place.occupancy
+            ? `Occupancy ${place.occupancy.tacCode} — ${place.occupancy.description}`
+            : null,
         ]
           .filter(Boolean)
           .join(' · '),

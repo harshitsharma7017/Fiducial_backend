@@ -97,14 +97,14 @@ export const IMPORT_SHEETS: Record<ImportEntity, ImportSheet> = {
       {
         key: 'natureOfBusiness',
         header: 'Nature of business',
-        required: true,
-        note: 'For example Cotton yarn spinning.',
+        required: false,
+        note: 'For example Cotton yarn spinning. Leave blank if not known yet; add it on the client later.',
       },
       {
         key: 'occupancyCode',
         header: 'Occupancy code',
-        required: true,
-        note: 'TAC code from the active IIB occupancy master, for example 2189.',
+        required: false,
+        note: 'TAC code from the active IIB occupancy master, for example 2189. Leave blank if not known yet: it must be added on the client before a Property proposal can be started.',
       },
       ...CONTACT_COLUMNS,
     ],
